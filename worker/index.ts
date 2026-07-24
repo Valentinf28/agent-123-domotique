@@ -1,10 +1,13 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { verifyLovelaceSession } from "../lib/lovelace-session";
 
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
+  HA_BASE_URL?: string;
+  HA_ACCESS_TOKEN?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -12,6 +15,184 @@ interface Env {
       };
     };
   };
+}
+
+const LOVELACE_PREFIX = "/ma-maison/ha";
+const blockedPaths = [
+  "/config", "/developer-tools", "/profile", "/auth", "/api/config",
+  "/api/error", "/api/repairs", "/api/onboarding",
+];
+const allowedPrefixes = [
+  "/lovelace/0", "/frontend_latest/", "/static/", "/local/", "/hacsfiles/",
+  "/api/websocket", "/api/states", "/api/services/", "/api/history/",
+  "/api/lovelace/", "/api/camera_proxy/", "/api/media_proxy/",
+];
+const blockedSocketTypes = [
+  "config/", "auth/", "backup/", "repairs/", "onboarding/", "system_health/",
+];
+
+function upstreamConfig(env: Env) {
+  const baseUrl = env.HA_BASE_URL?.replace(/\/+$/, "");
+  const token = env.HA_ACCESS_TOKEN;
+  if (!baseUrl || !token) return null;
+  return { baseUrl, token };
+}
+
+function permittedPath(pathname: string) {
+  if (blockedPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`))) return false;
+  return allowedPrefixes.some((path) => pathname === path || pathname.startsWith(path));
+}
+
+function bridgeScript() {
+  return `<script data-ma-maison-bridge>
+  (() => {
+    const prefix = ${JSON.stringify(LOVELACE_PREFIX)};
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (typeof input === "string" && input.startsWith("/api/")) input = prefix + input;
+      else if (input instanceof Request && new URL(input.url).origin === location.origin && new URL(input.url).pathname.startsWith("/api/")) {
+        const url = new URL(input.url); url.pathname = prefix + url.pathname; input = new Request(url, input);
+      }
+      return originalFetch(input, init);
+    };
+    const NativeWebSocket = window.WebSocket;
+    window.WebSocket = class extends NativeWebSocket {
+      constructor(url, protocols) {
+        const next = new URL(url, location.href);
+        if (next.pathname === "/api/websocket") next.pathname = prefix + next.pathname;
+        super(next.toString(), protocols);
+      }
+    };
+    const requestToken = async (payload) => {
+      const message = typeof payload === "string" ? JSON.parse(payload) : payload;
+      const response = await originalFetch("/api/lovelace/browser-token", { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) return window[message.callback](false);
+      window[message.callback](true, await response.json());
+    };
+    window.externalApp = {
+      getExternalAuth: requestToken,
+      revokeExternalAuth: (payload) => {
+        const message = typeof payload === "string" ? JSON.parse(payload) : payload;
+        window[message.callback](true);
+      }
+    };
+    const kioskCss = [
+      "app-header,ha-sidebar,ha-menu-button,#drawer,.menu,.header{display:none!important}",
+      "app-drawer-layout{--app-drawer-width:0px!important}",
+      ".sidebar-shell{display:none!important}.app-content{margin-left:0!important;width:100%!important}",
+      "ha-panel-lovelace{padding-top:0!important}",
+      "hui-root{--header-height:0px!important}"
+    ].join("");
+    const lockRoot = (root) => {
+      if (!root || root.querySelector("style[data-ma-maison]")) return;
+      const style = document.createElement("style");
+      style.dataset.maMaison = "true";
+      style.textContent = kioskCss;
+      (root.nodeType === 9 ? root.documentElement : root).appendChild(style);
+      root.addEventListener("click", (event) => {
+        const path = event.composedPath();
+        const link = path.find((node) => node && node.tagName === "A");
+        if (!link) return;
+        const target = new URL(link.href, location.href);
+        if (!target.pathname.startsWith("/lovelace/0")) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+      }, true);
+    };
+    const scan = (root) => {
+      lockRoot(root);
+      root.querySelectorAll("*").forEach((element) => {
+        if (["HA-SIDEBAR", "HA-MENU-BUTTON", "APP-HEADER"].includes(element.tagName)) {
+          element.style.setProperty("display", "none", "important");
+          element.setAttribute("aria-hidden", "true");
+        }
+        if (element.shadowRoot) scan(element.shadowRoot);
+      });
+    };
+    scan(document);
+    setInterval(() => scan(document), 400);
+  })();
+  </script>`;
+}
+
+async function proxyHttp(request: Request, env: Env, upstreamPath: string) {
+  const config = upstreamConfig(env);
+  if (!config || !permittedPath(upstreamPath)) return new Response("Not found", { status: 404 });
+  const incoming = new URL(request.url);
+  const target = new URL(`${upstreamPath}${incoming.search}`, config.baseUrl);
+  if (target.pathname === "/lovelace/0") target.searchParams.set("external_auth", "1");
+
+  const headers = new Headers(request.headers);
+  headers.set("Authorization", `Bearer ${config.token}`);
+  headers.delete("Cookie");
+  headers.delete("Host");
+  const response = await fetch(target, {
+    method: request.method,
+    headers,
+    body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
+    redirect: "manual",
+  });
+  const outgoing = new Headers(response.headers);
+  outgoing.set("Cache-Control", target.pathname === "/lovelace/0" ? "no-store" : outgoing.get("Cache-Control") ?? "private");
+  outgoing.set("Content-Security-Policy", "frame-ancestors 'self'; object-src 'none'; base-uri 'self'");
+  outgoing.delete("Set-Cookie");
+
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (contentType.includes("text/html")) {
+    let html = await response.text();
+    html = html
+      .replace(/(<head[^>]*>)/i, `$1${bridgeScript()}<base href="${LOVELACE_PREFIX}/">`)
+      .replaceAll('"/frontend_latest/', `"${LOVELACE_PREFIX}/frontend_latest/`)
+      .replaceAll('"/static/', `"${LOVELACE_PREFIX}/static/`)
+      .replaceAll('"/local/', `"${LOVELACE_PREFIX}/local/`)
+      .replaceAll('"/hacsfiles/', `"${LOVELACE_PREFIX}/hacsfiles/`);
+    outgoing.delete("Content-Length");
+    return new Response(html, { status: response.status, headers: outgoing });
+  }
+  return new Response(response.body, { status: response.status, headers: outgoing });
+}
+
+async function proxyWebSocket(request: Request, env: Env) {
+  const config = upstreamConfig(env);
+  if (!config) return new Response("Not found", { status: 404 });
+  const pair = new WebSocketPair();
+  const client = pair[0];
+  const browser = pair[1];
+  browser.accept();
+
+  const upstreamResponse = await fetch(`${config.baseUrl}/api/websocket`, {
+    headers: { Upgrade: "websocket" },
+  });
+  const upstream = upstreamResponse.webSocket;
+  if (!upstream) return new Response("Maison inaccessible", { status: 502 });
+  upstream.accept();
+
+  browser.addEventListener("message", async (event) => {
+    try {
+      const message = JSON.parse(String(event.data)) as { type?: string; access_token?: string };
+      if (message.type === "auth") {
+        if (!message.access_token || !await verifyLovelaceSession(config.token, message.access_token)) {
+          browser.close(1008, "Session refusée");
+          upstream.close(1008, "Session refusée");
+          return;
+        }
+        upstream.send(JSON.stringify({ type: "auth", access_token: config.token }));
+        return;
+      }
+      if (message.type && blockedSocketTypes.some((prefix) => message.type!.startsWith(prefix))) {
+        browser.send(JSON.stringify({ id: (message as { id?: number }).id, type: "result", success: false, error: { code: "unauthorized", message: "Action non autorisée" } }));
+        return;
+      }
+      upstream.send(event.data);
+    } catch {
+      browser.close(1003, "Message invalide");
+    }
+  });
+  upstream.addEventListener("message", (event) => browser.send(event.data));
+  upstream.addEventListener("close", () => browser.close(1000, "Maison déconnectée"));
+  browser.addEventListener("close", () => upstream.close(1000, "Client déconnecté"));
+  return new Response(null, { status: 101, webSocket: client });
 }
 
 interface ExecutionContext {
@@ -28,6 +209,14 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname.startsWith(`${LOVELACE_PREFIX}/`)) {
+      const upstreamPath = url.pathname.slice(LOVELACE_PREFIX.length);
+      if (upstreamPath === "/api/websocket" && request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
+        return proxyWebSocket(request, env);
+      }
+      return proxyHttp(request, env, upstreamPath);
+    }
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];

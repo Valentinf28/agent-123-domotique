@@ -1,6 +1,13 @@
 # Raccordement de la maison connectée
 
-La première version utilise des données de démonstration réalistes. L’interface est volontairement découplée du système domotique.
+La première version utilise des données de démonstration réalistes. L’interface est volontairement découplée du système domotique. Un connecteur de lecture local est disponible dans `lib/home-connector.ts`.
+
+## Test local
+
+Configurer `HA_BASE_URL`, `HA_ACCESS_TOKEN` et `HA_ALLOW_LOCAL_DEVELOPMENT=true`
+dans `.env.local`. Ce fichier est ignoré par Git. Le jeton n’est jamais renvoyé au
+navigateur. La route `/api/home` transforme les états en objets publics et remplace
+les identifiants techniques par des identifiants opaques.
 
 ## Architecture cible
 

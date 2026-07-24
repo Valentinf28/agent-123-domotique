@@ -1,4 +1,5 @@
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { getPortalHome } from "../../../lib/home-connector";
 
 /**
  * Façade serveur du portail.
@@ -9,11 +10,28 @@ import { getChatGPTUser } from "../../chatgpt-auth";
  */
 export async function GET() {
   const user = await getChatGPTUser();
-  if (!user) return Response.json({ error: "Authentification requise" }, { status: 401 });
+  const localDevelopment =
+    process.env.NODE_ENV === "development" &&
+    process.env.HA_ALLOW_LOCAL_DEVELOPMENT === "true";
+  if (!user && !localDevelopment) {
+    return Response.json({ error: "Authentification requise" }, { status: 401 });
+  }
 
-  return Response.json({
-    mode: "demo",
-    viewer: { displayName: user.displayName },
-    integration: "server-only",
-  });
+  try {
+    const home = await getPortalHome();
+    return Response.json({
+      mode: "connected",
+      viewer: { displayName: user?.displayName ?? "Développement local" },
+      integration: "server-only",
+      home,
+    });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "CONNECTOR_ERROR";
+    const status = code === "CONNECTOR_NOT_CONFIGURED" ? 503 : 502;
+    return Response.json({
+      error: code === "CONNECTOR_NOT_CONFIGURED"
+        ? "Connecteur non configuré"
+        : "Maison temporairement inaccessible",
+    }, { status });
+  }
 }

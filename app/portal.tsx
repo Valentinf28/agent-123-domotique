@@ -1,14 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 
 type View = "Accueil" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
 type Device = {
   id: number; name: string; room: string; category: string; state: string;
   detail: string; battery?: number; online: boolean; visible: boolean; icon: string;
 };
+type MobileOverview = {
+  energy: Record<string, string>;
+  controls: { label: string; active: boolean; available: boolean }[];
+};
 
-const devices: Device[] = [
+const demoDevices: Device[] = [
   { id: 1, name: "Suspension du salon", room: "Salon", category: "Éclairage", state: "Allumée", detail: "48 %", online: true, visible: true, icon: "◉" },
   { id: 2, name: "Thermostat principal", room: "Salon", category: "Climat", state: "Confort", detail: "21,5 °C", battery: 82, online: true, visible: true, icon: "♨" },
   { id: 3, name: "Détecteur fenêtre", room: "Salon", category: "Sécurité", state: "Fermée", detail: "Aucune anomalie", battery: 14, online: true, visible: true, icon: "▣" },
@@ -38,11 +43,51 @@ export default function Portal() {
   const [toast, setToast] = useState("");
   const [modal, setModal] = useState<string | null>(null);
   const [guideStep, setGuideStep] = useState(1);
+  const [devices, setDevices] = useState<Device[]>(demoDevices);
+  const [liveStatus, setLiveStatus] = useState<"loading" | "connected" | "demo">("loading");
+  const [mobileOverview, setMobileOverview] = useState<MobileOverview | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/home", { headers: { Accept: "application/json" } })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("connection");
+        return response.json();
+      })
+      .then((payload) => {
+        if (!active || !payload?.home?.devices) return;
+        const categoryIcons: Record<string, string> = {
+          "Éclairage": "◉", "Climat": "♨", "Sécurité": "▣",
+          "Volets": "▤", "Interrupteurs": "ϟ", "Capteurs": "⌁",
+          "Ventilation": "◌", "Entretien": "◇", "Multimédia": "▷",
+        };
+        const mapped: Device[] = payload.home.devices.map((device: {
+          publicId: string; name: string; room: string; category: string;
+          state: string; available: boolean; battery: number | null;
+        }, index: number) => ({
+          id: index + 1000,
+          name: device.name,
+          room: device.room,
+          category: device.category,
+          state: friendlyState(device.state),
+          detail: device.available ? "Synchronisé à l’instant" : "À vérifier",
+          battery: device.battery ?? undefined,
+          online: device.available,
+          visible: true,
+          icon: categoryIcons[device.category] ?? "◇",
+        }));
+        setDevices(mapped);
+        setMobileOverview(payload.home.mobileOverview ?? null);
+        setLiveStatus("connected");
+      })
+      .catch(() => setLiveStatus("demo"));
+    return () => { active = false; };
+  }, []);
 
   const filtered = useMemo(() => devices.filter((device) =>
     (room === "Toutes" || device.room === room) &&
     `${device.name} ${device.room} ${device.category}`.toLowerCase().includes(search.toLowerCase())
-  ), [room, search]);
+  ), [devices, room, search]);
 
   function notify(message: string) {
     setToast(message);
@@ -75,13 +120,14 @@ export default function Portal() {
             <h1>{view === "Accueil" ? "Bonjour Valentin" : view}</h1>
           </div>
           <div className="top-actions">
+            <Link className="dashboard-link" href="/ma-maison">Ouvrir Ma Maison</Link>
             <button className="icon-button" aria-label="Actualiser" onClick={() => notify("Maison actualisée à l’instant")}>↻</button>
             <button className="icon-button notification" aria-label="Notifications" onClick={() => setModal("alertes")}>♢<i /></button>
             <button className="primary" onClick={() => setView("Ajouter")}><span>＋</span> Ajouter un appareil</button>
           </div>
         </header>
 
-        {view === "Accueil" && <Dashboard setView={setView} setModal={setModal} notify={notify} />}
+        {view === "Accueil" && <Dashboard setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} />}
         {view === "Appareils" && <Devices filtered={filtered} search={search} setSearch={setSearch} room={room} setRoom={setRoom} notify={notify} setModal={setModal} />}
         {view === "Automatisations" && <Automations setModal={setModal} notify={notify} />}
         {view === "Ajouter" && <AddDevice step={guideStep} setStep={setGuideStep} notify={notify} />}
@@ -100,16 +146,56 @@ export default function Portal() {
   );
 }
 
-function Dashboard({ setView, setModal, notify }: { setView: (v: View) => void; setModal: (v: string) => void; notify: (v: string) => void }) {
-  return <div className="content">
+function friendlyState(state: string) {
+  const states: Record<string, string> = {
+    on: "Allumé", off: "Éteint", open: "Ouvert", closed: "Fermé",
+    locked: "Verrouillé", unlocked: "Déverrouillé", home: "À la maison",
+    unavailable: "Indisponible", unknown: "État inconnu", idle: "En veille",
+    playing: "Lecture en cours", paused: "En pause", cleaning: "Nettoyage",
+  };
+  return states[state.toLowerCase()] ?? state;
+}
+
+function Dashboard({ setView, setModal, notify, devices, liveStatus, overview }: {
+  setView: (v: View) => void; setModal: (v: string) => void;
+  notify: (v: string) => void; devices: Device[];
+  liveStatus: "loading" | "connected" | "demo";
+  overview: MobileOverview | null;
+}) {
+  const available = devices.filter((device) => device.online).length;
+  const lowBattery = devices.filter((device) => device.battery !== undefined && device.battery < 20).length;
+  return <div className="content app-home">
+    <section className="app-preview">
+      <div className="app-tabs"><button className="selected">Home</button><button>Énergie</button><button>Piscine</button><button>Spa</button></div>
+      <div className="app-connection"><i />{liveStatus === "connected" ? "Maison connectée" : liveStatus === "loading" ? "Connexion en cours…" : "Mode démonstration"}</div>
+      <div className="energy-flow">
+        <div className="flow-lines"><span className="line solar-home"/><span className="line grid-home"/><span className="line battery-home"/><i className="hub"/></div>
+        <FlowNode className="solar" icon="☀" label="Solaire" value={overview?.energy.solar ?? "0 W"} color="yellow" />
+        <FlowNode className="grid" icon="♜" label="Réseau" value={overview?.energy.grid ?? "0 W"} color="blue" />
+        <FlowNode className="house" icon="⌂" label="Maison" value={overview?.energy.home ?? "0 W"} color="teal" />
+        <FlowNode className="battery-node" icon="▰" label="Batterie" value={overview?.energy.battery ?? "0 %"} sub={overview?.energy.batteryPower} color="green" />
+        <FlowNode className="filter-node" icon="♒" label="Filtration" value={overview?.energy.filtration ?? "0 W"} color="cyan" />
+      </div>
+      <div className="mobile-controls">
+        {(overview?.controls ?? [
+          {label:"Portail",active:false,available:true},{label:"Terrasse",active:false,available:true},
+          {label:"PAC piscine",active:false,available:true},{label:"Filtration",active:false,available:true},
+          {label:"Spa",active:false,available:true},{label:"Filtration spa",active:false,available:true},
+        ]).map((control, index) => <button key={control.label} onClick={() => notify(`${control.label} : commande disponible prochainement`)}>
+          <span className={control.active ? "control-state active" : "control-state"}>{!control.available ? "INDISPONIBLE" : control.active ? "ACTIF" : "ARRÊT"}</span>
+          <i>{["▯","♨","♒","▤","♨","▤"][index]}</i><b>{control.label}</b>
+        </button>)}
+      </div>
+      <div className="today-energy"><div><small>Aujourd’hui</small><strong>{overview?.energy.dailyProduction ?? "—"}</strong><span>Production</span></div><div><small>Consommation</small><strong>{overview?.energy.dailyConsumption ?? "—"}</strong><span>Maison</span></div><button onClick={() => notify("Détail énergétique")}>Voir l’énergie →</button></div>
+    </section>
     <section className="hero">
-      <div><span className="eyebrow"><i /> Tout va bien</span><h2>Votre maison est calme<br />et sous contrôle.</h2><p>24 appareils fonctionnent normalement. Une batterie demande votre attention.</p></div>
+      <div><span className="eyebrow"><i /> {liveStatus === "connected" ? "Maison connectée en direct" : liveStatus === "loading" ? "Connexion en cours" : "Mode démonstration"}</span><h2>Votre maison est calme<br />et sous contrôle.</h2><p>{liveStatus === "connected" ? `${available} appareils sur ${devices.length} sont disponibles.` : "Les informations de démonstration sont affichées temporairement."}</p></div>
       <div className="hero-temperature"><span>Ensoleillé</span><strong>24°</strong><small>Intérieur · 21,5°</small></div>
     </section>
     <div className="metrics">
-      <article><span className="metric-icon yellow">◫</span><div><small>Appareils</small><strong>24</strong><p><i /> 23 disponibles</p></div><button onClick={() => setView("Appareils")}>›</button></article>
+      <article><span className="metric-icon yellow">◫</span><div><small>Appareils</small><strong>{devices.length}</strong><p><i /> {available} disponibles</p></div><button onClick={() => setView("Appareils")}>›</button></article>
       <article><span className="metric-icon blue">ϟ</span><div><small>Énergie aujourd’hui</small><strong>8,4 <em>kWh</em></strong><p className="positive">↓ 12 % vs hier</p></div></article>
-      <article className="warning-card"><span className="metric-icon orange">!</span><div><small>À vérifier</small><strong>1 alerte</strong><p>Batterie faible · Salon</p></div><button onClick={() => setModal("alertes")}>›</button></article>
+      <article className="warning-card"><span className="metric-icon orange">!</span><div><small>À vérifier</small><strong>{lowBattery} alerte{lowBattery > 1 ? "s" : ""}</strong><p>{lowBattery ? "Batterie faible détectée" : "Aucune batterie faible"}</p></div><button onClick={() => setModal("alertes")}>›</button></article>
       <article><span className="metric-icon purple">⌁</span><div><small>Automatisations</small><strong>6 actives</strong><p>3 exécutées aujourd’hui</p></div><button onClick={() => setView("Automatisations")}>›</button></article>
     </div>
     <div className="dashboard-grid">
@@ -132,6 +218,12 @@ function Dashboard({ setView, setModal, notify }: { setView: (v: View) => void; 
     </div>
     <section className="energy-strip"><div><span className="metric-icon blue">ϟ</span><div><small>Consommation instantanée</small><strong>1,24 kW</strong></div></div><div className="bars">{[24,32,28,42,38,56,48,64,52,60,44,38,30,26,34,48,62,76,55,40].map((h,i)=><i key={i} style={{height:`${h}%`}} />)}</div><div><small>Estimation du mois</small><strong>68,40 €</strong><button onClick={() => notify("Le détail énergétique sera disponible après raccordement")}>Voir le détail →</button></div></section>
   </div>;
+}
+
+function FlowNode({ className, icon, label, value, sub, color }: {
+  className: string; icon: string; label: string; value: string; sub?: string; color: string;
+}) {
+  return <div className={`flow-node ${className} ${color}`}><small>{label}</small><span>{icon}</span><strong>{value}</strong>{sub && <em>{sub}</em>}</div>;
 }
 
 function Devices({ filtered, search, setSearch, room, setRoom, notify, setModal }: {
