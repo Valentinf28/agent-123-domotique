@@ -98,8 +98,8 @@ function displayValue(entity: HaState | null, fallback: string) {
 }
 
 function config() {
-  const baseUrl = process.env.HA_BASE_URL?.replace(/\/+$/, "");
-  const token = process.env.HA_ACCESS_TOKEN;
+  const baseUrl = process.env.HA_BASE_URL?.trim().replace(/\/+$/, "");
+  const token = process.env.HA_ACCESS_TOKEN?.trim();
   if (!baseUrl || !token) throw new Error("CONNECTOR_NOT_CONFIGURED");
   return { baseUrl, token };
 }

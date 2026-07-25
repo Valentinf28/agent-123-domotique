@@ -32,10 +32,30 @@ const blockedSocketTypes = [
 ];
 
 function upstreamConfig(env: Env) {
-  const baseUrl = env.HA_BASE_URL?.replace(/\/+$/, "");
-  const token = env.HA_ACCESS_TOKEN;
+  const baseUrl = env.HA_BASE_URL?.trim().replace(/\/+$/, "");
+  const token = env.HA_ACCESS_TOKEN?.trim();
   if (!baseUrl || !token) return null;
   return { baseUrl, token };
+}
+
+function upstreamHeaders(request: Request, token: string) {
+  const headers = new Headers({
+    Accept: request.headers.get("Accept") ?? "*/*",
+    Authorization: `Bearer ${token}`,
+  });
+  const forwardedHeaders = [
+    "Accept-Language",
+    "Content-Type",
+    "If-Modified-Since",
+    "If-None-Match",
+    "Range",
+    "User-Agent",
+  ];
+  for (const name of forwardedHeaders) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  return headers;
 }
 
 function permittedPath(pathname: string) {
@@ -123,10 +143,9 @@ async function proxyHttp(request: Request, env: Env, upstreamPath: string) {
   const target = new URL(`${upstreamPath}${incoming.search}`, config.baseUrl);
   if (target.pathname === "/lovelace/0") target.searchParams.set("external_auth", "1");
 
-  const headers = new Headers(request.headers);
-  headers.set("Authorization", `Bearer ${config.token}`);
-  headers.delete("Cookie");
-  headers.delete("Host");
+  // Only forward headers Home Assistant needs. Sites adds dispatcher and
+  // Cloudflare headers that are invalid or unsafe on a subrequest.
+  const headers = upstreamHeaders(request, config.token);
   const response = await fetch(target, {
     method: request.method,
     headers,

@@ -6,7 +6,7 @@ export async function GET() {
   const localDevelopment =
     process.env.NODE_ENV === "development" &&
     process.env.HA_ALLOW_LOCAL_DEVELOPMENT === "true";
-  const secret = process.env.HA_ACCESS_TOKEN;
+  const secret = process.env.HA_ACCESS_TOKEN?.trim();
 
   if ((!user && !localDevelopment) || !secret) {
     return Response.json({ error: "Session indisponible" }, { status: 401 });
