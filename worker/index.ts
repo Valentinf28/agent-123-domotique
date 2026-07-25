@@ -175,8 +175,8 @@ function bridgeScript() {
         if (element.shadowRoot) scan(element.shadowRoot);
       });
     };
-    scan(document);
-    if (!document.getElementById("ma-maison-web-header")) {
+    const installShell = () => {
+      if (!document.body || document.getElementById("ma-maison-web-header")) return;
       const header = document.createElement("header");
       header.id = "ma-maison-web-header";
       const back = document.createElement("a");
@@ -196,10 +196,15 @@ function bridgeScript() {
       refresh.addEventListener("click", () => location.reload());
       header.append(back, title, refresh);
       document.body.prepend(header);
-    }
+    };
     console.info("[MaMaison] bridge-ready");
     document.documentElement.dataset.maMaisonStage = "bridge-ready";
-    setInterval(() => scan(document), 400);
+    scan(document);
+    installShell();
+    setInterval(() => {
+      scan(document);
+      installShell();
+    }, 400);
   })();`;
 }
 
