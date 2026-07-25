@@ -28,8 +28,19 @@ const allowedPrefixes = [
   "/api/lovelace/", "/api/camera_proxy/", "/api/media_proxy/",
 ];
 const blockedSocketTypes = [
-  "config/", "auth/", "backup/", "repairs/", "onboarding/", "system_health/",
+  "backup/", "repairs/", "onboarding/", "system_health/",
 ];
+
+function socketTypePermitted(type: string) {
+  if (type === "auth/current_user") return true;
+  if (type.startsWith("auth/")) return false;
+  if (type.startsWith("config/")) {
+    return type.endsWith("/list") ||
+      type.endsWith("/list_for_display") ||
+      type.endsWith("/get");
+  }
+  return !blockedSocketTypes.some((prefix) => type.startsWith(prefix));
+}
 
 function upstreamConfig(env: Env) {
   const baseUrl = env.HA_BASE_URL?.trim().replace(/\/+$/, "");
@@ -124,7 +135,8 @@ function bridgeScript() {
       "app-drawer-layout{--app-drawer-width:0px!important}",
       ".sidebar-shell{display:none!important}.app-content{margin-left:0!important;width:100%!important}",
       "ha-panel-lovelace{padding-top:0!important}",
-      "hui-root{--header-height:0px!important}"
+      "hui-root{--header-height:0px!important}",
+      "ha-init-page img{display:none!important}"
     ].join("");
     const lockRoot = (root) => {
       if (!root || root.querySelector("style[data-ma-maison]")) return;
@@ -222,7 +234,7 @@ async function proxyWebSocket(request: Request, env: Env) {
         upstream.send(JSON.stringify({ type: "auth", access_token: config.token }));
         return;
       }
-      if (message.type && blockedSocketTypes.some((prefix) => message.type!.startsWith(prefix))) {
+      if (message.type && !socketTypePermitted(message.type)) {
         browser.send(JSON.stringify({ id: (message as { id?: number }).id, type: "result", success: false, error: { code: "unauthorized", message: "Action non autorisée" } }));
         return;
       }
