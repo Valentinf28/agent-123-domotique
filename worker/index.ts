@@ -214,6 +214,7 @@ async function proxyHttp(request: Request, env: Env, upstreamPath: string) {
 async function proxyWebSocket(request: Request, env: Env) {
   const config = upstreamConfig(env);
   if (!config) return new Response("Not found", { status: 404 });
+  console.log("[MaMaison] ws-proxy-open");
   const pair = new WebSocketPair();
   const client = pair[0];
   const browser = pair[1];
@@ -227,6 +228,7 @@ async function proxyWebSocket(request: Request, env: Env) {
   browser.addEventListener("message", async (event) => {
     try {
       const message = JSON.parse(String(event.data)) as { type?: string; access_token?: string };
+      console.log("[MaMaison] ws-browser-message", message.type ?? "unknown");
       if (message.type === "auth") {
         if (!message.access_token || !await verifyLovelaceSession(config.token, message.access_token)) {
           browser.close(1008, "Session refusée");
@@ -245,7 +247,15 @@ async function proxyWebSocket(request: Request, env: Env) {
       browser.close(1003, "Message invalide");
     }
   });
-  upstream.addEventListener("message", (event) => browser.send(event.data));
+  upstream.addEventListener("message", (event) => {
+    try {
+      const message = JSON.parse(String(event.data)) as { type?: string };
+      console.log("[MaMaison] ws-upstream-message", message.type ?? "unknown");
+    } catch {
+      console.log("[MaMaison] ws-upstream-message", "binary");
+    }
+    browser.send(event.data);
+  });
   upstream.addEventListener("close", () => browser.close(1000, "Maison déconnectée"));
   browser.addEventListener("close", () => upstream.close(1000, "Client déconnecté"));
   upstream.accept();
