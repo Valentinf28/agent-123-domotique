@@ -77,6 +77,15 @@ function permittedPath(pathname: string) {
 function bridgeScript() {
   return `(() => {
     const prefix = ${JSON.stringify(LOVELACE_PREFIX)};
+    // A regular browser must never be mistaken for the mobile WebView. Some
+    // browser shells expose WebKit bridge-shaped globals of their own.
+    try { delete window.externalApp; } catch {}
+    try { delete window.externalAppV2; } catch {}
+    try {
+      if (window.webkit?.messageHandlers?.getExternalAuth) {
+        delete window.webkit.messageHandlers.getExternalAuth;
+      }
+    } catch {}
     const originalFetch = window.fetch.bind(window);
     const originalStorageGet = Storage.prototype.getItem;
     const originalStorageSet = Storage.prototype.setItem;
