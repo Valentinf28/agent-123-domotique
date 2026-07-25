@@ -254,6 +254,47 @@ function Preparation({ plannedItems, setPlannedItems, notify }: {
   const [query, setQuery] = useState("");
   const [protocol, setProtocol] = useState("Tous");
   const [selectedRoom, setSelectedRoom] = useState("Salon");
+  const [dossier, setDossier] = useState({ reference: "Chargement…", customerName: "" });
+  const [saveState, setSaveState] = useState<"saved" | "saving" | "offline">("saving");
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/preparation", { headers: { Accept: "application/json" } })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("load");
+        return response.json();
+      })
+      .then((payload) => {
+        if (!active) return;
+        setDossier(payload.dossier);
+        setPlannedItems(payload.items);
+        setSaveState("saved");
+      })
+      .catch(() => {
+        if (!active) return;
+        setDossier({ reference: "DOSSIER-PILOTE", customerName: "Maison pilote" });
+        setSaveState("offline");
+      });
+    return () => { active = false; };
+  }, [setPlannedItems]);
+
+  async function save(items: PlannedItem[]) {
+    setPlannedItems(items);
+    setSaveState("saving");
+    try {
+      const response = await fetch("/api/preparation", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ items }),
+      });
+      if (!response.ok) throw new Error("save");
+      setSaveState("saved");
+    } catch {
+      setSaveState("offline");
+      notify("La liste reste affichée, mais sa sauvegarde a échoué");
+    }
+  }
+
   const matches = catalogItems.filter((item) =>
     (protocol === "Tous" || item.protocol === protocol) &&
     `${item.brand} ${item.model} ${item.category} ${item.protocol}`.toLowerCase().includes(query.toLowerCase())
@@ -264,17 +305,17 @@ function Preparation({ plannedItems, setPlannedItems, notify }: {
   function add(item: CatalogItem) {
     const existing = plannedItems.find((planned) => planned.id === item.id && planned.room === selectedRoom);
     if (existing) {
-      setPlannedItems(plannedItems.map((planned) => planned === existing ? { ...planned, quantity: planned.quantity + 1 } : planned));
+      void save(plannedItems.map((planned) => planned === existing ? { ...planned, quantity: planned.quantity + 1 } : planned));
     } else {
-      setPlannedItems([...plannedItems, { ...item, quantity: 1, room: selectedRoom, status: "À préparer" }]);
+      void save([...plannedItems, { ...item, quantity: 1, room: selectedRoom, status: "À préparer" }]);
     }
     notify(`${item.brand} ${item.model} ajouté à ${selectedRoom}`);
   }
 
   return <div className="content preparation">
     <div className="section-intro split">
-      <div><span className="eyebrow">Dossier MD-2026-0148 · Maison Martin</span><h2>Préparer les objets à connecter</h2><p>La liste commerciale est transformée en procédure d’installation. Complétez les modèles avant le départ.</p></div>
-      <button className="primary" onClick={() => notify("Checklist technicien générée")}>Générer la checklist</button>
+      <div><span className="eyebrow">Dossier {dossier.reference} · {dossier.customerName}</span><h2>Préparer les objets à connecter</h2><p>La liste commerciale est transformée en procédure d’installation. Complétez les modèles avant le départ.</p></div>
+      <div className="prep-heading-actions"><span className={`save-state ${saveState}`}>{saveState === "saved" ? "✓ Liste enregistrée" : saveState === "saving" ? "Enregistrement…" : "Sauvegarde à reprendre"}</span><button className="primary" onClick={() => notify("Checklist technicien générée")}>Générer la checklist</button></div>
     </div>
     <section className="prep-summary">
       <div><small>Objets prévus</small><strong>{totalObjects}</strong><span>{plannedItems.length} références</span></div>
@@ -296,7 +337,7 @@ function Preparation({ plannedItems, setPlannedItems, notify }: {
         <div className="panel-title"><div><small>Liste commerciale</small><h3>Installation prévue</h3></div><span>{totalObjects} objets</span></div>
         <div className="planned-list">{plannedItems.map((item, index) => <article key={`${item.id}-${item.room}`}>
           <div><span>{item.icon}</span><p><b>{item.brand} {item.model}</b><small>{item.room} · {item.method}</small></p><em className={`level level-${item.level.toLowerCase()}`}>{item.level}</em></div>
-          <div className="planned-actions"><label>Qté <input type="number" min="1" max="99" value={item.quantity} onChange={event => setPlannedItems(plannedItems.map((planned, plannedIndex) => plannedIndex === index ? { ...planned, quantity: Math.max(1, Number(event.target.value)) } : planned))} /></label><select value={item.status} onChange={event => setPlannedItems(plannedItems.map((planned, plannedIndex) => plannedIndex === index ? { ...planned, status: event.target.value as PlannedItem["status"] } : planned))}><option>À préparer</option><option>Prêt</option></select><button aria-label={`Retirer ${item.model}`} onClick={() => setPlannedItems(plannedItems.filter((_, plannedIndex) => plannedIndex !== index))}>×</button></div>
+          <div className="planned-actions"><label>Qté <input type="number" min="1" max="99" value={item.quantity} onChange={event => void save(plannedItems.map((planned, plannedIndex) => plannedIndex === index ? { ...planned, quantity: Math.max(1, Number(event.target.value)) } : planned))} /></label><select value={item.status} onChange={event => void save(plannedItems.map((planned, plannedIndex) => plannedIndex === index ? { ...planned, status: event.target.value as PlannedItem["status"] } : planned))}><option>À préparer</option><option>Prêt</option></select><button aria-label={`Retirer ${item.model}`} onClick={() => void save(plannedItems.filter((_, plannedIndex) => plannedIndex !== index))}>×</button></div>
         </article>)}</div>
         {!plannedItems.length && <div className="planned-empty">Ajoutez les équipements prévus pour générer la checklist.</div>}
         <div className="discovery-note"><span>⌁</span><div><b>Recherche automatique sur place</b><p>Les appareils réseau seront rapprochés par modèle, numéro de série et adresse MAC. L’adresse IP ne sera demandée qu’en dernier recours.</p></div></div>
