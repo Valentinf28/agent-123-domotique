@@ -399,7 +399,11 @@ async function proxyWebSocket(request: Request, env: Env) {
         type: "binary",
       }));
     }
-    browser.send(event.data);
+    const data = event.data;
+    // Cloudflare can dispatch the upstream auth_required event before the 101
+    // response has reached the browser. Queue it for the next event-loop turn
+    // so the client socket is ready to receive its first frame.
+    setTimeout(() => browser.send(data), 0);
   });
   upstream.addEventListener("close", () => browser.close(1000, "Maison déconnectée"));
   browser.addEventListener("close", () => upstream.close(1000, "Client déconnecté"));
