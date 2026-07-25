@@ -75,8 +75,7 @@ function permittedPath(pathname: string) {
 }
 
 function bridgeScript() {
-  return `<script data-ma-maison-bridge>
-  (() => {
+  return `(() => {
     const prefix = ${JSON.stringify(LOVELACE_PREFIX)};
     const originalFetch = window.fetch.bind(window);
     const proxiedPaths = ["/api/", "/static/", "/local/", "/hacsfiles/", "/frontend_latest/"];
@@ -175,8 +174,7 @@ function bridgeScript() {
     console.info("[MaMaison] bridge-ready");
     document.documentElement.dataset.maMaisonStage = "bridge-ready";
     setInterval(() => scan(document), 400);
-  })();
-  </script>`;
+  })();`;
 }
 
 async function proxyHttp(request: Request, env: Env, upstreamPath: string) {
@@ -204,7 +202,7 @@ async function proxyHttp(request: Request, env: Env, upstreamPath: string) {
   if (contentType.includes("text/html")) {
     let html = await response.text();
     html = html
-      .replace(/(<head[^>]*>)/i, `$1${bridgeScript()}<base href="${LOVELACE_PREFIX}/">`)
+      .replace(/(<head[^>]*>)/i, `$1<script src="/ma-maison/bridge.js"></script><base href="${LOVELACE_PREFIX}/">`)
       .replaceAll('"/frontend_latest/', `"${LOVELACE_PREFIX}/frontend_latest/`)
       .replaceAll('"/static/', `"${LOVELACE_PREFIX}/static/`)
       .replaceAll('"/local/', `"${LOVELACE_PREFIX}/local/`)
@@ -281,6 +279,16 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/ma-maison/bridge.js") {
+      return new Response(bridgeScript(), {
+        headers: {
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
 
     if (url.pathname === "/api/websocket" && request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
       return proxyWebSocket(request, env);
