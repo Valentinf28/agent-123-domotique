@@ -376,12 +376,26 @@ async function proxyWebSocket(request: Request, env: Env) {
     }
   });
   upstream.addEventListener("message", (event) => {
+    try {
+      const message = JSON.parse(String(event.data)) as { type?: string };
+      console.log(JSON.stringify({
+        event: "lovelace_ws_message",
+        direction: "upstream",
+        type: message.type ?? "unknown",
+      }));
+    } catch {
+      console.log(JSON.stringify({
+        event: "lovelace_ws_message",
+        direction: "upstream",
+        type: "binary",
+      }));
+    }
     browser.send(event.data);
   });
   upstream.addEventListener("close", () => browser.close(1000, "Maison déconnectée"));
   browser.addEventListener("close", () => upstream.close(1000, "Client déconnecté"));
-  upstream.accept();
   browser.accept();
+  upstream.accept();
   return new Response(null, { status: 101, webSocket: client });
 }
 
