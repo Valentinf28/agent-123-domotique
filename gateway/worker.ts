@@ -14,7 +14,7 @@ async function agentApi(request: Request, env: Env, pathname: string) {
   const length = Number(request.headers.get("Content-Length") ?? "0");
   if (length > 64_000) return new Response("Requête trop volumineuse", { status: 413 });
   const headers = new Headers({
-    Authorization: `Bearer ${bypassToken}`,
+    "OAI-Sites-Authorization": `Bearer ${bypassToken}`,
     Accept: "application/json",
     "Content-Type": "application/json",
     "X-Forwarded-Proto": "https",
@@ -179,7 +179,7 @@ const worker = {
     const url = new URL(request.url);
     if (url.pathname === "/health") {
       return Response.json(
-        { ready: true, service: "ma-maison-gateway" },
+        { ready: true, service: "ma-maison-gateway", agentApi: true, version: 2 },
         {
           headers: {
             "Cache-Control": "no-store",
