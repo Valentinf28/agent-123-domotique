@@ -1,0 +1,10 @@
+configuration:
+  portal_url:
+    name: Adresse du portail
+    description: Adresse sécurisée du portail technicien 1.2.3 Domotique.
+  enrollment_code:
+    name: Code d'installation
+    description: Code à huit caractères généré depuis le dossier d'intervention.
+  heartbeat_seconds:
+    name: Fréquence de synchronisation
+    description: Délai en secondes entre deux contrôles de la box.

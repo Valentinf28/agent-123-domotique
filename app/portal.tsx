@@ -356,6 +356,8 @@ function Installation({ notify }: { notify: (value: string) => void }) {
   const [dossier, setDossier] = useState({ reference: "Chargement…", customerName: "" });
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState("");
+  const [agent, setAgent] = useState<{ status: string; haVersion?: string | null; inventoryCount: number; lastSeenAt?: string | null } | null>(null);
+  const [enrollment, setEnrollment] = useState<{ code: string; expiresAt: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -371,6 +373,10 @@ function Installation({ notify }: { notify: (value: string) => void }) {
       })
       .catch(() => notify("La checklist n’a pas pu être chargée"))
       .finally(() => { if (active) setLoading(false); });
+    fetch("/api/agent/enrollment", { headers: { Accept: "application/json" } })
+      .then(response => response.ok ? response.json() : Promise.reject())
+      .then(payload => { if (active) setAgent(payload.agent); })
+      .catch(() => undefined);
     return () => { active = false; };
   }, []);
 
@@ -395,6 +401,20 @@ function Installation({ notify }: { notify: (value: string) => void }) {
     void save(items.map(current => current.id === item.id && current.room === item.room ? { ...current, status } : current), `${item.id}:${item.room}`);
   }
 
+  async function createEnrollment() {
+    try {
+      const response = await fetch("/api/agent/enrollment", {
+        method: "POST", headers: { Accept: "application/json" },
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error);
+      setEnrollment(payload);
+      notify("Code de box généré pour 30 minutes");
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "Code impossible à générer");
+    }
+  }
+
   const tested = items.filter(item => item.status === "Testé").reduce((sum, item) => sum + item.quantity, 0);
   const total = items.reduce((sum, item) => sum + item.quantity, 0);
   const blocked = items.filter(item => item.status === "Bloqué").length;
@@ -405,7 +425,7 @@ function Installation({ notify }: { notify: (value: string) => void }) {
     <section className="intervention-progress">
       <div className="progress-ring" style={{ "--progress": `${progress * 3.6}deg` } as React.CSSProperties}><span><strong>{progress}%</strong><small>terminé</small></span></div>
       <div><small>RECETTE DE LA MAISON</small><h3>{tested} objet{tested > 1 ? "s" : ""} testé{tested > 1 ? "s" : ""} sur {total}</h3><div className="progress-bar"><i style={{ width: `${progress}%` }} /></div><p>{blocked ? `${blocked} blocage${blocked > 1 ? "s" : ""} à résoudre avant la remise client.` : "Aucun blocage signalé."}</p></div>
-      <div className="box-state"><i /><span>Agent de la box<strong>En attente de connexion</strong></span><button onClick={() => notify("Diagnostic de connexion préparé")}>Diagnostiquer</button></div>
+      <div className={`box-state ${agent?.status === "online" ? "online" : ""}`}><i /><span>Agent de la box<strong>{agent?.status === "online" ? `Connecté · HA ${agent.haVersion || "détecté"} · ${agent.inventoryCount} entités` : enrollment ? `Code ${enrollment.code} · valable 30 min` : "En attente d’association"}</strong></span><button onClick={agent ? () => notify(`Dernier contact : ${agent.lastSeenAt ? new Date(agent.lastSeenAt).toLocaleString("fr-FR") : "inconnu"}`) : createEnrollment}>{agent ? "Voir l’état" : enrollment ? "Nouveau code" : "Associer la box"}</button></div>
     </section>
     {loading ? <div className="checklist-empty">Chargement de la checklist…</div> : !items.length ? <div className="checklist-empty">Aucun équipement n’a encore été préparé pour ce dossier.</div> :
       <section className="installation-list">{items.map(item => {

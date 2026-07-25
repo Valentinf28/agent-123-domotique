@@ -2,6 +2,38 @@ interface Env {
   HA_BASE_URL?: string;
   HA_ACCESS_TOKEN?: string;
   PORTAL_ORIGIN?: string;
+  PORTAL_BYPASS_TOKEN?: string;
+}
+
+async function agentApi(request: Request, env: Env, pathname: string) {
+  const portalOrigin = env.PORTAL_ORIGIN?.trim().replace(/\/+$/, "");
+  const bypassToken = env.PORTAL_BYPASS_TOKEN?.trim();
+  if (!portalOrigin || !bypassToken || request.method !== "POST") {
+    return new Response("Passerelle indisponible", { status: 503 });
+  }
+  const length = Number(request.headers.get("Content-Length") ?? "0");
+  if (length > 64_000) return new Response("Requête trop volumineuse", { status: 413 });
+  const headers = new Headers({
+    Authorization: `Bearer ${bypassToken}`,
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    "X-Forwarded-Proto": "https",
+  });
+  const agentAuthorization = request.headers.get("Authorization");
+  if (agentAuthorization) headers.set("X-Agent-Authorization", agentAuthorization);
+  const response = await fetch(`${portalOrigin}${pathname}`, {
+    method: "POST",
+    headers,
+    body: request.body,
+  });
+  return new Response(response.body, {
+    status: response.status,
+    headers: {
+      "Content-Type": response.headers.get("Content-Type") ?? "application/json",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
 
 const encoder = new TextEncoder();
@@ -161,6 +193,12 @@ const worker = {
       request.headers.get("Upgrade")?.toLowerCase() === "websocket"
     ) {
       return openGateway(request, env);
+    }
+    if (url.pathname === "/agent/enroll") {
+      return agentApi(request, env, "/api/agent/enroll");
+    }
+    if (url.pathname === "/agent/heartbeat") {
+      return agentApi(request, env, "/api/agent/heartbeat");
     }
     return new Response("Not found", { status: 404 });
   },

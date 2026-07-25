@@ -36,3 +36,34 @@ export const plannedDevices = sqliteTable("planned_devices", {
   uniqueIndex("planned_devices_public_id_idx").on(table.publicId),
   uniqueIndex("planned_devices_dossier_catalog_room_idx").on(table.dossierId, table.catalogId, table.room),
 ]);
+
+export const agentEnrollmentCodes = sqliteTable("agent_enrollment_codes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  publicId: text("public_id").notNull(),
+  dossierId: integer("dossier_id").notNull().references(() => installationDossiers.id, { onDelete: "cascade" }),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  usedAt: text("used_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("agent_enrollment_codes_public_id_idx").on(table.publicId),
+  uniqueIndex("agent_enrollment_codes_hash_idx").on(table.codeHash),
+]);
+
+export const agentBoxes = sqliteTable("agent_boxes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  publicId: text("public_id").notNull(),
+  dossierId: integer("dossier_id").notNull().references(() => installationDossiers.id, { onDelete: "cascade" }),
+  label: text("label").notNull().default("Box domotique"),
+  tokenHash: text("token_hash").notNull(),
+  haVersion: text("ha_version"),
+  inventoryCount: integer("inventory_count").notNull().default(0),
+  status: text("status").notNull().default("enrolled"),
+  lastSeenAt: text("last_seen_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("agent_boxes_public_id_idx").on(table.publicId),
+  uniqueIndex("agent_boxes_token_hash_idx").on(table.tokenHash),
+  uniqueIndex("agent_boxes_dossier_idx").on(table.dossierId),
+]);

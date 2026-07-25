@@ -38,4 +38,17 @@ test("sauvegarde la préparation dans une base rattachée au dossier", async () 
   assert.match(route, /portalApiAuthorized/);
   assert.match(schema, /installationDossiers/);
   assert.match(schema, /plannedDevices/);
+  assert.match(schema, /agentBoxes/);
+  assert.match(schema, /agentEnrollmentCodes/);
+});
+
+test("protège l’enrôlement et les remontées de la box", async () => {
+  const [enroll, heartbeat, gateway] = await Promise.all([
+    readFile(new URL("../app/api/agent/enroll/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/agent/heartbeat/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../gateway/worker.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(enroll, /Code expiré ou déjà utilisé/);
+  assert.match(heartbeat, /authenticatedAgent/);
+  assert.match(gateway, /X-Agent-Authorization/);
 });

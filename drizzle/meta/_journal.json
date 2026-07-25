@@ -8,6 +8,13 @@
       "when": 1785018532645,
       "tag": "0000_known_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1785019120593,
+      "tag": "0001_lean_beast",
+      "breakpoints": true
     }
   ]
 }
