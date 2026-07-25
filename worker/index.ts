@@ -95,6 +95,16 @@ function bridgeScript() {
         window[message.callback](true);
       }
     };
+    window.externalAppV2 = {
+      postMessage: (payload) => {
+        const message = typeof payload === "string" ? JSON.parse(payload) : payload;
+        if (message.type === "getExternalAuth") return requestToken(message.payload);
+        if (message.type === "revokeExternalAuth") {
+          const callback = window[message.payload?.callback];
+          if (typeof callback === "function") callback(true);
+        }
+      }
+    };
     const NativeWebSocket = window.WebSocket;
     if (typeof NativeWebSocket === "function") {
       window.WebSocket = class extends NativeWebSocket {
