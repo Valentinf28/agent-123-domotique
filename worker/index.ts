@@ -119,6 +119,15 @@ function bridgeScript() {
         }
       }
     };
+    window.webkit = window.webkit || {};
+    window.webkit.messageHandlers = window.webkit.messageHandlers || {};
+    window.webkit.messageHandlers.getExternalAuth = { postMessage: requestToken };
+    window.webkit.messageHandlers.revokeExternalAuth = {
+      postMessage: (payload) => {
+        const callback = window[payload?.callback];
+        if (typeof callback === "function") callback(true);
+      }
+    };
     const NativeWebSocket = window.WebSocket;
     if (typeof NativeWebSocket === "function") {
       window.WebSocket = class extends NativeWebSocket {
