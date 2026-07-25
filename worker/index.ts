@@ -100,7 +100,11 @@ function bridgeScript() {
       window.WebSocket = class extends NativeWebSocket {
         constructor(url, protocols) {
           const next = new URL(url, location.href);
-          if (next.pathname === "/api/websocket") next.pathname = prefix + next.pathname;
+          if (next.pathname === "/api/websocket") {
+            next.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+            next.host = location.host;
+            next.pathname = prefix + next.pathname;
+          }
           super(next.toString(), protocols);
         }
       };
