@@ -213,14 +213,12 @@ async function proxyWebSocket(request: Request, env: Env) {
   const pair = new WebSocketPair();
   const client = pair[0];
   const browser = pair[1];
-  browser.accept();
 
   const upstreamResponse = await fetch(`${config.baseUrl}/api/websocket`, {
     headers: { Upgrade: "websocket" },
   });
   const upstream = upstreamResponse.webSocket;
   if (!upstream) return new Response("Maison inaccessible", { status: 502 });
-  upstream.accept();
 
   browser.addEventListener("message", async (event) => {
     try {
@@ -246,6 +244,8 @@ async function proxyWebSocket(request: Request, env: Env) {
   upstream.addEventListener("message", (event) => browser.send(event.data));
   upstream.addEventListener("close", () => browser.close(1000, "Maison déconnectée"));
   browser.addEventListener("close", () => upstream.close(1000, "Client déconnecté"));
+  upstream.accept();
+  browser.accept();
   return new Response(null, { status: 101, webSocket: client });
 }
 
