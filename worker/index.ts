@@ -128,6 +128,16 @@ function bridgeScript() {
         if (typeof callback === "function") callback(true);
       }
     };
+    let authDeliveryStarted = false;
+    const deliverExternalAuth = () => {
+      if (authDeliveryStarted || typeof window.externalAuthSetToken !== "function") return;
+      authDeliveryStarted = true;
+      requestToken({ callback: "externalAuthSetToken", force: false })
+        .catch(() => {
+          authDeliveryStarted = false;
+          window.externalAuthSetToken(false);
+        });
+    };
     const NativeWebSocket = window.WebSocket;
     if (typeof NativeWebSocket === "function") {
       window.WebSocket = class extends NativeWebSocket {
@@ -213,6 +223,7 @@ function bridgeScript() {
     setInterval(() => {
       scan(document);
       installShell();
+      deliverExternalAuth();
     }, 400);
   })();`;
 }
