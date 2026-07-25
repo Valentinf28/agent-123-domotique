@@ -68,26 +68,25 @@ function bridgeScript() {
   (() => {
     const prefix = ${JSON.stringify(LOVELACE_PREFIX)};
     const originalFetch = window.fetch.bind(window);
+    const proxiedPaths = ["/api/", "/static/", "/local/", "/hacsfiles/", "/frontend_latest/"];
     window.fetch = (input, init) => {
-      if (typeof input === "string" && input.startsWith("/api/")) input = prefix + input;
-      else if (input instanceof Request && new URL(input.url).origin === location.origin && new URL(input.url).pathname.startsWith("/api/")) {
-        const url = new URL(input.url); url.pathname = prefix + url.pathname; input = new Request(url, input);
+      if (typeof input === "string" && proxiedPaths.some((path) => input.startsWith(path))) input = prefix + input;
+      else if (input instanceof Request && new URL(input.url).origin === location.origin) {
+        const url = new URL(input.url);
+        if (proxiedPaths.some((path) => url.pathname.startsWith(path))) {
+          url.pathname = prefix + url.pathname;
+          input = new Request(url, input);
+        }
       }
       return originalFetch(input, init);
-    };
-    const NativeWebSocket = window.WebSocket;
-    window.WebSocket = class extends NativeWebSocket {
-      constructor(url, protocols) {
-        const next = new URL(url, location.href);
-        if (next.pathname === "/api/websocket") next.pathname = prefix + next.pathname;
-        super(next.toString(), protocols);
-      }
     };
     const requestToken = async (payload) => {
       const message = typeof payload === "string" ? JSON.parse(payload) : payload;
       const response = await originalFetch("/api/lovelace/browser-token", { credentials: "same-origin", cache: "no-store" });
-      if (!response.ok) return window[message.callback](false);
-      window[message.callback](true, await response.json());
+      const callback = window[message.callback];
+      if (typeof callback !== "function") return;
+      if (!response.ok) return callback(false);
+      callback(true, await response.json());
     };
     window.externalApp = {
       getExternalAuth: requestToken,
@@ -96,6 +95,16 @@ function bridgeScript() {
         window[message.callback](true);
       }
     };
+    const NativeWebSocket = window.WebSocket;
+    if (typeof NativeWebSocket === "function") {
+      window.WebSocket = class extends NativeWebSocket {
+        constructor(url, protocols) {
+          const next = new URL(url, location.href);
+          if (next.pathname === "/api/websocket") next.pathname = prefix + next.pathname;
+          super(next.toString(), protocols);
+        }
+      };
+    }
     const kioskCss = [
       "app-header,ha-sidebar,ha-menu-button,#drawer,.menu,.header{display:none!important}",
       "app-drawer-layout{--app-drawer-width:0px!important}",
@@ -228,6 +237,14 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/websocket" && request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
+      return proxyWebSocket(request, env);
+    }
+
+    if (["/static/", "/local/", "/hacsfiles/", "/frontend_latest/"].some((path) => url.pathname.startsWith(path))) {
+      return proxyHttp(request, env, url.pathname);
+    }
 
     if (url.pathname.startsWith(`${LOVELACE_PREFIX}/`)) {
       const upstreamPath = url.pathname.slice(LOVELACE_PREFIX.length);
