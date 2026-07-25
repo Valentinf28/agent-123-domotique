@@ -18,6 +18,8 @@ interface Env {
 }
 
 const LOVELACE_PREFIX = "/ma-maison/ha";
+const LOVELACE_GATEWAY_URL =
+  "wss://ma-maison-ha-gateway.valentin-ma-maison.workers.dev/api/websocket";
 const blockedPaths = [
   "/config", "/developer-tools", "/profile", "/auth", "/api/config",
   "/api/error", "/api/repairs", "/api/onboarding",
@@ -189,9 +191,17 @@ function bridgeScript() {
         constructor(url, protocols) {
           const next = new URL(url, location.href);
           if (next.pathname === "/api/websocket") {
-            next.protocol = location.protocol === "https:" ? "wss:" : "ws:";
-            next.host = location.host;
-            next.pathname = prefix + next.pathname;
+            if (location.hostname === "localhost") {
+              next.protocol = "ws:";
+              next.host = location.host;
+              next.pathname = prefix + next.pathname;
+            } else {
+              const gateway = new URL(${JSON.stringify(LOVELACE_GATEWAY_URL)});
+              next.protocol = gateway.protocol;
+              next.host = gateway.host;
+              next.pathname = gateway.pathname;
+              next.search = "";
+            }
           }
           super(next.toString(), protocols);
         }
