@@ -5,8 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 
 type View = "Accueil" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
 type Device = {
-  id: number; name: string; room: string; category: string; state: string;
+  id: string; name: string; room: string; areaPublicId: string | null;
+  category: string; state: string;
   detail: string; battery?: number; online: boolean; visible: boolean; icon: string;
+};
+type Area = { publicId: string; name: string };
+type Automation = {
+  id: string; name: string; trigger: string; action: string;
+  active: boolean; icon: string; lastTriggered?: string | null;
 };
 type MobileOverview = {
   energy: Record<string, string>;
@@ -14,19 +20,19 @@ type MobileOverview = {
 };
 
 const demoDevices: Device[] = [
-  { id: 1, name: "Suspension du salon", room: "Salon", category: "Éclairage", state: "Allumée", detail: "48 %", online: true, visible: true, icon: "◉" },
-  { id: 2, name: "Thermostat principal", room: "Salon", category: "Climat", state: "Confort", detail: "21,5 °C", battery: 82, online: true, visible: true, icon: "♨" },
-  { id: 3, name: "Détecteur fenêtre", room: "Salon", category: "Sécurité", state: "Fermée", detail: "Aucune anomalie", battery: 14, online: true, visible: true, icon: "▣" },
-  { id: 4, name: "Lampe chevet gauche", room: "Chambre", category: "Éclairage", state: "Éteinte", detail: "Prête", online: true, visible: true, icon: "◉" },
-  { id: 5, name: "Prise lave-linge", room: "Buanderie", category: "Énergie", state: "En veille", detail: "0,3 W", online: true, visible: false, icon: "ϟ" },
-  { id: 6, name: "Capteur de jardin", room: "Extérieur", category: "Capteurs", state: "Indisponible", detail: "Vu il y a 2 h", battery: 36, online: false, visible: false, icon: "⌁" },
+  { id: "demo_1", name: "Suspension du salon", room: "Salon", areaPublicId: null, category: "Éclairage", state: "Allumée", detail: "48 %", online: true, visible: true, icon: "◉" },
+  { id: "demo_2", name: "Thermostat principal", room: "Salon", areaPublicId: null, category: "Climat", state: "Confort", detail: "21,5 °C", battery: 82, online: true, visible: true, icon: "♨" },
+  { id: "demo_3", name: "Détecteur fenêtre", room: "Salon", areaPublicId: null, category: "Sécurité", state: "Fermée", detail: "Aucune anomalie", battery: 14, online: true, visible: true, icon: "▣" },
+  { id: "demo_4", name: "Lampe chevet gauche", room: "Chambre", areaPublicId: null, category: "Éclairage", state: "Éteinte", detail: "Prête", online: true, visible: true, icon: "◉" },
+  { id: "demo_5", name: "Prise lave-linge", room: "Buanderie", areaPublicId: null, category: "Énergie", state: "En veille", detail: "0,3 W", online: true, visible: false, icon: "ϟ" },
+  { id: "demo_6", name: "Capteur de jardin", room: "Extérieur", areaPublicId: null, category: "Capteurs", state: "Indisponible", detail: "Vu il y a 2 h", battery: 36, online: false, visible: false, icon: "⌁" },
 ];
 
-const automations = [
-  { name: "Départ de la maison", trigger: "Quand le dernier occupant part", action: "Éteindre 8 appareils", active: true, icon: "↗" },
-  { name: "Soirée douce", trigger: "Quand il est 20 h 30", action: "Salon à 35 % · 20 °C", active: true, icon: "☾" },
-  { name: "Alerte fenêtre", trigger: "Quand une fenêtre reste ouverte", action: "Notifier après 10 minutes", active: true, icon: "!" },
-  { name: "Arrosage intelligent", trigger: "Quand l’humidité est basse", action: "Arroser pendant 12 minutes", active: false, icon: "⌁" },
+const demoAutomations: Automation[] = [
+  { id: "demo_a1", name: "Départ de la maison", trigger: "Quand le dernier occupant part", action: "Éteindre 8 appareils", active: true, icon: "↗" },
+  { id: "demo_a2", name: "Soirée douce", trigger: "Quand il est 20 h 30", action: "Salon à 35 % · 20 °C", active: true, icon: "☾" },
+  { id: "demo_a3", name: "Alerte fenêtre", trigger: "Quand une fenêtre reste ouverte", action: "Notifier après 10 minutes", active: true, icon: "!" },
+  { id: "demo_a4", name: "Arrosage intelligent", trigger: "Quand l’humidité est basse", action: "Arroser pendant 12 minutes", active: false, icon: "⌁" },
 ];
 
 const nav: { label: View; icon: string }[] = [
@@ -44,6 +50,10 @@ export default function Portal() {
   const [modal, setModal] = useState<string | null>(null);
   const [guideStep, setGuideStep] = useState(1);
   const [devices, setDevices] = useState<Device[]>(demoDevices);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [automationItems, setAutomationItems] = useState<Automation[]>(demoAutomations);
+  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [selectedAutomation, setSelectedAutomation] = useState<Automation | null>(null);
   const [liveStatus, setLiveStatus] = useState<"loading" | "connected" | "demo">("loading");
   const [mobileOverview, setMobileOverview] = useState<MobileOverview | null>(null);
 
@@ -63,20 +73,35 @@ export default function Portal() {
         };
         const mapped: Device[] = payload.home.devices.map((device: {
           publicId: string; name: string; room: string; category: string;
-          state: string; available: boolean; battery: number | null;
-        }, index: number) => ({
-          id: index + 1000,
+          areaPublicId: string | null; state: string; available: boolean;
+          battery: number | null; visible: boolean;
+        }) => ({
+          id: device.publicId,
           name: device.name,
           room: device.room,
+          areaPublicId: device.areaPublicId,
           category: device.category,
           state: friendlyState(device.state),
           detail: device.available ? "Synchronisé à l’instant" : "À vérifier",
           battery: device.battery ?? undefined,
           online: device.available,
-          visible: true,
+          visible: device.visible,
           icon: categoryIcons[device.category] ?? "◇",
         }));
         setDevices(mapped);
+        setAreas(payload.home.areas ?? []);
+        setAutomationItems((payload.home.automations ?? []).map((automation: {
+          publicId: string; name: string; trigger: string; action: string;
+          enabled: boolean; lastTriggered: string | null;
+        }) => ({
+          id: automation.publicId,
+          name: automation.name,
+          trigger: automation.trigger,
+          action: automation.action,
+          active: automation.enabled,
+          lastTriggered: automation.lastTriggered,
+          icon: "⌁",
+        })));
         setMobileOverview(payload.home.mobileOverview ?? null);
         setLiveStatus("connected");
       })
@@ -92,6 +117,58 @@ export default function Portal() {
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
+  }
+
+  async function updateDevice(
+    device: Device,
+    update: { name?: string; areaPublicId?: string | null; visible?: boolean },
+  ) {
+    const response = await fetch(`/api/devices/${encodeURIComponent(device.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(update),
+    });
+    if (!response.ok) throw new Error("update");
+    const area = update.areaPublicId === undefined
+      ? undefined
+      : areas.find((item) => item.publicId === update.areaPublicId);
+    setDevices((items) => items.map((item) => item.id === device.id
+      ? {
+          ...item,
+          ...(update.name === undefined ? {} : { name: update.name }),
+          ...(update.visible === undefined ? {} : { visible: update.visible }),
+          ...(update.areaPublicId === undefined
+            ? {}
+            : {
+                areaPublicId: update.areaPublicId,
+                room: area?.name ?? "Maison",
+              }),
+        }
+      : item));
+  }
+
+  async function setAutomationEnabled(automation: Automation, enabled: boolean) {
+    const response = await fetch(
+      `/api/automations/${encodeURIComponent(automation.id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ enabled }),
+      },
+    );
+    if (!response.ok) throw new Error("update");
+    setAutomationItems((items) => items.map((item) =>
+      item.id === automation.id ? { ...item, active: enabled } : item
+    ));
+  }
+
+  async function deleteAutomation(automation: Automation) {
+    const response = await fetch(
+      `/api/automations/${encodeURIComponent(automation.id)}`,
+      { method: "DELETE", headers: { Accept: "application/json" } },
+    );
+    if (!response.ok) throw new Error("delete");
+    setAutomationItems((items) => items.filter((item) => item.id !== automation.id));
   }
 
   return (
@@ -128,8 +205,8 @@ export default function Portal() {
         </header>
 
         {view === "Accueil" && <Dashboard setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} />}
-        {view === "Appareils" && <Devices filtered={filtered} search={search} setSearch={setSearch} room={room} setRoom={setRoom} notify={notify} setModal={setModal} />}
-        {view === "Automatisations" && <Automations setModal={setModal} notify={notify} />}
+        {view === "Appareils" && <Devices filtered={filtered} areas={areas} search={search} setSearch={setSearch} room={room} setRoom={setRoom} notify={notify} manage={(device) => { setSelectedDevice(device); setModal("appareil"); }} updateDevice={updateDevice} />}
+        {view === "Automatisations" && <Automations items={automationItems} setModal={setModal} notify={notify} selectAutomation={setSelectedAutomation} setEnabled={setAutomationEnabled} />}
         {view === "Ajouter" && <AddDevice step={guideStep} setStep={setGuideStep} notify={notify} />}
         {view === "Journal" && <Journal role={role} />}
       </main>
@@ -141,7 +218,7 @@ export default function Portal() {
       </nav>
 
       {toast && <div className="toast">✓ {toast}</div>}
-      {modal && <Modal type={modal} close={() => setModal(null)} notify={notify} />}
+      {modal && <Modal key={`${modal}:${selectedDevice?.id ?? selectedAutomation?.id ?? "none"}`} type={modal} close={() => setModal(null)} notify={notify} device={selectedDevice} areas={areas} saveDevice={updateDevice} automation={selectedAutomation} deleteAutomation={deleteAutomation} />}
     </div>
   );
 }
@@ -226,39 +303,56 @@ function FlowNode({ className, icon, label, value, sub, color }: {
   return <div className={`flow-node ${className} ${color}`}><small>{label}</small><span>{icon}</span><strong>{value}</strong>{sub && <em>{sub}</em>}</div>;
 }
 
-function Devices({ filtered, search, setSearch, room, setRoom, notify, setModal }: {
-  filtered: Device[]; search: string; setSearch: (value: string) => void;
+function Devices({ filtered, areas, search, setSearch, room, setRoom, notify, manage, updateDevice }: {
+  filtered: Device[]; areas: Area[]; search: string; setSearch: (value: string) => void;
   room: string; setRoom: (value: string) => void;
-  notify: (value: string) => void; setModal: (value: string) => void;
+  notify: (value: string) => void; manage: (device: Device) => void;
+  updateDevice: (
+    device: Device,
+    update: { name?: string; areaPublicId?: string | null; visible?: boolean },
+  ) => Promise<void>;
 }) {
   return <div className="content">
-    <div className="section-intro"><div><span className="eyebrow">24 appareils · 7 pièces</span><h2>Les objets de votre maison</h2><p>Renommez-les, organisez-les et choisissez ce qui apparaît dans l’application.</p></div></div>
+    <div className="section-intro"><div><span className="eyebrow">{filtered.length} appareil{filtered.length > 1 ? "s" : ""}</span><h2>Les objets de votre maison</h2><p>Renommez-les, organisez-les et choisissez ce qui apparaît dans l’application.</p></div></div>
     <div className="filters"><label><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un appareil…" /></label>
-      <div className="chips">{["Toutes","Salon","Cuisine","Chambre","Extérieur"].map(x=><button key={x} className={room===x?"selected":""} onClick={()=>setRoom(x)}>{x}</button>)}</div>
+      <div className="chips">{["Toutes", ...areas.map((area) => area.name)].map(x=><button key={x} className={room===x?"selected":""} onClick={()=>setRoom(x)}>{x}</button>)}</div>
       <button className="filter-button">Filtres <span>⌄</span></button>
     </div>
     <div className="device-grid">{filtered.map((d: Device)=><article className={`device-card ${!d.online?"offline":""}`} key={d.id}>
-      <div className="device-head"><span className="device-icon">{d.icon}</span><span className={`status ${d.online?"online":"offline-dot"}`}>{d.online?"Disponible":"Hors ligne"}</span><button aria-label={`Options pour ${d.name}`} onClick={()=>setModal("appareil")}>•••</button></div>
+      <div className="device-head"><span className="device-icon">{d.icon}</span><span className={`status ${d.online?"online":"offline-dot"}`}>{d.online?"Disponible":"Hors ligne"}</span><button aria-label={`Options pour ${d.name}`} onClick={()=>manage(d)}>•••</button></div>
       <small>{d.room} · {d.category}</small><h3>{d.name}</h3><strong>{d.state}</strong><p>{d.detail}</p>
       {d.battery !== undefined && <div className={`battery ${d.battery<20?"low":""}`}><span><i style={{width:`${d.battery}%`}} /></span>{d.battery} %</div>}
-      <div className="device-foot"><label><input type="checkbox" defaultChecked={d.visible} onChange={()=>notify("Visibilité dans l’application mise à jour")} /><span /> Dans l’application</label><button onClick={()=>setModal("appareil")}>Gérer</button></div>
+      <div className="device-foot"><label><input type="checkbox" checked={d.visible} onChange={event=>{
+        const visible = event.target.checked;
+        updateDevice(d, { visible })
+          .then(() => notify(visible ? "Appareil affiché dans l’application" : "Appareil masqué dans l’application"))
+          .catch(() => notify("La visibilité n’a pas pu être modifiée"));
+      }} /><span /> Dans l’application</label><button onClick={()=>manage(d)}>Gérer</button></div>
     </article>)}</div>
     {!filtered.length && <div className="empty"><strong>Aucun appareil trouvé</strong><p>Essayez une autre pièce ou un autre terme.</p></div>}
   </div>;
 }
 
-function Automations({ setModal, notify }: {
-  setModal: (value: string) => void; notify: (value: string) => void;
+function Automations({ items, setModal, notify, selectAutomation, setEnabled }: {
+  items: Automation[]; setModal: (value: string) => void;
+  notify: (value: string) => void;
+  selectAutomation: (automation: Automation | null) => void;
+  setEnabled: (automation: Automation, enabled: boolean) => Promise<void>;
 }) {
   return <div className="content">
-    <div className="section-intro split"><div><span className="eyebrow">Simple et puissant</span><h2>Les habitudes qui travaillent pour vous</h2><p>Créez des règles faciles à comprendre, sans réglage technique.</p></div><button className="primary" onClick={()=>setModal("automation")}>＋ Créer une automatisation</button></div>
-    <div className="automation-layout"><section><h3>Vos automatisations <span>4</span></h3><div className="automation-list">{automations.map((a,i)=><article key={a.name}>
+    <div className="section-intro split"><div><span className="eyebrow">Simple et puissant</span><h2>Les habitudes qui travaillent pour vous</h2><p>Créez des règles faciles à comprendre, sans réglage technique.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
+    <div className="automation-layout"><section><h3>Vos automatisations <span>{items.length}</span></h3><div className="automation-list">{items.map((a)=><article key={a.id}>
       <span className="automation-icon">{a.icon}</span><div><h4>{a.name}</h4><p><b>QUAND</b> {a.trigger}</p><p><b>ALORS</b> {a.action}</p></div>
-      <label className="switch"><input type="checkbox" defaultChecked={a.active} onChange={()=>notify(`${a.name} mise à jour`)} /><span /></label>
-      <button onClick={()=>setModal(i===3?"delete":"automation")}>•••</button>
+      <label className="switch"><input type="checkbox" checked={a.active} onChange={(event)=>{
+        const enabled = event.target.checked;
+        setEnabled(a, enabled)
+          .then(() => notify(`${a.name} ${enabled ? "activée" : "désactivée"}`))
+          .catch(() => notify("L’automatisation n’a pas pu être modifiée"));
+      }} /><span /></label>
+      <button aria-label={`Options pour ${a.name}`} onClick={()=>{selectAutomation(a);setModal("delete")}}>•••</button>
     </article>)}</div></section>
     <aside className="templates"><small>POUR COMMENCER</small><h3>Modèles populaires</h3>
-      {[["☾","Bonne nuit","Éteint les lumières et baisse le chauffage"],["↗","Je quitte la maison","Sécurise et économise en un geste"],["☼","Réveil en douceur","Ouvre les volets progressivement"]].map(x=><button key={x[1]} onClick={()=>setModal("automation")}><span>{x[0]}</span><div><b>{x[1]}</b><small>{x[2]}</small></div><em>＋</em></button>)}
+      {[["☾","Bonne nuit","Éteint les lumières et baisse le chauffage"],["↗","Je quitte la maison","Sécurise et économise en un geste"],["☼","Réveil en douceur","Ouvre les volets progressivement"]].map(x=><button key={x[1]} onClick={()=>{selectAutomation(null);setModal("automation")}}><span>{x[0]}</span><div><b>{x[1]}</b><small>{x[2]}</small></div><em>＋</em></button>)}
       <button className="all-templates">Découvrir tous les modèles →</button>
     </aside></div>
   </div>;
@@ -291,9 +385,63 @@ function Journal({ role }: { role: string }) {
   </div>;
 }
 
-function Modal({ type, close, notify }: { type: string; close: () => void; notify: (v: string) => void }) {
-  if(type==="alertes") return <div className="modal-backdrop" onMouseDown={close}><div className="modal" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><span className="modal-symbol">!</span><small>UNE ACTION RECOMMANDÉE</small><h3>Batterie bientôt épuisée</h3><p>Le détecteur de fenêtre du salon est à 14 %. Son fonctionnement peut devenir irrégulier.</p><div className="alert-detail"><b>Détecteur fenêtre</b><span>Salon · Batterie CR2032</span></div><button className="primary full" onClick={()=>{notify("Rappel programmé pour demain");close()}}>Me le rappeler demain</button></div></div>;
-  if(type==="delete") return <div className="modal-backdrop"><div className="modal"><button className="modal-close" onClick={close}>×</button><span className="modal-symbol danger">×</span><small>CONFIRMATION REQUISE</small><h3>Supprimer cette automatisation ?</h3><p>« Arrosage intelligent » ne s’exécutera plus. Cette action ne pourra pas être annulée.</p><div className="modal-actions"><button onClick={close}>Annuler</button><button className="danger-button" onClick={()=>{notify("Automatisation supprimée");close()}}>Supprimer</button></div></div></div>;
-  if(type==="appareil") return <div className="modal-backdrop"><div className="modal wide"><button className="modal-close" onClick={close}>×</button><small>GÉRER L’APPAREIL</small><h3>Suspension du salon</h3><label className="field">Nom convivial<input defaultValue="Suspension du salon" /></label><label className="field">Pièce<select defaultValue="Salon"><option>Salon</option><option>Cuisine</option><option>Chambre</option><option>Entrée</option></select></label><label className="check-row"><input type="checkbox" defaultChecked /> Visible dans l’application Ma Maison</label><button className="primary full" onClick={()=>{notify("Modifications enregistrées");close()}}>Enregistrer les modifications</button></div></div>;
-  return <div className="modal-backdrop"><div className="modal automation-modal"><button className="modal-close" onClick={close}>×</button><small>RÈGLE SIMPLE</small><h3>Créer une automatisation</h3>{["QUAND","SI","ALORS"].map((x,i)=><div className="rule-row" key={x}><b>{x}</b><button>{i===0?"Un horaire est atteint":i===1?"La maison est occupée (facultatif)":"Éteindre les lumières"}<span>⌄</span></button></div>)}<button className="primary full" onClick={()=>{notify("Automatisation enregistrée");close()}}>Enregistrer et activer</button></div></div>;
+function Modal({
+  type, close, notify, device, areas, saveDevice, automation, deleteAutomation,
+}: {
+  type: string;
+  close: () => void;
+  notify: (value: string) => void;
+  device: Device | null;
+  areas: Area[];
+  saveDevice: (
+    device: Device,
+    update: { name?: string; areaPublicId?: string | null; visible?: boolean },
+  ) => Promise<void>;
+  automation: Automation | null;
+  deleteAutomation: (automation: Automation) => Promise<void>;
+}) {
+  const [deviceName, setDeviceName] = useState(device?.name ?? "");
+  const [deviceArea, setDeviceArea] = useState(device?.areaPublicId ?? "");
+  const [deviceVisible, setDeviceVisible] = useState(device?.visible ?? true);
+  const [busy, setBusy] = useState(false);
+
+  async function submitDevice() {
+    if (!device || deviceName.trim().length < 2) {
+      notify("Saisissez un nom d’au moins 2 caractères");
+      return;
+    }
+    setBusy(true);
+    try {
+      await saveDevice(device, {
+        name: deviceName.trim(),
+        areaPublicId: deviceArea || null,
+        visible: deviceVisible,
+      });
+      notify("Modifications enregistrées dans votre maison");
+      close();
+    } catch {
+      notify("Les modifications n’ont pas pu être enregistrées");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDeletion() {
+    if (!automation) return;
+    setBusy(true);
+    try {
+      await deleteAutomation(automation);
+      notify("Automatisation supprimée");
+      close();
+    } catch {
+      notify("L’automatisation n’a pas pu être supprimée");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (type === "alertes") return <div className="modal-backdrop" onMouseDown={close}><div className="modal" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><span className="modal-symbol">!</span><small>UNE ACTION RECOMMANDÉE</small><h3>Batterie bientôt épuisée</h3><p>Le détecteur de fenêtre du salon est à 14 %. Son fonctionnement peut devenir irrégulier.</p><div className="alert-detail"><b>Détecteur fenêtre</b><span>Salon · Batterie CR2032</span></div><button className="primary full" onClick={()=>{notify("Rappel programmé pour demain");close()}}>Me le rappeler demain</button></div></div>;
+  if (type === "delete") return <div className="modal-backdrop" onMouseDown={close}><div className="modal" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><span className="modal-symbol danger">×</span><small>CONFIRMATION REQUISE</small><h3>Supprimer cette automatisation ?</h3><p>« {automation?.name ?? "Cette automatisation"} » ne s’exécutera plus. Cette action ne pourra pas être annulée.</p><div className="modal-actions"><button disabled={busy} onClick={close}>Annuler</button><button disabled={busy || !automation} className="danger-button" onClick={confirmDeletion}>{busy ? "Suppression…" : "Supprimer"}</button></div></div></div>;
+  if (type === "appareil") return <div className="modal-backdrop" onMouseDown={close}><div className="modal wide" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><small>GÉRER L’APPAREIL</small><h3>{device?.name ?? "Appareil"}</h3><label className="field">Nom convivial<input value={deviceName} maxLength={80} onChange={event=>setDeviceName(event.target.value)} /></label><label className="field">Pièce<select value={deviceArea} onChange={event=>setDeviceArea(event.target.value)}><option value="">Maison · sans pièce</option>{areas.map((area)=><option key={area.publicId} value={area.publicId}>{area.name}</option>)}</select></label><label className="check-row"><input type="checkbox" checked={deviceVisible} onChange={event=>setDeviceVisible(event.target.checked)} /> Visible dans l’application Ma Maison</label><button disabled={busy || !device} className="primary full" onClick={submitDevice}>{busy ? "Enregistrement…" : "Enregistrer les modifications"}</button></div></div>;
+  return <div className="modal-backdrop" onMouseDown={close}><div className="modal automation-modal" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><small>RÈGLE SIMPLE</small><h3>Créer une automatisation</h3>{["QUAND","SI","ALORS"].map((x,i)=><div className="rule-row" key={x}><b>{x}</b><button>{i===0?"Un horaire est atteint":i===1?"La maison est occupée (facultatif)":"Éteindre les lumières"}<span>⌄</span></button></div>)}<button className="primary full" onClick={()=>notify("Choisissez d’abord les éléments de la règle")}>Continuer</button></div></div>;
 }
