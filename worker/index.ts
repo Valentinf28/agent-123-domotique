@@ -141,7 +141,12 @@ function bridgeScript() {
       ".sidebar-shell{display:none!important}.app-content{margin-left:0!important;width:100%!important}",
       "ha-panel-lovelace{padding-top:0!important}",
       "hui-root{--header-height:0px!important}",
-      "ha-init-page img{display:none!important}"
+      "ha-init-page img{display:none!important}",
+      "body{padding-top:72px!important;box-sizing:border-box!important}",
+      "#ma-maison-web-header{position:fixed;inset:0 0 auto 0;height:72px;z-index:2147483647;display:flex;align-items:center;justify-content:space-between;padding:0 22px;background:#11120f;border-bottom:1px solid #2a2b25;color:#fff;font-family:Arial,sans-serif;box-sizing:border-box}",
+      "#ma-maison-web-header a,#ma-maison-web-header button{width:42px;height:42px;border:1px solid #34352e;border-radius:14px;background:#20211c;color:#f7c948;display:grid;place-items:center;text-decoration:none;font-size:26px;cursor:pointer}",
+      "#ma-maison-web-header div{text-align:center;line-height:1.1}#ma-maison-web-header span{display:block;color:#f7c948;font-size:11px;font-weight:800;letter-spacing:.18em;margin-bottom:5px}#ma-maison-web-header strong{font-size:17px}",
+      "@media(max-width:640px){body{padding-top:64px!important}#ma-maison-web-header{height:64px;padding:0 12px}#ma-maison-web-header a,#ma-maison-web-header button{width:38px;height:38px;border-radius:12px}}"
     ].join("");
     const lockRoot = (root) => {
       if (!root || root.querySelector("style[data-ma-maison]")) return;
@@ -171,6 +176,27 @@ function bridgeScript() {
       });
     };
     scan(document);
+    if (!document.getElementById("ma-maison-web-header")) {
+      const header = document.createElement("header");
+      header.id = "ma-maison-web-header";
+      const back = document.createElement("a");
+      back.href = "/";
+      back.setAttribute("aria-label", "Retour au portail");
+      back.textContent = "‹";
+      const title = document.createElement("div");
+      const brand = document.createElement("span");
+      brand.textContent = "MA MAISON";
+      const label = document.createElement("strong");
+      label.textContent = "Tableau de bord";
+      title.append(brand, label);
+      const refresh = document.createElement("button");
+      refresh.type = "button";
+      refresh.setAttribute("aria-label", "Actualiser le tableau de bord");
+      refresh.textContent = "↻";
+      refresh.addEventListener("click", () => location.reload());
+      header.append(back, title, refresh);
+      document.body.prepend(header);
+    }
     console.info("[MaMaison] bridge-ready");
     document.documentElement.dataset.maMaisonStage = "bridge-ready";
     setInterval(() => scan(document), 400);

@@ -8,7 +8,6 @@ type GatewaySession = { ready: boolean; dashboardPath?: string; message?: string
 export default function LovelaceShell() {
   const [session, setSession] = useState<GatewaySession | null>(null);
   const [loading, setLoading] = useState(true);
-  const [frameKey, setFrameKey] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -26,8 +25,14 @@ export default function LovelaceShell() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    if (session?.ready && session.dashboardPath) {
+      window.location.replace(session.dashboardPath);
+    }
+  }, [session]);
+
   function refresh() {
-    if (session?.ready) setFrameKey((current) => current + 1);
+    if (session?.ready && session.dashboardPath) window.location.replace(session.dashboardPath);
     else {
       setLoading(true);
       fetch("/api/lovelace/session", { credentials: "same-origin", cache: "no-store" })
@@ -46,14 +51,9 @@ export default function LovelaceShell() {
     </header>
     <section className="lovelace-stage" aria-live="polite">
       {loading && <div className="lovelace-loading"><i /><h2>Chargement de votre maison…</h2><p>Connexion sécurisée au tableau de bord.</p></div>}
-      {!loading && session?.ready && session.dashboardPath && <iframe
-        key={frameKey}
-        src={session.dashboardPath}
-        title="Tableau de bord Ma Maison"
-        referrerPolicy="same-origin"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups-to-escape-sandbox"
-        allow="fullscreen"
-      />}
+      {!loading && session?.ready && session.dashboardPath && <div className="lovelace-loading">
+        <i /><h2>Ouverture de votre maison…</h2><p>Connexion au tableau de bord sécurisé.</p>
+      </div>}
       {!loading && !session?.ready && <div className="lovelace-error">
         <span>⌁</span><h2>Tableau de bord en préparation</h2>
         <p>{session?.message ?? "La passerelle sécurisée n’est pas encore disponible."}</p>
