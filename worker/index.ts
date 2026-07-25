@@ -78,65 +78,101 @@ function bridgeScript() {
   return `(() => {
     const prefix = ${JSON.stringify(LOVELACE_PREFIX)};
     const originalFetch = window.fetch.bind(window);
+    const originalStorageGet = Storage.prototype.getItem;
+    const originalStorageSet = Storage.prototype.setItem;
+    const originalStorageRemove = Storage.prototype.removeItem;
+    let volatileHassTokens = null;
+    const isHassTokens = (storage, key) => storage === window.localStorage && key === "hassTokens";
+    Storage.prototype.getItem = function(key) {
+      if (isHassTokens(this, key)) return volatileHassTokens;
+      return originalStorageGet.call(this, key);
+    };
+    Storage.prototype.setItem = function(key, value) {
+      if (isHassTokens(this, key)) {
+        volatileHassTokens = String(value);
+        return;
+      }
+      return originalStorageSet.call(this, key, value);
+    };
+    Storage.prototype.removeItem = function(key) {
+      if (isHassTokens(this, key)) {
+        volatileHassTokens = null;
+        return;
+      }
+      return originalStorageRemove.call(this, key);
+    };
+    try {
+      Object.defineProperty(window.localStorage, "hassTokens", {
+        configurable: true,
+        get: () => volatileHassTokens,
+        set: (value) => { volatileHassTokens = String(value); },
+      });
+    } catch {}
+
+    const requestPortalToken = async () => {
+      const response = await originalFetch("/api/lovelace/browser-token", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("Session indisponible");
+      return response.json();
+    };
+
+    const installVolatileTokens = (payload) => {
+      const expiresIn = Number(payload.expires_in) || 300;
+      const tokens = {
+        access_token: payload.access_token,
+        refresh_token: payload.access_token,
+        token_type: "Bearer",
+        expires_in: expiresIn,
+        expires: Date.now() + expiresIn * 1000,
+        hassUrl: location.origin,
+        clientId: location.origin,
+      };
+      volatileHassTokens = JSON.stringify(tokens);
+      window.__tokenCache = { tokens };
+      return tokens;
+    };
+
+    window.__MA_MAISON_BOOT__ = requestPortalToken().then(installVolatileTokens);
+
     const proxiedPaths = ["/api/", "/static/", "/local/", "/hacsfiles/", "/frontend_latest/"];
-    window.fetch = (input, init) => {
-      if (typeof input === "string" && proxiedPaths.some((path) => input.startsWith(path))) input = prefix + input;
-      else if (input instanceof Request && new URL(input.url).origin === location.origin) {
-        const url = new URL(input.url);
-        if (proxiedPaths.some((path) => url.pathname.startsWith(path))) {
-          url.pathname = prefix + url.pathname;
-          input = new Request(url, input);
+    window.fetch = async (input, init) => {
+      const inputUrl = new URL(
+        typeof input === "string" || input instanceof URL ? input.toString() : input.url,
+        location.href,
+      );
+      if (inputUrl.origin === location.origin && inputUrl.pathname === "/auth/token") {
+        try {
+          const payload = await requestPortalToken();
+          installVolatileTokens(payload);
+          return new Response(JSON.stringify({
+            access_token: payload.access_token,
+            refresh_token: payload.access_token,
+            token_type: "Bearer",
+            expires_in: Number(payload.expires_in) || 300,
+          }), {
+            status: 200,
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          });
+        } catch {
+          return new Response(JSON.stringify({ error: "invalid_grant" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          });
         }
+      }
+      if (
+        inputUrl.origin === location.origin &&
+        proxiedPaths.some((path) => inputUrl.pathname.startsWith(path)) &&
+        !inputUrl.pathname.startsWith(prefix + "/")
+      ) {
+        inputUrl.pathname = prefix + inputUrl.pathname;
+        input = input instanceof Request
+          ? new Request(inputUrl, input)
+          : inputUrl.toString();
       }
       return originalFetch(input, init);
-    };
-    const requestToken = async (payload) => {
-      console.info("[MaMaison] auth-request");
-      document.documentElement.dataset.maMaisonStage = "auth-request";
-      const message = typeof payload === "string" ? JSON.parse(payload) : payload;
-      const response = await originalFetch("/api/lovelace/browser-token", { credentials: "same-origin", cache: "no-store" });
-      const callback = window[message.callback];
-      if (typeof callback !== "function") return;
-      if (!response.ok) return callback(false);
-      console.info("[MaMaison] auth-ready");
-      document.documentElement.dataset.maMaisonStage = "auth-ready";
-      callback(true, await response.json());
-    };
-    window.externalApp = {
-      getExternalAuth: requestToken,
-      revokeExternalAuth: (payload) => {
-        const message = typeof payload === "string" ? JSON.parse(payload) : payload;
-        window[message.callback](true);
-      }
-    };
-    window.externalAppV2 = {
-      postMessage: (payload) => {
-        const message = typeof payload === "string" ? JSON.parse(payload) : payload;
-        if (message.type === "getExternalAuth") return requestToken(message.payload);
-        if (message.type === "revokeExternalAuth") {
-          const callback = window[message.payload?.callback];
-          if (typeof callback === "function") callback(true);
-        }
-      }
-    };
-    window.webkit = window.webkit || {};
-    window.webkit.messageHandlers = window.webkit.messageHandlers || {};
-    window.webkit.messageHandlers.getExternalAuth = { postMessage: requestToken };
-    window.webkit.messageHandlers.revokeExternalAuth = {
-      postMessage: (payload) => {
-        const callback = window[payload?.callback];
-        if (typeof callback === "function") callback(true);
-      }
-    };
-    let authDeliveryStarted = false;
-    const deliverExternalAuth = () => {
-      if (authDeliveryStarted || typeof window.externalAuthSetToken !== "function") return;
-      authDeliveryStarted = true;
-      requestToken({ callback: "externalAuthSetToken", force: false })
-        .catch(() => {
-          authDeliveryStarted = false;
-          window.externalAuthSetToken(false);
-        });
     };
     const NativeWebSocket = window.WebSocket;
     if (typeof NativeWebSocket === "function") {
@@ -148,8 +184,6 @@ function bridgeScript() {
             next.host = location.host;
             next.pathname = prefix + next.pathname;
           }
-          console.info("[MaMaison] websocket", next.pathname);
-          document.documentElement.dataset.maMaisonStage = "websocket";
           super(next.toString(), protocols);
         }
       };
@@ -160,11 +194,22 @@ function bridgeScript() {
       ".sidebar-shell{display:none!important}.app-content{margin-left:0!important;width:100%!important}",
       "ha-panel-lovelace{padding-top:0!important}",
       "hui-root{--header-height:0px!important}",
-      "ha-init-page img{display:none!important}",
+      "ha-init-page img,#ha-launch-screen svg,.ohf-logo{display:none!important}",
       "body{padding-top:72px!important;box-sizing:border-box!important}",
+      "html.ma-maison-framed body{padding-top:0!important}",
       "#ma-maison-web-header{position:fixed;inset:0 0 auto 0;height:72px;z-index:2147483647;display:flex;align-items:center;justify-content:space-between;padding:0 22px;background:#11120f;border-bottom:1px solid #2a2b25;color:#fff;font-family:Arial,sans-serif;box-sizing:border-box}",
       "#ma-maison-web-header a,#ma-maison-web-header button{width:42px;height:42px;border:1px solid #34352e;border-radius:14px;background:#20211c;color:#f7c948;display:grid;place-items:center;text-decoration:none;font-size:26px;cursor:pointer}",
       "#ma-maison-web-header div{text-align:center;line-height:1.1}#ma-maison-web-header span{display:block;color:#f7c948;font-size:11px;font-weight:800;letter-spacing:.18em;margin-bottom:5px}#ma-maison-web-header strong{font-size:17px}",
+      "#ma-maison-connection{position:fixed;inset:72px 0 0;z-index:2147483646;display:grid;place-items:center;padding:24px;background:#11120f;color:#fff;font-family:Arial,sans-serif;text-align:center}",
+      "html.ma-maison-framed #ma-maison-connection{inset:0}",
+      "#ma-maison-connection>div{max-width:440px;padding:34px 28px;border:1px solid #34352e;border-radius:28px;background:#1b1c18;box-shadow:0 24px 80px #0008}",
+      "#ma-maison-connection i{display:block;width:34px;height:34px;margin:0 auto 22px;border:3px solid #3a3b34;border-top-color:#f7c948;border-radius:50%;animation:ma-maison-spin .8s linear infinite}",
+      "#ma-maison-connection h2{margin:0 0 10px;font-size:22px}#ma-maison-connection p{margin:0;color:#a9aa9f;line-height:1.55}",
+      "#ma-maison-connection .ma-maison-actions{display:none;gap:10px;justify-content:center;margin-top:24px}",
+      "#ma-maison-connection.is-error i{display:none}#ma-maison-connection.is-error .ma-maison-actions{display:flex}",
+      "#ma-maison-connection a,#ma-maison-connection button{min-height:42px;padding:0 16px;border:1px solid #3b3c34;border-radius:13px;background:#24251f;color:#fff;text-decoration:none;font-weight:700;cursor:pointer}",
+      "#ma-maison-connection button{border-color:#f7c948;background:#f7c948;color:#171811}",
+      "@keyframes ma-maison-spin{to{transform:rotate(360deg)}}",
       "@media(max-width:640px){body{padding-top:64px!important}#ma-maison-web-header{height:64px;padding:0 12px}#ma-maison-web-header a,#ma-maison-web-header button{width:38px;height:38px;border-radius:12px}}"
     ].join("");
     const lockRoot = (root) => {
@@ -195,7 +240,7 @@ function bridgeScript() {
       });
     };
     const installShell = () => {
-      if (!document.body || document.getElementById("ma-maison-web-header")) return;
+      if (window.top !== window || !document.body || document.getElementById("ma-maison-web-header")) return;
       const header = document.createElement("header");
       header.id = "ma-maison-web-header";
       const back = document.createElement("a");
@@ -216,14 +261,35 @@ function bridgeScript() {
       header.append(back, title, refresh);
       document.body.prepend(header);
     };
-    console.info("[MaMaison] bridge-ready");
-    document.documentElement.dataset.maMaisonStage = "bridge-ready";
+    const installConnectionState = () => {
+      if (!document.body || document.getElementById("ma-maison-connection")) return;
+      const overlay = document.createElement("section");
+      overlay.id = "ma-maison-connection";
+      overlay.innerHTML = '<div><i></i><h2>Chargement de votre maison…</h2><p>Connexion sécurisée au tableau de bord.</p><div class="ma-maison-actions"><button type="button">Réessayer</button><a href="/">Retour au portail</a></div></div>';
+      overlay.querySelector("button").addEventListener("click", () => location.reload());
+      document.body.appendChild(overlay);
+      setTimeout(() => {
+        if (!document.getElementById("ma-maison-connection")) return;
+        overlay.classList.add("is-error");
+        overlay.querySelector("h2").textContent = "Maison momentanément inaccessible";
+        overlay.querySelector("p").textContent = "La connexion n’a pas pu être terminée. Vous pouvez réessayer dans quelques instants.";
+      }, 12000);
+    };
+    const dismissConnectionState = () => {
+      const home = document.querySelector("home-assistant");
+      if (home && home.hass) document.getElementById("ma-maison-connection")?.remove();
+    };
+    if (window.top !== window) document.documentElement.classList.add("ma-maison-framed");
+    document.title = "Ma Maison";
     scan(document);
     installShell();
+    installConnectionState();
     setInterval(() => {
       scan(document);
       installShell();
-      deliverExternalAuth();
+      installConnectionState();
+      dismissConnectionState();
+      if (document.title !== "Ma Maison") document.title = "Ma Maison";
     }, 400);
   })();`;
 }
@@ -233,8 +299,6 @@ async function proxyHttp(request: Request, env: Env, upstreamPath: string) {
   if (!config || !permittedPath(upstreamPath)) return new Response("Not found", { status: 404 });
   const incoming = new URL(request.url);
   const target = new URL(`${upstreamPath}${incoming.search}`, config.baseUrl);
-  if (target.pathname === "/lovelace/0") target.searchParams.set("external_auth", "1");
-
   // Only forward headers Home Assistant needs. Sites adds dispatcher and
   // Cloudflare headers that are invalid or unsafe on a subrequest.
   const headers = upstreamHeaders(request, config.token);
@@ -254,6 +318,9 @@ async function proxyHttp(request: Request, env: Env, upstreamPath: string) {
     let html = await response.text();
     html = html
       .replace(/(<head[^>]*>)/i, `$1<script src="/ma-maison/bridge.js"></script><base href="${LOVELACE_PREFIX}/">`)
+      .replace(/<title>.*?<\/title>/i, "<title>Ma Maison</title>")
+      .replaceAll('content="Home Assistant"', 'content="Ma Maison"')
+      .replace(/isModern&&\((import\([\s\S]*?window\.latestJS=!0)\)/, "window.__MA_MAISON_BOOT__.then(()=>{$1}).catch(()=>{})")
       .replaceAll('"/frontend_latest/', `"${LOVELACE_PREFIX}/frontend_latest/`)
       .replaceAll('"/static/', `"${LOVELACE_PREFIX}/static/`)
       .replaceAll('"/local/', `"${LOVELACE_PREFIX}/local/`)
@@ -267,7 +334,6 @@ async function proxyHttp(request: Request, env: Env, upstreamPath: string) {
 async function proxyWebSocket(request: Request, env: Env) {
   const config = upstreamConfig(env);
   if (!config) return new Response("Not found", { status: 404 });
-  console.log("[MaMaison] ws-proxy-open");
   const pair = new WebSocketPair();
   const client = pair[0];
   const browser = pair[1];
@@ -281,7 +347,6 @@ async function proxyWebSocket(request: Request, env: Env) {
   browser.addEventListener("message", async (event) => {
     try {
       const message = JSON.parse(String(event.data)) as { type?: string; access_token?: string };
-      console.log("[MaMaison] ws-browser-message", message.type ?? "unknown");
       if (message.type === "auth") {
         if (!message.access_token || !await verifyLovelaceSession(config.token, message.access_token)) {
           browser.close(1008, "Session refusée");
@@ -301,12 +366,6 @@ async function proxyWebSocket(request: Request, env: Env) {
     }
   });
   upstream.addEventListener("message", (event) => {
-    try {
-      const message = JSON.parse(String(event.data)) as { type?: string };
-      console.log("[MaMaison] ws-upstream-message", message.type ?? "unknown");
-    } catch {
-      console.log("[MaMaison] ws-upstream-message", "binary");
-    }
     browser.send(event.data);
   });
   upstream.addEventListener("close", () => browser.close(1000, "Maison déconnectée"));

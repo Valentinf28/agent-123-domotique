@@ -21,7 +21,7 @@ export async function GET() {
   }
 
   return Response.json(
-    { ready: true, dashboardPath: "/ma-maison/ha/lovelace/0?kiosk&external_auth=1" },
+    { ready: true, dashboardPath: "/ma-maison/ha/lovelace/0?kiosk" },
     { headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } },
   );
 }
