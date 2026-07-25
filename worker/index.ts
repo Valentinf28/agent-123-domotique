@@ -92,11 +92,13 @@ function bridgeScript() {
       return originalFetch(input, init);
     };
     const requestToken = async (payload) => {
+      console.info("[MaMaison] auth-request");
       const message = typeof payload === "string" ? JSON.parse(payload) : payload;
       const response = await originalFetch("/api/lovelace/browser-token", { credentials: "same-origin", cache: "no-store" });
       const callback = window[message.callback];
       if (typeof callback !== "function") return;
       if (!response.ok) return callback(false);
+      console.info("[MaMaison] auth-ready");
       callback(true, await response.json());
     };
     window.externalApp = {
@@ -126,6 +128,7 @@ function bridgeScript() {
             next.host = location.host;
             next.pathname = prefix + next.pathname;
           }
+          console.info("[MaMaison] websocket", next.pathname);
           super(next.toString(), protocols);
         }
       };
@@ -166,6 +169,7 @@ function bridgeScript() {
       });
     };
     scan(document);
+    console.info("[MaMaison] bridge-ready");
     setInterval(() => scan(document), 400);
   })();
   </script>`;
