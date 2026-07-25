@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-type View = "Accueil" | "Préparation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
+type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
 type Device = {
   id: string; name: string; room: string; areaPublicId: string | null;
   category: string; state: string;
@@ -24,7 +24,8 @@ type CatalogItem = {
   level: CompatibilityLevel; method: string; prerequisites: string;
   estimatedMinutes: number; icon: string;
 };
-type PlannedItem = CatalogItem & { quantity: number; room: string; status: "À préparer" | "Prêt" };
+type InstallationStatus = "À préparer" | "Prêt" | "Détecté" | "Associé" | "Testé" | "Bloqué";
+type PlannedItem = CatalogItem & { quantity: number; room: string; status: InstallationStatus };
 
 const catalogItems: CatalogItem[] = [
   { id: "shelly-plus-1pm", brand: "Shelly", model: "Plus 1PM", category: "Éclairage", protocol: "Wi-Fi", level: "Automatique", method: "Détection réseau locale", prerequisites: "Alimentation et Wi-Fi 2,4 GHz", estimatedMinutes: 2, icon: "◉" },
@@ -54,7 +55,7 @@ const demoAutomations: Automation[] = [
 ];
 
 const nav: { label: View; icon: string }[] = [
-  { label: "Accueil", icon: "⌂" }, { label: "Préparation", icon: "✓" }, { label: "Appareils", icon: "◫" },
+  { label: "Accueil", icon: "⌂" }, { label: "Préparation", icon: "✓" }, { label: "Installation", icon: "⌁" }, { label: "Appareils", icon: "◫" },
   { label: "Automatisations", icon: "⌁" }, { label: "Ajouter", icon: "+" },
   { label: "Journal", icon: "≡" },
 ];
@@ -200,7 +201,7 @@ export default function Portal() {
           <span className="brand-mark">M</span><span>Ma Maison</span>
         </button>
         <nav aria-label="Navigation principale">
-          {nav.filter((item) => item.label !== "Préparation" || role === "Installateur").map((item) => <button key={item.label} className={view === item.label ? "active" : ""} onClick={() => setView(item.label)}>
+          {nav.filter((item) => !["Préparation", "Installation"].includes(item.label) || role === "Installateur").map((item) => <button key={item.label} className={view === item.label ? "active" : ""} onClick={() => setView(item.label)}>
             <span className="nav-icon">{item.icon}</span><span>{item.label}</span>
           </button>)}
         </nav>
@@ -227,7 +228,8 @@ export default function Portal() {
         </header>
 
         {view === "Accueil" && <Dashboard setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} />}
-        {view === "Préparation" && <Preparation plannedItems={plannedItems} setPlannedItems={setPlannedItems} notify={notify} />}
+        {view === "Préparation" && <Preparation plannedItems={plannedItems} setPlannedItems={setPlannedItems} notify={notify} setView={setView} />}
+        {view === "Installation" && <Installation notify={notify} />}
         {view === "Appareils" && <Devices filtered={filtered} areas={areas} search={search} setSearch={setSearch} room={room} setRoom={setRoom} notify={notify} manage={(device) => { setSelectedDevice(device); setModal("appareil"); }} updateDevice={updateDevice} />}
         {view === "Automatisations" && <Automations items={automationItems} setModal={setModal} notify={notify} selectAutomation={setSelectedAutomation} setEnabled={setAutomationEnabled} />}
         {view === "Ajouter" && <AddDevice step={guideStep} setStep={setGuideStep} notify={notify} />}
@@ -235,7 +237,7 @@ export default function Portal() {
       </main>
 
       <nav className="mobile-nav" aria-label="Navigation mobile">
-        {nav.filter((item) => item.label !== "Préparation").slice(0, 4).map((item) => <button key={item.label} className={view === item.label ? "active" : ""} onClick={() => setView(item.label)}>
+        {nav.filter((item) => !["Préparation", "Installation"].includes(item.label)).slice(0, 4).map((item) => <button key={item.label} className={view === item.label ? "active" : ""} onClick={() => setView(item.label)}>
           <span>{item.icon}</span><small>{item.label}</small>
         </button>)}
       </nav>
@@ -246,10 +248,11 @@ export default function Portal() {
   );
 }
 
-function Preparation({ plannedItems, setPlannedItems, notify }: {
+function Preparation({ plannedItems, setPlannedItems, notify, setView }: {
   plannedItems: PlannedItem[];
   setPlannedItems: (items: PlannedItem[]) => void;
   notify: (value: string) => void;
+  setView: (value: View) => void;
 }) {
   const [query, setQuery] = useState("");
   const [protocol, setProtocol] = useState("Tous");
@@ -315,7 +318,7 @@ function Preparation({ plannedItems, setPlannedItems, notify }: {
   return <div className="content preparation">
     <div className="section-intro split">
       <div><span className="eyebrow">Dossier {dossier.reference} · {dossier.customerName}</span><h2>Préparer les objets à connecter</h2><p>La liste commerciale est transformée en procédure d’installation. Complétez les modèles avant le départ.</p></div>
-      <div className="prep-heading-actions"><span className={`save-state ${saveState}`}>{saveState === "saved" ? "✓ Liste enregistrée" : saveState === "saving" ? "Enregistrement…" : "Sauvegarde à reprendre"}</span><button className="primary" onClick={() => notify("Checklist technicien générée")}>Générer la checklist</button></div>
+      <div className="prep-heading-actions"><span className={`save-state ${saveState}`}>{saveState === "saved" ? "✓ Liste enregistrée" : saveState === "saving" ? "Enregistrement…" : "Sauvegarde à reprendre"}</span><button className="primary" onClick={() => setView("Installation")}>Ouvrir la checklist</button></div>
     </div>
     <section className="prep-summary">
       <div><small>Objets prévus</small><strong>{totalObjects}</strong><span>{plannedItems.length} références</span></div>
@@ -337,12 +340,84 @@ function Preparation({ plannedItems, setPlannedItems, notify }: {
         <div className="panel-title"><div><small>Liste commerciale</small><h3>Installation prévue</h3></div><span>{totalObjects} objets</span></div>
         <div className="planned-list">{plannedItems.map((item, index) => <article key={`${item.id}-${item.room}`}>
           <div><span>{item.icon}</span><p><b>{item.brand} {item.model}</b><small>{item.room} · {item.method}</small></p><em className={`level level-${item.level.toLowerCase()}`}>{item.level}</em></div>
-          <div className="planned-actions"><label>Qté <input type="number" min="1" max="99" value={item.quantity} onChange={event => void save(plannedItems.map((planned, plannedIndex) => plannedIndex === index ? { ...planned, quantity: Math.max(1, Number(event.target.value)) } : planned))} /></label><select value={item.status} onChange={event => void save(plannedItems.map((planned, plannedIndex) => plannedIndex === index ? { ...planned, status: event.target.value as PlannedItem["status"] } : planned))}><option>À préparer</option><option>Prêt</option></select><button aria-label={`Retirer ${item.model}`} onClick={() => void save(plannedItems.filter((_, plannedIndex) => plannedIndex !== index))}>×</button></div>
+          <div className="planned-actions"><label>Qté <input type="number" min="1" max="99" value={item.quantity} onChange={event => void save(plannedItems.map((planned, plannedIndex) => plannedIndex === index ? { ...planned, quantity: Math.max(1, Number(event.target.value)) } : planned))} /></label><select value={item.status} onChange={event => void save(plannedItems.map((planned, plannedIndex) => plannedIndex === index ? { ...planned, status: event.target.value as InstallationStatus } : planned))}>{["À préparer","Prêt","Détecté","Associé","Testé","Bloqué"].map(status => <option key={status}>{status}</option>)}</select><button aria-label={`Retirer ${item.model}`} onClick={() => void save(plannedItems.filter((_, plannedIndex) => plannedIndex !== index))}>×</button></div>
         </article>)}</div>
         {!plannedItems.length && <div className="planned-empty">Ajoutez les équipements prévus pour générer la checklist.</div>}
         <div className="discovery-note"><span>⌁</span><div><b>Recherche automatique sur place</b><p>Les appareils réseau seront rapprochés par modèle, numéro de série et adresse MAC. L’adresse IP ne sera demandée qu’en dernier recours.</p></div></div>
       </aside>
     </div>
+  </div>;
+}
+
+const installationStages: InstallationStatus[] = ["Prêt", "Détecté", "Associé", "Testé"];
+
+function Installation({ notify }: { notify: (value: string) => void }) {
+  const [items, setItems] = useState<PlannedItem[]>([]);
+  const [dossier, setDossier] = useState({ reference: "Chargement…", customerName: "" });
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/preparation", { headers: { Accept: "application/json" } })
+      .then(async response => {
+        if (!response.ok) throw new Error("load");
+        return response.json();
+      })
+      .then(payload => {
+        if (!active) return;
+        setDossier(payload.dossier);
+        setItems(payload.items);
+      })
+      .catch(() => notify("La checklist n’a pas pu être chargée"))
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  async function save(next: PlannedItem[], activeId: string) {
+    setItems(next);
+    setSavingId(activeId);
+    try {
+      const response = await fetch("/api/preparation", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ items: next }),
+      });
+      if (!response.ok) throw new Error("save");
+    } catch {
+      notify("L’état n’a pas été enregistré, réessayez");
+    } finally {
+      setSavingId("");
+    }
+  }
+
+  function updateStatus(item: PlannedItem, status: InstallationStatus) {
+    void save(items.map(current => current.id === item.id && current.room === item.room ? { ...current, status } : current), `${item.id}:${item.room}`);
+  }
+
+  const tested = items.filter(item => item.status === "Testé").reduce((sum, item) => sum + item.quantity, 0);
+  const total = items.reduce((sum, item) => sum + item.quantity, 0);
+  const blocked = items.filter(item => item.status === "Bloqué").length;
+  const progress = total ? Math.round((tested / total) * 100) : 0;
+
+  return <div className="content intervention">
+    <div className="section-intro split"><div><span className="eyebrow">Intervention · {dossier.reference}</span><h2>Installer chez {dossier.customerName}</h2><p>Suivez la liste préparée. Chaque étape est enregistrée et peut être reprise par un autre technicien.</p></div><button className="primary" onClick={() => notify("La recherche démarrera dès que l’agent de la box sera connecté")}>⌁ Lancer la découverte</button></div>
+    <section className="intervention-progress">
+      <div className="progress-ring" style={{ "--progress": `${progress * 3.6}deg` } as React.CSSProperties}><span><strong>{progress}%</strong><small>terminé</small></span></div>
+      <div><small>RECETTE DE LA MAISON</small><h3>{tested} objet{tested > 1 ? "s" : ""} testé{tested > 1 ? "s" : ""} sur {total}</h3><div className="progress-bar"><i style={{ width: `${progress}%` }} /></div><p>{blocked ? `${blocked} blocage${blocked > 1 ? "s" : ""} à résoudre avant la remise client.` : "Aucun blocage signalé."}</p></div>
+      <div className="box-state"><i /><span>Agent de la box<strong>En attente de connexion</strong></span><button onClick={() => notify("Diagnostic de connexion préparé")}>Diagnostiquer</button></div>
+    </section>
+    {loading ? <div className="checklist-empty">Chargement de la checklist…</div> : !items.length ? <div className="checklist-empty">Aucun équipement n’a encore été préparé pour ce dossier.</div> :
+      <section className="installation-list">{items.map(item => {
+        const activeIndex = installationStages.indexOf(item.status);
+        const rowId = `${item.id}:${item.room}`;
+        return <article key={rowId} className={item.status === "Bloqué" ? "blocked" : item.status === "Testé" ? "tested" : ""}>
+          <div className="installation-device"><span>{item.icon}</span><div><small>{item.category} · {item.protocol} · Qté {item.quantity}</small><h3>{item.brand} {item.model}</h3><p>{item.room} · {item.method}</p></div><em className={`level level-${item.level.toLowerCase()}`}>{item.level}</em></div>
+          <div className="stage-track">{installationStages.map((stage, index) => <button key={stage} className={item.status !== "Bloqué" && index <= activeIndex ? "done" : ""} onClick={() => updateStatus(item, stage)}><i>{item.status !== "Bloqué" && index <= activeIndex ? "✓" : index + 1}</i><span>{stage}</span></button>)}</div>
+          <div className="installation-detail"><span><b>À prévoir</b>{item.prerequisites}</span><span><b>Temps prévu</b>≈ {item.estimatedMinutes * item.quantity} min</span><button className={item.status === "Bloqué" ? "unblock" : "block"} disabled={savingId === rowId} onClick={() => updateStatus(item, item.status === "Bloqué" ? "Prêt" : "Bloqué")}>{savingId === rowId ? "Enregistrement…" : item.status === "Bloqué" ? "Reprendre" : "Signaler un blocage"}</button></div>
+        </article>;
+      })}</section>}
+    <section className="handover"><div><span>✓</span><p><b>Remise au client</b><small>Disponible lorsque tous les équipements sont testés et qu’aucun blocage ne subsiste.</small></p></div><button disabled={progress < 100 || blocked > 0} onClick={() => notify("Rapport de mise en service généré")}>Terminer l’installation</button></section>
   </div>;
 }
 

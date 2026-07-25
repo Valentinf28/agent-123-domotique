@@ -25,6 +25,8 @@ test("inclut le parcours de préparation réservé aux installateurs", async () 
   assert.match(source, /Préparer les objets à connecter/);
   assert.match(source, /Catalogue validé/);
   assert.match(source, /Recherche automatique sur place/);
+  assert.match(source, /Recette de la maison/i);
+  assert.match(source, /Signaler un blocage/);
 });
 
 test("sauvegarde la préparation dans une base rattachée au dossier", async () => {

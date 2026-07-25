@@ -20,7 +20,7 @@ type PlannedDevicePayload = {
 };
 
 const allowedLevels = new Set(["Automatique", "Assistée", "Expert"]);
-const allowedStatuses = new Set(["À préparer", "Prêt"]);
+const allowedStatuses = new Set(["À préparer", "Prêt", "Détecté", "Associé", "Testé", "Bloqué"]);
 
 function publicId(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
