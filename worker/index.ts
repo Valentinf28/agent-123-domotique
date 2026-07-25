@@ -342,13 +342,23 @@ async function proxyWebSocket(request: Request, env: Env) {
     headers: { Upgrade: "websocket" },
   });
   const upstream = upstreamResponse.webSocket;
+  console.log(JSON.stringify({
+    event: "lovelace_ws_upstream",
+    status: upstreamResponse.status,
+    connected: Boolean(upstream),
+  }));
   if (!upstream) return new Response("Maison inaccessible", { status: 502 });
 
   browser.addEventListener("message", async (event) => {
     try {
       const message = JSON.parse(String(event.data)) as { type?: string; access_token?: string };
       if (message.type === "auth") {
-        if (!message.access_token || !await verifyLovelaceSession(config.token, message.access_token)) {
+        const accepted = Boolean(
+          message.access_token &&
+          await verifyLovelaceSession(config.token, message.access_token),
+        );
+        console.log(JSON.stringify({ event: "lovelace_ws_auth", accepted }));
+        if (!accepted) {
           browser.close(1008, "Session refusée");
           upstream.close(1008, "Session refusée");
           return;
