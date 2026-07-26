@@ -43,6 +43,60 @@ def write_state(state: dict[str, Any]) -> None:
     temporary.replace(STATE_PATH)
 
 
+def home_assistant_ws_command(
+    supervisor_token: str,
+    command: dict[str, Any],
+    timeout: int = 20,
+) -> dict[str, Any]:
+    socket = websocket.create_connection("ws://supervisor/core/websocket", timeout=timeout)
+    try:
+        auth_required = json.loads(socket.recv())
+        if not isinstance(auth_required, dict) or auth_required.get("type") != "auth_required":
+            raise RuntimeError("Authentification WebSocket Home Assistant inattendue")
+        socket.send(json.dumps({"type": "auth", "access_token": supervisor_token}))
+        auth_result = json.loads(socket.recv())
+        if not isinstance(auth_result, dict) or auth_result.get("type") != "auth_ok":
+            raise RuntimeError("Authentification WebSocket Home Assistant refusée")
+        request_id = int(time.time() * 1000) % 2_000_000_000
+        socket.send(json.dumps({"id": request_id, **command}))
+        while True:
+            response = json.loads(socket.recv())
+            if not isinstance(response, dict) or response.get("id") != request_id:
+                continue
+            if response.get("type") != "result" or not response.get("success"):
+                error = response.get("error")
+                raise RuntimeError(f"Commande Home Assistant refusée ({error})")
+            result = response.get("result")
+            return result if isinstance(result, dict) else {"result": result}
+    finally:
+        socket.close()
+
+
+def apply_dashboard(
+    supervisor_token: str,
+    dashboard: dict[str, Any],
+    state: dict[str, Any],
+) -> bool:
+    revision = str(dashboard.get("revision", ""))
+    config = dashboard.get("config")
+    if not revision or not isinstance(config, dict):
+        return False
+    if state.get("dashboard_revision") == revision:
+        return False
+    home_assistant_ws_command(
+        supervisor_token,
+        {
+            "type": "lovelace/config/save",
+            "url_path": None,
+            "config": config,
+        },
+    )
+    state["dashboard_revision"] = revision
+    write_state(state)
+    log("Tableau de bord 1.2.3 Home mis à jour")
+    return True
+
+
 def request_json(
     url: str,
     *,
@@ -195,6 +249,10 @@ def relay_command(
                 "ws://supervisor/core/websocket",
                 timeout=30,
             )
+            # The connection timeout is useful only while opening the socket.
+            # Lovelace subscriptions are long-lived and can remain silent for
+            # extended periods without the tunnel being disconnected.
+            upstream.settimeout(None)
             HA_TUNNELS[tunnel_id] = upstream
 
             def forward() -> None:
@@ -202,7 +260,7 @@ def relay_command(
                     while True:
                         raw = upstream.recv()
                         decoded = json.loads(raw)
-                        if decoded.get("type") == "auth_required":
+                        if isinstance(decoded, dict) and decoded.get("type") == "auth_required":
                             upstream.send(json.dumps({
                                 "type": "auth",
                                 "access_token": supervisor_token,
@@ -213,7 +271,8 @@ def relay_command(
                             "tunnelId": tunnel_id,
                             "data": raw,
                         })
-                except Exception:
+                except Exception as error:
+                    log(f"Tunnel Lovelace {tunnel_id[:8]} fermé ({error})")
                     relay_send({"type": "tunnel.closed", "tunnelId": tunnel_id})
                 finally:
                     HA_TUNNELS.pop(tunnel_id, None)
@@ -292,16 +351,16 @@ def relay_forever(relay_url: str, house_id: str, relay_token: str, supervisor_to
         delay = min(delay * 2, 60)
 
 
-def heartbeat(portal_url: str, agent_token: str, summary: dict[str, Any]) -> int:
+def heartbeat(portal_url: str, agent_token: str, summary: dict[str, Any]) -> dict[str, Any]:
     result = request_json(
         f"{portal_url}/agent/heartbeat",
         method="POST",
         token=agent_token,
         payload=summary,
     )
-    if isinstance(result, dict):
-        return max(15, min(300, int(result.get("nextHeartbeatSeconds", 30))))
-    return 30
+    if not isinstance(result, dict):
+        return {"nextHeartbeatSeconds": 30}
+    return result
 
 
 def main() -> None:
@@ -336,7 +395,11 @@ def main() -> None:
             if not state.get("token"):
                 state = enroll(portal_url, enrollment_code)
             summary = home_assistant_summary(supervisor_token)
-            interval = heartbeat(portal_url, str(state["token"]), summary)
+            heartbeat_result = heartbeat(portal_url, str(state["token"]), summary)
+            interval = max(15, min(300, int(heartbeat_result.get("nextHeartbeatSeconds", 30))))
+            dashboard = heartbeat_result.get("dashboard")
+            if isinstance(dashboard, dict):
+                apply_dashboard(supervisor_token, dashboard, state)
             log(
                 f"Connecté · Home Assistant {summary['haVersion']} · "
                 f"{summary['inventoryCount']} entités"
