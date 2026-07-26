@@ -21,6 +21,8 @@ type PlannedDevicePayload = {
 
 const allowedLevels = new Set(["Automatique", "Assistée", "Expert"]);
 const allowedStatuses = new Set(["À préparer", "Prêt", "Détecté", "Associé", "Testé", "Bloqué"]);
+const allowedModules = new Set(["home", "solar", "heating", "access", "pool", "vehicle"]);
+const defaultModules = ["home", "solar", "heating", "access", "vehicle"];
 
 function publicId(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -50,7 +52,12 @@ export async function GET() {
       .where(eq(plannedDevices.dossierId, dossier.id))
       .orderBy(asc(plannedDevices.id));
     return Response.json({
-      dossier: { publicId: dossier.publicId, reference: dossier.reference, customerName: dossier.customerName },
+      dossier: {
+        publicId: dossier.publicId, reference: dossier.reference, customerName: dossier.customerName,
+        enabledModules: (() => {
+          try { return JSON.parse(dossier.enabledModules) as string[]; } catch { return defaultModules; }
+        })(),
+      },
       items: items.map((item) => ({
         id: item.catalogId, brand: item.brand, model: item.model, category: item.category,
         protocol: item.protocol, level: item.compatibilityLevel, method: item.connectionMethod,
@@ -68,7 +75,7 @@ export async function PUT(request: Request) {
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
   try {
-    const body = await request.json() as { items?: PlannedDevicePayload[] };
+    const body = await request.json() as { items?: PlannedDevicePayload[]; enabledModules?: string[] };
     if (!Array.isArray(body.items) || body.items.length > 200) {
       return Response.json({ error: "Liste invalide" }, { status: 400 });
     }
@@ -99,15 +106,22 @@ export async function PUT(request: Request) {
     }
     const dossier = await activeDossier();
     const db = getDb();
+    const requestedModules = Array.isArray(body.enabledModules) ? body.enabledModules : (() => {
+      try { return JSON.parse(dossier.enabledModules) as string[]; } catch { return defaultModules; }
+    })();
+    const enabledModules = [...new Set(["home", ...requestedModules.filter(module => allowedModules.has(module))])];
     await db.delete(plannedDevices).where(eq(plannedDevices.dossierId, dossier.id));
     if (items.length) {
       await db.insert(plannedDevices).values(items.map((item) => ({
         ...item, publicId: publicId("planned"), dossierId: dossier.id,
       })));
     }
-    await db.update(installationDossiers).set({ updatedAt: new Date().toISOString() })
+    await db.update(installationDossiers).set({
+      enabledModules: JSON.stringify(enabledModules),
+      updatedAt: new Date().toISOString(),
+    })
       .where(and(eq(installationDossiers.id, dossier.id), eq(installationDossiers.status, "preparation")));
-    return Response.json({ saved: true, count: items.length });
+    return Response.json({ saved: true, count: items.length, enabledModules });
   } catch (error) {
     const invalid = error instanceof Error && error.message === "INVALID_ITEM";
     return Response.json(

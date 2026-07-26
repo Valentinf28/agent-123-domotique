@@ -26,6 +26,16 @@ type CatalogItem = {
 };
 type InstallationStatus = "À préparer" | "Prêt" | "Détecté" | "Associé" | "Testé" | "Bloqué";
 type PlannedItem = CatalogItem & { quantity: number; room: string; status: InstallationStatus };
+type AppModule = "home" | "solar" | "heating" | "access" | "pool" | "vehicle";
+
+const appModules: { key: AppModule; label: string; description: string; icon: string; required?: boolean }[] = [
+  { key: "home", label: "Maison", description: "Résumé et raccourcis essentiels", icon: "⌂", required: true },
+  { key: "solar", label: "Solaire", description: "Production, économies et statistiques", icon: "☀" },
+  { key: "heating", label: "Chauffage", description: "Températures, zones et eau chaude", icon: "♨" },
+  { key: "access", label: "Équipements", description: "Lumières, volets, portail et caméras", icon: "◫" },
+  { key: "pool", label: "Piscine", description: "PAC, filtration et qualité de l’eau", icon: "≋" },
+  { key: "vehicle", label: "Véhicule", description: "Batterie, autonomie et recharge", icon: "◇" },
+];
 
 const catalogItems: CatalogItem[] = [
   { id: "shelly-plus-1pm", brand: "Shelly", model: "Plus 1PM", category: "Éclairage", protocol: "Wi-Fi", level: "Automatique", method: "Détection réseau locale", prerequisites: "Alimentation et Wi-Fi 2,4 GHz", estimatedMinutes: 2, icon: "◉" },
@@ -258,6 +268,7 @@ function Preparation({ plannedItems, setPlannedItems, notify, setView }: {
   const [protocol, setProtocol] = useState("Tous");
   const [selectedRoom, setSelectedRoom] = useState("Salon");
   const [dossier, setDossier] = useState({ reference: "Chargement…", customerName: "" });
+  const [enabledModules, setEnabledModules] = useState<AppModule[]>(["home", "solar", "heating", "access", "vehicle"]);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "offline">("saving");
 
   useEffect(() => {
@@ -271,6 +282,7 @@ function Preparation({ plannedItems, setPlannedItems, notify, setView }: {
         if (!active) return;
         setDossier(payload.dossier);
         setPlannedItems(payload.items);
+        if (Array.isArray(payload.dossier.enabledModules)) setEnabledModules(payload.dossier.enabledModules);
         setSaveState("saved");
       })
       .catch(() => {
@@ -281,14 +293,15 @@ function Preparation({ plannedItems, setPlannedItems, notify, setView }: {
     return () => { active = false; };
   }, [setPlannedItems]);
 
-  async function save(items: PlannedItem[]) {
+  async function save(items: PlannedItem[], modules = enabledModules) {
     setPlannedItems(items);
+    setEnabledModules(modules);
     setSaveState("saving");
     try {
       const response = await fetch("/api/preparation", {
         method: "PUT",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items, enabledModules: modules }),
       });
       if (!response.ok) throw new Error("save");
       setSaveState("saved");
@@ -315,6 +328,14 @@ function Preparation({ plannedItems, setPlannedItems, notify, setView }: {
     notify(`${item.brand} ${item.model} ajouté à ${selectedRoom}`);
   }
 
+  function toggleModule(module: AppModule) {
+    if (module === "home") return;
+    const next = enabledModules.includes(module)
+      ? enabledModules.filter(value => value !== module)
+      : [...enabledModules, module];
+    void save(plannedItems, next);
+  }
+
   return <div className="content preparation">
     <div className="section-intro split">
       <div><span className="eyebrow">Dossier {dossier.reference} · {dossier.customerName}</span><h2>Préparer les objets à connecter</h2><p>La liste commerciale est transformée en procédure d’installation. Complétez les modèles avant le départ.</p></div>
@@ -325,6 +346,17 @@ function Preparation({ plannedItems, setPlannedItems, notify, setView }: {
       <div><small>Temps estimé</small><strong>{estimated} min</strong><span>hors câblage</span></div>
       <div><small>Installation automatique</small><strong>{plannedItems.filter(item => item.level === "Automatique").length}/{plannedItems.length}</strong><span>références</span></div>
       <div className={plannedItems.some(item => item.level === "Expert") ? "attention" : ""}><small>À vérifier avant départ</small><strong>{plannedItems.filter(item => item.level === "Expert").length}</strong><span>matériel expert</span></div>
+    </section>
+    <section className="module-selector">
+      <div className="panel-title"><div><small>APPLICATION CLIENT</small><h3>Onglets à afficher</h3></div><span>{enabledModules.length} actifs</span></div>
+      <p>Le client verra uniquement les univers présents dans sa maison. L’onglet Maison reste toujours disponible.</p>
+      <div className="module-grid">{appModules.map(module => {
+        const enabled = enabledModules.includes(module.key);
+        return <button key={module.key} type="button" className={enabled ? "enabled" : ""} onClick={() => toggleModule(module.key)} aria-pressed={enabled}>
+          <i>{module.icon}</i><span><b>{module.label}</b><small>{module.description}</small></span>
+          <em>{module.required ? "Toujours actif" : enabled ? "Activé" : "Masqué"}</em>
+        </button>;
+      })}</div>
     </section>
     <div className="prep-layout">
       <section className="catalog-panel">

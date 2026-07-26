@@ -6,6 +6,7 @@ export const installationDossiers = sqliteTable("installation_dossiers", {
   publicId: text("public_id").notNull(),
   reference: text("reference").notNull(),
   customerName: text("customer_name").notNull(),
+  enabledModules: text("enabled_modules").notNull().default('["home","solar","heating","access","vehicle"]'),
   status: text("status").notNull().default("preparation"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
