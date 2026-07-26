@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { agentBoxes } from "../../../../db/schema";
-import { authenticatedAgent } from "../../../../lib/agent-auth";
+import { agentBoxes, installationDossiers, plannedDevices } from "../../../../db/schema";
+import { authenticatedAgent, sha256 } from "../../../../lib/agent-auth";
+import { buildDashboardConfig } from "../../../../lib/dashboard-config";
 
 export async function POST(request: Request) {
   const agent = await authenticatedAgent(request);
@@ -31,7 +32,30 @@ export async function POST(request: Request) {
       lastSeenAt: now,
       updatedAt: now,
     }).where(eq(agentBoxes.id, agent.id));
-    return Response.json({ accepted: true, nextHeartbeatSeconds: 30 });
+    const db = getDb();
+    const [dossier] = await db.select().from(installationDossiers)
+      .where(eq(installationDossiers.id, agent.dossierId)).limit(1);
+    const associations = await db.select().from(plannedDevices)
+      .where(eq(plannedDevices.dossierId, agent.dossierId));
+    let enabledModules: string[] = ["home"];
+    try { enabledModules = JSON.parse(dossier?.enabledModules ?? '["home"]'); } catch {}
+    const dashboardConfig = buildDashboardConfig(
+      enabledModules,
+      associations
+        .filter((item) => Boolean(item.matchedEntityId))
+        .map((item) => ({
+          category: item.category,
+          entityId: item.matchedEntityId as string,
+          name: item.matchedEntityName || `${item.brand} ${item.model}`,
+          room: item.room,
+        })),
+    );
+    const dashboardRevision = await sha256(JSON.stringify(dashboardConfig));
+    return Response.json({
+      accepted: true,
+      nextHeartbeatSeconds: 30,
+      dashboard: { revision: dashboardRevision, config: dashboardConfig },
+    });
   } catch {
     return Response.json({ error: "État invalide" }, { status: 400 });
   }
