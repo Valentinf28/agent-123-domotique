@@ -77,23 +77,36 @@ def apply_dashboard(
     dashboard: dict[str, Any],
     state: dict[str, Any],
 ) -> bool:
-    revision = str(dashboard.get("revision", ""))
-    config = dashboard.get("config")
-    if not revision or not isinstance(config, dict):
+    # Le portail ne doit jamais remplacer le tableau de bord principal du client.
+    # La génération automatique sera réintroduite sur un tableau dédié.
+    return False
+
+
+def restore_primary_dashboard(supervisor_token: str, state: dict[str, Any]) -> bool:
+    """Restaure une fois le tableau principal depuis la vue client préservée."""
+    if state.get("primary_dashboard_restored"):
         return False
-    if state.get("dashboard_revision") == revision:
+    preserved = home_assistant_ws_command(
+        supervisor_token,
+        {
+            "type": "lovelace/config",
+            "url_path": "123-maison",
+        },
+    )
+    if not isinstance(preserved, dict) or not isinstance(preserved.get("views"), list):
         return False
     home_assistant_ws_command(
         supervisor_token,
         {
             "type": "lovelace/config/save",
             "url_path": None,
-            "config": config,
+            "config": preserved,
         },
     )
-    state["dashboard_revision"] = revision
+    state["primary_dashboard_restored"] = True
+    state.pop("dashboard_revision", None)
     write_state(state)
-    log("Tableau de bord 1.2.3 Home mis à jour")
+    log("Tableau de bord principal restauré depuis 123-maison")
     return True
 
 
@@ -397,6 +410,7 @@ def main() -> None:
         try:
             if not state.get("token"):
                 state = enroll(portal_url, enrollment_code)
+            restore_primary_dashboard(supervisor_token, state)
             summary = home_assistant_summary(supervisor_token)
             heartbeat_result = heartbeat(portal_url, str(state["token"]), summary)
             interval = max(15, min(300, int(heartbeat_result.get("nextHeartbeatSeconds", 30))))

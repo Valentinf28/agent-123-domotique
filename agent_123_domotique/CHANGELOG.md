@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.5.2
+
+- Restauration automatique du tableau de bord principal depuis la vue préservée `123-maison`.
+- Désactivation de toute écriture automatique sur le tableau de bord principal Home Assistant.
+
 ## 0.5.1
 
 - Correction de l'identification réseau de l'agent auprès du portail privé.
