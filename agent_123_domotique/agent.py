@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import os
 import ssl
 import threading
@@ -16,9 +17,12 @@ from typing import Any
 
 import websocket
 
+HA_TUNNELS: dict[str, websocket.WebSocket] = {}
+
 OPTIONS_PATH = Path("/data/options.json")
 STATE_PATH = Path("/data/agent-state.json")
 SUPERVISOR_API = "http://supervisor/core/api"
+SUPERVISOR_CORE = "http://supervisor/core"
 
 
 def log(message: str) -> None:
@@ -89,7 +93,11 @@ def home_assistant_summary(supervisor_token: str) -> dict[str, Any]:
     }
 
 
-def relay_command(supervisor_token: str, message: dict[str, Any]) -> dict[str, Any]:
+def relay_command(
+    supervisor_token: str,
+    message: dict[str, Any],
+    relay_send=None,
+) -> dict[str, Any]:
     command_id = str(message.get("id", ""))
     action = str(message.get("action", ""))
     payload = message.get("payload")
@@ -123,6 +131,96 @@ def relay_command(supervisor_token: str, message: dict[str, Any]) -> dict[str, A
                 f"{SUPERVISOR_API}/history/period/{start}?filter_entity_id={entity_id}&minimal_response",
                 token=supervisor_token,
             )
+        elif action == "ha.proxy":
+            method = str(payload.get("method", "GET")).upper()
+            path = str(payload.get("path", "/"))
+            if method not in {"GET", "POST", "PUT", "DELETE", "PATCH"}:
+                raise ValueError("Méthode refusée")
+            if not path.startswith("/") or path.startswith((
+                "/config", "/developer-tools", "/profile", "/hassio", "/supervisor",
+                "/api/config", "/api/error", "/api/onboarding", "/api/repairs",
+            )):
+                raise ValueError("Chemin refusé")
+            body = base64.b64decode(str(payload.get("body", "")))
+            forwarded_headers = payload.get("headers")
+            if not isinstance(forwarded_headers, dict):
+                forwarded_headers = {}
+            headers = {
+                "Authorization": f"Bearer {supervisor_token}",
+                **{
+                    str(key): str(value) for key, value in forwarded_headers.items()
+                    if str(key).lower() in {"accept", "content-type", "if-none-match", "if-modified-since"}
+                },
+            }
+            request = urllib.request.Request(
+                f"{SUPERVISOR_CORE}{path}",
+                data=body if body or method not in {"GET", "DELETE"} else None,
+                headers=headers,
+                method=method,
+            )
+            try:
+                response = urllib.request.urlopen(request, timeout=25)
+            except urllib.error.HTTPError as error:
+                response = error
+            raw = response.read()
+            result = {
+                "status": response.status,
+                "headers": {
+                    key: value for key, value in response.headers.items()
+                    if key.lower() in {"content-type", "cache-control", "etag", "last-modified"}
+                },
+                "body": base64.b64encode(raw).decode(),
+            }
+        elif action == "ha.ws.open":
+            tunnel_id = str(payload.get("tunnelId", ""))
+            if not tunnel_id or relay_send is None:
+                raise ValueError("Tunnel invalide")
+            upstream = websocket.create_connection(
+                "ws://supervisor/core/api/websocket",
+                timeout=30,
+            )
+            HA_TUNNELS[tunnel_id] = upstream
+
+            def forward() -> None:
+                try:
+                    while True:
+                        raw = upstream.recv()
+                        decoded = json.loads(raw)
+                        if decoded.get("type") == "auth_required":
+                            upstream.send(json.dumps({
+                                "type": "auth",
+                                "access_token": supervisor_token,
+                            }))
+                            continue
+                        relay_send({
+                            "type": "tunnel.event",
+                            "tunnelId": tunnel_id,
+                            "data": raw,
+                        })
+                except Exception:
+                    relay_send({"type": "tunnel.closed", "tunnelId": tunnel_id})
+                finally:
+                    HA_TUNNELS.pop(tunnel_id, None)
+                    try:
+                        upstream.close()
+                    except Exception:
+                        pass
+
+            threading.Thread(target=forward, daemon=True).start()
+            result = {"opened": True}
+        elif action == "ha.ws.send":
+            tunnel_id = str(payload.get("tunnelId", ""))
+            upstream = HA_TUNNELS.get(tunnel_id)
+            if not upstream:
+                raise ValueError("Tunnel fermé")
+            upstream.send(str(payload.get("data", "")))
+            result = {"sent": True}
+        elif action == "ha.ws.close":
+            tunnel_id = str(payload.get("tunnelId", ""))
+            upstream = HA_TUNNELS.pop(tunnel_id, None)
+            if upstream:
+                upstream.close()
+            result = {"closed": True}
         else:
             raise ValueError("Commande non autorisée")
         return {"type": "command.result", "id": command_id, "ok": True, "result": result}
@@ -141,11 +239,17 @@ def relay_forever(relay_url: str, house_id: str, relay_token: str, supervisor_to
         socket: websocket.WebSocket | None = None
         try:
             socket = websocket.create_connection(relay_url, timeout=30)
-            socket.send(json.dumps({
+            send_lock = threading.Lock()
+
+            def relay_send(payload: dict[str, Any]) -> None:
+                with send_lock:
+                    socket.send(json.dumps(payload))
+
+            relay_send({
                 "type": "authenticate",
                 "houseId": house_id,
                 "token": relay_token,
-            }))
+            })
             reply = json.loads(socket.recv())
             if reply.get("type") != "authenticated":
                 raise RuntimeError("Authentification du relais refusée")
@@ -159,7 +263,7 @@ def relay_forever(relay_url: str, house_id: str, relay_token: str, supervisor_to
                     socket.ping()
                     continue
                 if message.get("type") == "command":
-                    socket.send(json.dumps(relay_command(supervisor_token, message)))
+                    relay_send(relay_command(supervisor_token, message, relay_send))
         except Exception as error:
             log(f"Relais indisponible ({error}), reconnexion dans {delay}s")
         finally:
