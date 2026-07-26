@@ -193,8 +193,10 @@ def main() -> None:
     relay_house_id = str(options.get("relay_house_id", "")).strip()
     relay_token = str(options.get("relay_token", "")).strip()
     supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
-    if not portal_url or not enrollment_code or not supervisor_token:
-        raise SystemExit("Configuration incomplète : URL, code et accès Home Assistant requis")
+    if not supervisor_token:
+        raise SystemExit("Accès interne à Home Assistant indisponible")
+    if not enrollment_code and not (relay_url and relay_house_id and relay_token):
+        raise SystemExit("Configuration incomplète : code d'installation ou liaison VPS requis")
 
     state = read_json(STATE_PATH, {})
     if relay_url and relay_house_id and relay_token:
@@ -205,6 +207,10 @@ def main() -> None:
         ).start()
     else:
         log("Liaison VPS non configurée")
+    if not enrollment_code:
+        log("Portail technicien non enrôlé ; liaison VPS uniquement")
+        while True:
+            time.sleep(300)
     while True:
         try:
             if not state.get("token"):
