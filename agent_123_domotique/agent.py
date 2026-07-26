@@ -195,6 +195,8 @@ def relay_command(
                 "ws://supervisor/core/websocket",
                 timeout=30,
             )
+            # Keep Lovelace subscriptions open after the initial connection.
+            upstream.settimeout(None)
             HA_TUNNELS[tunnel_id] = upstream
 
             def forward() -> None:
@@ -213,7 +215,8 @@ def relay_command(
                             "tunnelId": tunnel_id,
                             "data": raw,
                         })
-                except Exception:
+                except Exception as error:
+                    log(f"Tunnel Lovelace {tunnel_id[:8]} fermé ({error})")
                     relay_send({"type": "tunnel.closed", "tunnelId": tunnel_id})
                 finally:
                     HA_TUNNELS.pop(tunnel_id, None)
