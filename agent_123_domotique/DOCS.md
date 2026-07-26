@@ -12,6 +12,8 @@
 Après le démarrage, le journal doit afficher `Box associée au portail`, puis la
 version Home Assistant et le nombre d'entités détectées.
 Le message `Liaison sécurisée VPS active` confirme l'accès distant à l'application.
+Le message `Tableau de bord 1.2.3 Home mis à jour` confirme que les onglets et
+les appareils validés dans le portail ont été appliqués automatiquement.
 
 En cas de code expiré, générez un nouveau code depuis le portail et remplacez
 l'ancien dans la configuration de l'application.
