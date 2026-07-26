@@ -106,7 +106,10 @@ def request_json(
     timeout: int = 15,
 ) -> dict[str, Any] | list[Any]:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
-    headers = {"Accept": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Agent-123-Domotique/0.5.1",
+    }
     if payload is not None:
         headers["Content-Type"] = "application/json"
     if token:

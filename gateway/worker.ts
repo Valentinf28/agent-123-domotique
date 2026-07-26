@@ -12,7 +12,7 @@ async function agentApi(request: Request, env: Env, pathname: string) {
     return new Response("Passerelle indisponible", { status: 503 });
   }
   const length = Number(request.headers.get("Content-Length") ?? "0");
-  if (length > 64_000) return new Response("Requête trop volumineuse", { status: 413 });
+  if (length > 512_000) return new Response("Requête trop volumineuse", { status: 413 });
   const headers = new Headers({
     "OAI-Sites-Authorization": `Bearer ${bypassToken}`,
     Accept: "application/json",
