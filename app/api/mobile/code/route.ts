@@ -4,14 +4,18 @@ import { installationDossiers, mobilePairingCodes } from "../../../../db/schema"
 import { enrollmentCode, sha256 } from "../../../../lib/agent-auth";
 import { portalApiAuthorized } from "../../../../lib/portal-api-auth";
 
-export async function POST() {
+export async function POST(request: Request) {
   if (!await portalApiAuthorized()) {
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
   const db = getDb();
-  const [dossier] = await db.select().from(installationDossiers)
-    .where(eq(installationDossiers.status, "preparation"))
-    .orderBy(asc(installationDossiers.id)).limit(1);
+  const requested = new URL(request.url).searchParams.get("dossier");
+  const [dossier] = requested
+    ? await db.select().from(installationDossiers)
+      .where(eq(installationDossiers.publicId, requested)).limit(1)
+    : await db.select().from(installationDossiers)
+      .where(eq(installationDossiers.status, "preparation"))
+      .orderBy(asc(installationDossiers.id)).limit(1);
   if (!dossier) return Response.json({ error: "Aucun dossier en préparation" }, { status: 404 });
 
   const code = enrollmentCode();

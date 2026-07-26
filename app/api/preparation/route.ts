@@ -28,8 +28,14 @@ function publicId(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 }
 
-async function activeDossier() {
+async function activeDossier(request?: Request, requestedPublicId?: string) {
   const db = getDb();
+  const publicIdValue = requestedPublicId || (request ? new URL(request.url).searchParams.get("dossier") : "");
+  if (publicIdValue) {
+    const [selected] = await db.select().from(installationDossiers)
+      .where(eq(installationDossiers.publicId, publicIdValue)).limit(1);
+    if (selected) return selected;
+  }
   const [existing] = await db.select().from(installationDossiers)
     .where(eq(installationDossiers.status, "preparation"))
     .orderBy(asc(installationDossiers.id)).limit(1);
@@ -42,12 +48,12 @@ async function activeDossier() {
   return created;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!await portalApiAuthorized()) {
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
   try {
-    const dossier = await activeDossier();
+    const dossier = await activeDossier(request);
     const items = await getDb().select().from(plannedDevices)
       .where(eq(plannedDevices.dossierId, dossier.id))
       .orderBy(asc(plannedDevices.id));
@@ -75,7 +81,7 @@ export async function PUT(request: Request) {
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
   try {
-    const body = await request.json() as { items?: PlannedDevicePayload[]; enabledModules?: string[] };
+    const body = await request.json() as { items?: PlannedDevicePayload[]; enabledModules?: string[]; dossierPublicId?: string };
     if (!Array.isArray(body.items) || body.items.length > 200) {
       return Response.json({ error: "Liste invalide" }, { status: 400 });
     }
@@ -104,7 +110,7 @@ export async function PUT(request: Request) {
     if (keys.size !== items.length) {
       return Response.json({ error: "Un appareil ne peut apparaître deux fois dans la même pièce" }, { status: 400 });
     }
-    const dossier = await activeDossier();
+    const dossier = await activeDossier(undefined, String(body.dossierPublicId ?? ""));
     const db = getDb();
     const requestedModules = Array.isArray(body.enabledModules) ? body.enabledModules : (() => {
       try { return JSON.parse(dossier.enabledModules) as string[]; } catch { return defaultModules; }

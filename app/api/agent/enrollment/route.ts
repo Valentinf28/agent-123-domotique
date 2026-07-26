@@ -4,18 +4,24 @@ import { agentBoxes, agentEnrollmentCodes, installationDossiers } from "../../..
 import { enrollmentCode, sha256 } from "../../../../lib/agent-auth";
 import { portalApiAuthorized } from "../../../../lib/portal-api-auth";
 
-async function activeDossier() {
+async function activeDossier(request?: Request) {
+  const requested = request ? new URL(request.url).searchParams.get("dossier") : "";
+  if (requested) {
+    const [selected] = await getDb().select().from(installationDossiers)
+      .where(eq(installationDossiers.publicId, requested)).limit(1);
+    if (selected) return selected;
+  }
   const [dossier] = await getDb().select().from(installationDossiers)
     .where(eq(installationDossiers.status, "preparation"))
     .orderBy(asc(installationDossiers.id)).limit(1);
   return dossier ?? null;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!await portalApiAuthorized()) {
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
-  const dossier = await activeDossier();
+  const dossier = await activeDossier(request);
   if (!dossier) return Response.json({ agent: null });
   const [agent] = await getDb().select().from(agentBoxes)
     .where(eq(agentBoxes.dossierId, dossier.id)).limit(1);
@@ -31,11 +37,11 @@ export async function GET() {
   }, { headers: { "Cache-Control": "no-store" } });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   if (!await portalApiAuthorized()) {
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
-  const dossier = await activeDossier();
+  const dossier = await activeDossier(request);
   if (!dossier) return Response.json({ error: "Aucun dossier en préparation" }, { status: 404 });
   const db = getDb();
   const [existingAgent] = await db.select().from(agentBoxes)

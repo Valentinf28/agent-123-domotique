@@ -30,6 +30,9 @@ type AppModule = "home" | "solar" | "heating" | "access" | "pool" | "vehicle";
 type AgentInventoryItem = {
   entityId: string; name: string; domain: string; state: string; deviceClass?: string | null;
 };
+type InstallationDossier = {
+  publicId: string; reference: string; customerName: string; status: string; updatedAt: string;
+};
 
 const appModules: { key: AppModule; label: string; description: string; icon: string; required?: boolean }[] = [
   { key: "home", label: "Maison", description: "Résumé et raccourcis essentiels", icon: "⌂", required: true },
@@ -92,6 +95,19 @@ export default function Portal() {
     { ...catalogItems[5], quantity: 1, room: "Local technique", status: "Prêt" },
     { ...catalogItems[6], quantity: 4, room: "Salon", status: "À préparer" },
   ]);
+  const [dossiers, setDossiers] = useState<InstallationDossier[]>([]);
+  const [selectedDossierId, setSelectedDossierId] = useState("");
+
+  useEffect(() => {
+    fetch("/api/dossiers", { headers: { Accept: "application/json" } })
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((payload) => {
+        const next = Array.isArray(payload.dossiers) ? payload.dossiers : [];
+        setDossiers(next);
+        setSelectedDossierId((current) => current || next[0]?.publicId || "");
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -233,6 +249,12 @@ export default function Portal() {
             <h1>{view === "Accueil" ? "Bonjour Valentin" : view}</h1>
           </div>
           <div className="top-actions">
+            {role === "Installateur" && dossiers.length > 0 && <label className="tech-house-select">
+              <span>Dossier</span>
+              <select value={selectedDossierId} onChange={(event) => setSelectedDossierId(event.target.value)}>
+                {dossiers.map((dossier) => <option key={dossier.publicId} value={dossier.publicId}>{dossier.reference} · {dossier.customerName}</option>)}
+              </select>
+            </label>}
             <Link className="dashboard-link" href="/ma-maison">Ouvrir Ma Maison</Link>
             <button className="icon-button" aria-label="Actualiser" onClick={() => notify("Maison actualisée à l’instant")}>↻</button>
             <button className="icon-button notification" aria-label="Notifications" onClick={() => setModal("alertes")}>♢<i /></button>
@@ -241,8 +263,8 @@ export default function Portal() {
         </header>
 
         {view === "Accueil" && <Dashboard setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} />}
-        {view === "Préparation" && <Preparation plannedItems={plannedItems} setPlannedItems={setPlannedItems} notify={notify} setView={setView} />}
-        {view === "Installation" && <Installation notify={notify} />}
+        {view === "Préparation" && <Preparation dossierId={selectedDossierId} plannedItems={plannedItems} setPlannedItems={setPlannedItems} notify={notify} setView={setView} />}
+        {view === "Installation" && <Installation dossierId={selectedDossierId} notify={notify} />}
         {view === "Appareils" && <Devices filtered={filtered} areas={areas} search={search} setSearch={setSearch} room={room} setRoom={setRoom} notify={notify} manage={(device) => { setSelectedDevice(device); setModal("appareil"); }} updateDevice={updateDevice} />}
         {view === "Automatisations" && <Automations items={automationItems} setModal={setModal} notify={notify} selectAutomation={setSelectedAutomation} setEnabled={setAutomationEnabled} />}
         {view === "Ajouter" && <AddDevice step={guideStep} setStep={setGuideStep} notify={notify} />}
@@ -261,7 +283,8 @@ export default function Portal() {
   );
 }
 
-function Preparation({ plannedItems, setPlannedItems, notify, setView }: {
+function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView }: {
+  dossierId: string;
   plannedItems: PlannedItem[];
   setPlannedItems: (items: PlannedItem[]) => void;
   notify: (value: string) => void;
@@ -276,7 +299,8 @@ function Preparation({ plannedItems, setPlannedItems, notify, setView }: {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/preparation", { headers: { Accept: "application/json" } })
+    if (!dossierId) return undefined;
+    fetch(`/api/preparation?dossier=${encodeURIComponent(dossierId)}`, { headers: { Accept: "application/json" } })
       .then(async (response) => {
         if (!response.ok) throw new Error("load");
         return response.json();
@@ -294,7 +318,7 @@ function Preparation({ plannedItems, setPlannedItems, notify, setView }: {
         setSaveState("offline");
       });
     return () => { active = false; };
-  }, [setPlannedItems]);
+  }, [dossierId, setPlannedItems]);
 
   async function save(items: PlannedItem[], modules = enabledModules) {
     setPlannedItems(items);
@@ -304,7 +328,7 @@ function Preparation({ plannedItems, setPlannedItems, notify, setView }: {
       const response = await fetch("/api/preparation", {
         method: "PUT",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ items, enabledModules: modules }),
+        body: JSON.stringify({ items, enabledModules: modules, dossierPublicId: dossierId }),
       });
       if (!response.ok) throw new Error("save");
       setSaveState("saved");
@@ -386,7 +410,7 @@ function Preparation({ plannedItems, setPlannedItems, notify, setView }: {
 
 const installationStages: InstallationStatus[] = ["Prêt", "Détecté", "Associé", "Testé"];
 
-function Installation({ notify }: { notify: (value: string) => void }) {
+function Installation({ dossierId, notify }: { dossierId: string; notify: (value: string) => void }) {
   const [items, setItems] = useState<PlannedItem[]>([]);
   const [dossier, setDossier] = useState({ reference: "Chargement…", customerName: "" });
   const [loading, setLoading] = useState(true);
@@ -397,7 +421,8 @@ function Installation({ notify }: { notify: (value: string) => void }) {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/preparation", { headers: { Accept: "application/json" } })
+    if (!dossierId) return undefined;
+    fetch(`/api/preparation?dossier=${encodeURIComponent(dossierId)}`, { headers: { Accept: "application/json" } })
       .then(async response => {
         if (!response.ok) throw new Error("load");
         return response.json();
@@ -409,12 +434,12 @@ function Installation({ notify }: { notify: (value: string) => void }) {
       })
       .catch(() => notify("La checklist n’a pas pu être chargée"))
       .finally(() => { if (active) setLoading(false); });
-    fetch("/api/agent/enrollment", { headers: { Accept: "application/json" } })
+    fetch(`/api/agent/enrollment?dossier=${encodeURIComponent(dossierId)}`, { headers: { Accept: "application/json" } })
       .then(response => response.ok ? response.json() : Promise.reject())
       .then(payload => { if (active) setAgent(payload.agent); })
       .catch(() => undefined);
     return () => { active = false; };
-  }, []);
+  }, [dossierId]);
 
   async function save(next: PlannedItem[], activeId: string) {
     setItems(next);
@@ -423,7 +448,7 @@ function Installation({ notify }: { notify: (value: string) => void }) {
       const response = await fetch("/api/preparation", {
         method: "PUT",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ items: next }),
+        body: JSON.stringify({ items: next, dossierPublicId: dossierId }),
       });
       if (!response.ok) throw new Error("save");
     } catch {
@@ -480,7 +505,7 @@ function Installation({ notify }: { notify: (value: string) => void }) {
 
   async function createEnrollment() {
     try {
-      const response = await fetch("/api/agent/enrollment", {
+      const response = await fetch(`/api/agent/enrollment?dossier=${encodeURIComponent(dossierId)}`, {
         method: "POST", headers: { Accept: "application/json" },
       });
       const payload = await response.json();
@@ -494,7 +519,7 @@ function Installation({ notify }: { notify: (value: string) => void }) {
 
   async function createMobilePairing() {
     try {
-      const response = await fetch("/api/mobile/code", { method: "POST", headers: { Accept: "application/json" } });
+      const response = await fetch(`/api/mobile/code?dossier=${encodeURIComponent(dossierId)}`, { method: "POST", headers: { Accept: "application/json" } });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error);
       setMobilePairing(payload);
