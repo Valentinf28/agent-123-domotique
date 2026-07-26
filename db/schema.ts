@@ -68,3 +68,16 @@ export const agentBoxes = sqliteTable("agent_boxes", {
   uniqueIndex("agent_boxes_token_hash_idx").on(table.tokenHash),
   uniqueIndex("agent_boxes_dossier_idx").on(table.dossierId),
 ]);
+
+export const mobilePairingCodes = sqliteTable("mobile_pairing_codes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  publicId: text("public_id").notNull(),
+  dossierId: integer("dossier_id").notNull().references(() => installationDossiers.id, { onDelete: "cascade" }),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  usedAt: text("used_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("mobile_pairing_codes_public_id_idx").on(table.publicId),
+  uniqueIndex("mobile_pairing_codes_hash_idx").on(table.codeHash),
+]);

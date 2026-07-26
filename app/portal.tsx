@@ -390,6 +390,7 @@ function Installation({ notify }: { notify: (value: string) => void }) {
   const [savingId, setSavingId] = useState("");
   const [agent, setAgent] = useState<{ status: string; haVersion?: string | null; inventoryCount: number; lastSeenAt?: string | null } | null>(null);
   const [enrollment, setEnrollment] = useState<{ code: string; expiresAt: string } | null>(null);
+  const [mobilePairing, setMobilePairing] = useState<{ code: string; expiresAt: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -447,6 +448,18 @@ function Installation({ notify }: { notify: (value: string) => void }) {
     }
   }
 
+  async function createMobilePairing() {
+    try {
+      const response = await fetch("/api/mobile/code", { method: "POST", headers: { Accept: "application/json" } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error);
+      setMobilePairing(payload);
+      notify("Code d’application généré pour 30 minutes");
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "Code d’application impossible à générer");
+    }
+  }
+
   const tested = items.filter(item => item.status === "Testé").reduce((sum, item) => sum + item.quantity, 0);
   const total = items.reduce((sum, item) => sum + item.quantity, 0);
   const blocked = items.filter(item => item.status === "Bloqué").length;
@@ -469,6 +482,7 @@ function Installation({ notify }: { notify: (value: string) => void }) {
           <div className="installation-detail"><span><b>À prévoir</b>{item.prerequisites}</span><span><b>Temps prévu</b>≈ {item.estimatedMinutes * item.quantity} min</span><button className={item.status === "Bloqué" ? "unblock" : "block"} disabled={savingId === rowId} onClick={() => updateStatus(item, item.status === "Bloqué" ? "Prêt" : "Bloqué")}>{savingId === rowId ? "Enregistrement…" : item.status === "Bloqué" ? "Reprendre" : "Signaler un blocage"}</button></div>
         </article>;
       })}</section>}
+    <section className="mobile-pairing"><div><span>▣</span><p><b>Application du client</b><small>Le code configure automatiquement la maison et les onglets choisis pendant la préparation.</small></p></div><strong>{mobilePairing ? mobilePairing.code : "Aucun code actif"}</strong><button onClick={createMobilePairing}>{mobilePairing ? "Nouveau code" : "Générer le code"}</button></section>
     <section className="handover"><div><span>✓</span><p><b>Remise au client</b><small>Disponible lorsque tous les équipements sont testés et qu’aucun blocage ne subsiste.</small></p></div><button disabled={progress < 100 || blocked > 0} onClick={() => notify("Rapport de mise en service généré")}>Terminer l’installation</button></section>
   </div>;
 }
