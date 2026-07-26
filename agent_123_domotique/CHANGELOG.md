@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.5.3
+
+- Suppression complète de toute écriture et restauration automatique des tableaux de bord Lovelace.
+
 ## 0.5.2
 
 - Restauration automatique du tableau de bord principal depuis la vue préservée `123-maison`.

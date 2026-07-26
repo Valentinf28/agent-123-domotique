@@ -82,34 +82,6 @@ def apply_dashboard(
     return False
 
 
-def restore_primary_dashboard(supervisor_token: str, state: dict[str, Any]) -> bool:
-    """Restaure une fois le tableau principal depuis la vue client préservée."""
-    if state.get("primary_dashboard_restored"):
-        return False
-    preserved = home_assistant_ws_command(
-        supervisor_token,
-        {
-            "type": "lovelace/config",
-            "url_path": "123-maison",
-        },
-    )
-    if not isinstance(preserved, dict) or not isinstance(preserved.get("views"), list):
-        return False
-    home_assistant_ws_command(
-        supervisor_token,
-        {
-            "type": "lovelace/config/save",
-            "url_path": None,
-            "config": preserved,
-        },
-    )
-    state["primary_dashboard_restored"] = True
-    state.pop("dashboard_revision", None)
-    write_state(state)
-    log("Tableau de bord principal restauré depuis 123-maison")
-    return True
-
-
 def request_json(
     url: str,
     *,
@@ -410,7 +382,6 @@ def main() -> None:
         try:
             if not state.get("token"):
                 state = enroll(portal_url, enrollment_code)
-            restore_primary_dashboard(supervisor_token, state)
             summary = home_assistant_summary(supervisor_token)
             heartbeat_result = heartbeat(portal_url, str(state["token"]), summary)
             interval = max(15, min(300, int(heartbeat_result.get("nextHeartbeatSeconds", 30))))
