@@ -86,10 +86,26 @@ def home_assistant_summary(supervisor_token: str) -> dict[str, Any]:
         1 for state in states
         if isinstance(state, dict) and state.get("state") not in {"unavailable", "unknown"}
     )
+    inventory = []
+    for state in states[:1000]:
+        if not isinstance(state, dict):
+            continue
+        entity_id = str(state.get("entity_id", ""))
+        attributes = state.get("attributes")
+        if not isinstance(attributes, dict):
+            attributes = {}
+        inventory.append({
+            "entityId": entity_id,
+            "name": str(attributes.get("friendly_name", entity_id)),
+            "domain": entity_id.split(".", 1)[0] if "." in entity_id else "",
+            "state": str(state.get("state", "")),
+            "deviceClass": attributes.get("device_class"),
+        })
     return {
         "haVersion": str(config.get("version", "")),
         "inventoryCount": len(states),
         "availableCount": available,
+        "inventory": inventory,
     }
 
 
