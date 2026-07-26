@@ -1,6 +1,6 @@
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { installationDossiers, mobilePairingCodes } from "../../../../db/schema";
+import { installationDossiers, mobilePairingCodes, plannedDevices } from "../../../../db/schema";
 import { sha256 } from "../../../../lib/agent-auth";
 
 const viewCatalog = {
@@ -32,6 +32,8 @@ export async function POST(request: Request) {
     const views = modules
       .filter((module): module is keyof typeof viewCatalog => module in viewCatalog)
       .map(module => viewCatalog[module]);
+    const configuredDevices = await db.select().from(plannedDevices)
+      .where(eq(plannedDevices.dossierId, dossier.id));
     await db.update(mobilePairingCodes).set({ usedAt: new Date().toISOString() })
       .where(eq(mobilePairingCodes.id, pairing.id));
     return Response.json({
@@ -40,6 +42,15 @@ export async function POST(request: Request) {
       homeAssistantUrl: "http://homeassistant.local:8123",
       modules,
       views,
+      configuredDevices: configuredDevices
+        .filter((device) => Boolean(device.matchedEntityId))
+        .map((device) => ({
+          catalogId: device.catalogId,
+          name: device.matchedEntityName || `${device.brand} ${device.model}`,
+          room: device.room,
+          category: device.category,
+          entityId: device.matchedEntityId,
+        })),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return Response.json({ error: "Association impossible" }, { status: 503 });

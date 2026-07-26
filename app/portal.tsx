@@ -25,7 +25,10 @@ type CatalogItem = {
   estimatedMinutes: number; icon: string;
 };
 type InstallationStatus = "À préparer" | "Prêt" | "Détecté" | "Associé" | "Testé" | "Bloqué";
-type PlannedItem = CatalogItem & { quantity: number; room: string; status: InstallationStatus };
+type PlannedItem = CatalogItem & {
+  quantity: number; room: string; status: InstallationStatus;
+  matchedEntityId?: string | null; matchedEntityName?: string | null;
+};
 type AppModule = "home" | "solar" | "heating" | "access" | "pool" | "vehicle";
 type AgentInventoryItem = {
   entityId: string; name: string; domain: string; state: string; deviceClass?: string | null;
@@ -495,7 +498,12 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
       });
       if (!match) return item;
       detected += item.quantity;
-      return { ...item, status: "Détecté" as InstallationStatus };
+      return {
+        ...item,
+        status: "Détecté" as InstallationStatus,
+        matchedEntityId: match.entityId,
+        matchedEntityName: match.name,
+      };
     });
     void save(next, "discovery");
     notify(detected
@@ -515,6 +523,20 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
     } catch (error) {
       notify(error instanceof Error && error.message ? error.message : "Code impossible à générer");
     }
+  }
+
+  function associateEntity(item: PlannedItem, entityId: string) {
+    const entity = (agent?.inventory ?? []).find((candidate) => candidate.entityId === entityId);
+    const next = items.map((current) => current.id === item.id && current.room === item.room
+      ? {
+          ...current,
+          matchedEntityId: entity?.entityId ?? null,
+          matchedEntityName: entity?.name ?? null,
+          status: entity ? "Associé" as InstallationStatus : "Prêt" as InstallationStatus,
+        }
+      : current);
+    void save(next, `${item.id}:${item.room}`);
+    notify(entity ? `${entity.name} associé à ${item.model}` : `Association retirée pour ${item.model}`);
   }
 
   async function createMobilePairing() {
@@ -548,6 +570,13 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
         return <article key={rowId} className={item.status === "Bloqué" ? "blocked" : item.status === "Testé" ? "tested" : ""}>
           <div className="installation-device"><span>{item.icon}</span><div><small>{item.category} · {item.protocol} · Qté {item.quantity}</small><h3>{item.brand} {item.model}</h3><p>{item.room} · {item.method}</p></div><em className={`level level-${item.level.toLowerCase()}`}>{item.level}</em></div>
           <div className="stage-track">{installationStages.map((stage, index) => <button key={stage} className={item.status !== "Bloqué" && index <= activeIndex ? "done" : ""} onClick={() => updateStatus(item, stage)}><i>{item.status !== "Bloqué" && index <= activeIndex ? "✓" : index + 1}</i><span>{stage}</span></button>)}</div>
+          <div className="entity-association">
+            <label><b>Entité Home Assistant</b><select value={item.matchedEntityId ?? ""} onChange={(event) => associateEntity(item, event.target.value)}>
+              <option value="">Choisir une entité détectée…</option>
+              {(agent?.inventory ?? []).map((entity) => <option key={entity.entityId} value={entity.entityId}>{entity.name} · {entity.entityId}</option>)}
+            </select></label>
+            <span className={item.matchedEntityId ? "matched" : ""}>{item.matchedEntityId ? `✓ ${item.matchedEntityName || item.matchedEntityId}` : "Association à valider"}</span>
+          </div>
           <div className="installation-detail"><span><b>À prévoir</b>{item.prerequisites}</span><span><b>Temps prévu</b>≈ {item.estimatedMinutes * item.quantity} min</span><button className={item.status === "Bloqué" ? "unblock" : "block"} disabled={savingId === rowId} onClick={() => updateStatus(item, item.status === "Bloqué" ? "Prêt" : "Bloqué")}>{savingId === rowId ? "Enregistrement…" : item.status === "Bloqué" ? "Reprendre" : "Signaler un blocage"}</button></div>
         </article>;
       })}</section>}

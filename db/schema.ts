@@ -31,6 +31,8 @@ export const plannedDevices = sqliteTable("planned_devices", {
   quantity: integer("quantity").notNull().default(1),
   room: text("room").notNull().default("Maison"),
   status: text("status").notNull().default("À préparer"),
+  matchedEntityId: text("matched_entity_id"),
+  matchedEntityName: text("matched_entity_name"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [

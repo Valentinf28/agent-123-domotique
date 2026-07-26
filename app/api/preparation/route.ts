@@ -17,6 +17,8 @@ type PlannedDevicePayload = {
   quantity?: number;
   room?: string;
   status?: string;
+  matchedEntityId?: string | null;
+  matchedEntityName?: string | null;
 };
 
 const allowedLevels = new Set(["Automatique", "Assistée", "Expert"]);
@@ -69,6 +71,7 @@ export async function GET(request: Request) {
         protocol: item.protocol, level: item.compatibilityLevel, method: item.connectionMethod,
         prerequisites: item.prerequisites, estimatedMinutes: item.estimatedMinutes,
         icon: item.icon, quantity: item.quantity, room: item.room, status: item.status,
+        matchedEntityId: item.matchedEntityId, matchedEntityName: item.matchedEntityName,
       })),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch {
@@ -102,7 +105,12 @@ export async function PUT(request: Request) {
         estimatedMinutes, icon: String(item.icon ?? "◇").slice(0, 8),
         quantity, room: String(item.room ?? "Maison").trim().slice(0, 80) || "Maison",
         status: allowedStatuses.has(status) ? status : "À préparer",
+        matchedEntityId: String(item.matchedEntityId ?? "").trim().slice(0, 180) || null,
+        matchedEntityName: String(item.matchedEntityName ?? "").trim().slice(0, 180) || null,
       };
+      if (clean.matchedEntityId && !/^[a-z0-9_]+\.[a-z0-9_]+$/i.test(clean.matchedEntityId)) {
+        throw new Error("INVALID_ENTITY");
+      }
       if (!clean.catalogId || !clean.brand || !clean.model) throw new Error("INVALID_ITEM");
       return clean;
     });
@@ -129,9 +137,9 @@ export async function PUT(request: Request) {
       .where(and(eq(installationDossiers.id, dossier.id), eq(installationDossiers.status, "preparation")));
     return Response.json({ saved: true, count: items.length, enabledModules });
   } catch (error) {
-    const invalid = error instanceof Error && error.message === "INVALID_ITEM";
+    const invalid = error instanceof Error && ["INVALID_ITEM", "INVALID_ENTITY"].includes(error.message);
     return Response.json(
-      { error: invalid ? "Un équipement est incomplet" : "Enregistrement impossible" },
+      { error: invalid ? "Un équipement ou son association est invalide" : "Enregistrement impossible" },
       { status: invalid ? 400 : 503 },
     );
   }
