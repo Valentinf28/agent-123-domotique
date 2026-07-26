@@ -204,7 +204,7 @@ def relay_command(
                     while True:
                         raw = upstream.recv()
                         decoded = json.loads(raw)
-                        if decoded.get("type") == "auth_required":
+                        if isinstance(decoded, dict) and decoded.get("type") == "auth_required":
                             upstream.send(json.dumps({
                                 "type": "auth",
                                 "access_token": supervisor_token,
