@@ -24,6 +24,9 @@ export async function GET() {
       publicId: agent.publicId, label: agent.label, status: agent.status,
       haVersion: agent.haVersion, inventoryCount: agent.inventoryCount,
       lastSeenAt: agent.lastSeenAt,
+      inventory: (() => {
+        try { return JSON.parse(agent.inventoryJson) as unknown[]; } catch { return []; }
+      })(),
     } : null,
   }, { headers: { "Cache-Control": "no-store" } });
 }

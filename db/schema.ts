@@ -59,6 +59,7 @@ export const agentBoxes = sqliteTable("agent_boxes", {
   tokenHash: text("token_hash").notNull(),
   haVersion: text("ha_version"),
   inventoryCount: integer("inventory_count").notNull().default(0),
+  inventoryJson: text("inventory_json").notNull().default("[]"),
   status: text("status").notNull().default("enrolled"),
   lastSeenAt: text("last_seen_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),

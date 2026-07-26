@@ -27,6 +27,9 @@ type CatalogItem = {
 type InstallationStatus = "À préparer" | "Prêt" | "Détecté" | "Associé" | "Testé" | "Bloqué";
 type PlannedItem = CatalogItem & { quantity: number; room: string; status: InstallationStatus };
 type AppModule = "home" | "solar" | "heating" | "access" | "pool" | "vehicle";
+type AgentInventoryItem = {
+  entityId: string; name: string; domain: string; state: string; deviceClass?: string | null;
+};
 
 const appModules: { key: AppModule; label: string; description: string; icon: string; required?: boolean }[] = [
   { key: "home", label: "Maison", description: "Résumé et raccourcis essentiels", icon: "⌂", required: true },
@@ -388,7 +391,7 @@ function Installation({ notify }: { notify: (value: string) => void }) {
   const [dossier, setDossier] = useState({ reference: "Chargement…", customerName: "" });
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState("");
-  const [agent, setAgent] = useState<{ status: string; haVersion?: string | null; inventoryCount: number; lastSeenAt?: string | null } | null>(null);
+  const [agent, setAgent] = useState<{ status: string; haVersion?: string | null; inventoryCount: number; lastSeenAt?: string | null; inventory?: AgentInventoryItem[] } | null>(null);
   const [enrollment, setEnrollment] = useState<{ code: string; expiresAt: string } | null>(null);
   const [mobilePairing, setMobilePairing] = useState<{ code: string; expiresAt: string } | null>(null);
 
@@ -434,6 +437,47 @@ function Installation({ notify }: { notify: (value: string) => void }) {
     void save(items.map(current => current.id === item.id && current.room === item.room ? { ...current, status } : current), `${item.id}:${item.room}`);
   }
 
+  function discover() {
+    if (!agent || agent.status !== "online") {
+      notify("La box doit être connectée pour lancer la découverte");
+      return;
+    }
+    const inventory = agent.inventory ?? [];
+    if (!inventory.length) {
+      notify("L’inventaire est en cours de remontée par la box");
+      return;
+    }
+    const domainByCategory: Record<string, string[]> = {
+      "Éclairage": ["light", "switch"],
+      "Capteur": ["sensor", "binary_sensor"],
+      "Sécurité": ["binary_sensor", "lock", "alarm_control_panel", "camera"],
+      "Recharge": ["sensor", "switch", "number"],
+      "Chauffage": ["climate", "water_heater", "sensor"],
+      "Solaire": ["sensor"],
+      "Piscine": ["switch", "sensor", "climate"],
+    };
+    let detected = 0;
+    const next = items.map((item) => {
+      if (["Associé", "Testé"].includes(item.status)) return item;
+      const terms = [item.brand, item.model]
+        .flatMap((value) => value.toLowerCase().split(/[\s/+-]+/))
+        .filter((value) => value.length >= 3 && !["plus", "gen"].includes(value));
+      const domains = domainByCategory[item.category] ?? [];
+      const match = inventory.find((entity) => {
+        const haystack = `${entity.entityId} ${entity.name} ${entity.deviceClass ?? ""}`.toLowerCase();
+        return terms.some((term) => haystack.includes(term)) ||
+          (domains.includes(entity.domain) && haystack.includes(item.room.toLowerCase()));
+      });
+      if (!match) return item;
+      detected += item.quantity;
+      return { ...item, status: "Détecté" as InstallationStatus };
+    });
+    void save(next, "discovery");
+    notify(detected
+      ? `${detected} équipement${detected > 1 ? "s" : ""} rapproché${detected > 1 ? "s" : ""} automatiquement`
+      : "Inventaire analysé : aucun rapprochement certain");
+  }
+
   async function createEnrollment() {
     try {
       const response = await fetch("/api/agent/enrollment", {
@@ -466,7 +510,7 @@ function Installation({ notify }: { notify: (value: string) => void }) {
   const progress = total ? Math.round((tested / total) * 100) : 0;
 
   return <div className="content intervention">
-    <div className="section-intro split"><div><span className="eyebrow">Intervention · {dossier.reference}</span><h2>Installer chez {dossier.customerName}</h2><p>Suivez la liste préparée. Chaque étape est enregistrée et peut être reprise par un autre technicien.</p></div><button className="primary" onClick={() => notify("La recherche démarrera dès que l’agent de la box sera connecté")}>⌁ Lancer la découverte</button></div>
+    <div className="section-intro split"><div><span className="eyebrow">Intervention · {dossier.reference}</span><h2>Installer chez {dossier.customerName}</h2><p>Suivez la liste préparée. Chaque étape est enregistrée et peut être reprise par un autre technicien.</p></div><button className="primary" disabled={savingId === "discovery"} onClick={discover}>{savingId === "discovery" ? "Analyse en cours…" : "⌁ Lancer la découverte"}</button></div>
     <section className="intervention-progress">
       <div className="progress-ring" style={{ "--progress": `${progress * 3.6}deg` } as React.CSSProperties}><span><strong>{progress}%</strong><small>terminé</small></span></div>
       <div><small>RECETTE DE LA MAISON</small><h3>{tested} objet{tested > 1 ? "s" : ""} testé{tested > 1 ? "s" : ""} sur {total}</h3><div className="progress-bar"><i style={{ width: `${progress}%` }} /></div><p>{blocked ? `${blocked} blocage${blocked > 1 ? "s" : ""} à résoudre avant la remise client.` : "Aucun blocage signalé."}</p></div>
