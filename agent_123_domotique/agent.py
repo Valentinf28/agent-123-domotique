@@ -6,11 +6,15 @@ from __future__ import annotations
 import json
 import os
 import ssl
+import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
+
+import websocket
 
 OPTIONS_PATH = Path("/data/options.json")
 STATE_PATH = Path("/data/agent-state.json")
@@ -85,6 +89,89 @@ def home_assistant_summary(supervisor_token: str) -> dict[str, Any]:
     }
 
 
+def relay_command(supervisor_token: str, message: dict[str, Any]) -> dict[str, Any]:
+    command_id = str(message.get("id", ""))
+    action = str(message.get("action", ""))
+    payload = message.get("payload")
+    if not isinstance(payload, dict):
+        payload = {}
+    try:
+        if action == "ha.states":
+            result = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
+        elif action == "ha.config":
+            result = request_json(f"{SUPERVISOR_API}/config", token=supervisor_token)
+        elif action == "ha.services.call":
+            domain = str(payload.get("domain", "")).strip()
+            service = str(payload.get("service", "")).strip()
+            if not domain.replace("_", "").isalnum() or not service.replace("_", "").isalnum():
+                raise ValueError("Service Home Assistant invalide")
+            service_data = payload.get("data")
+            if not isinstance(service_data, dict):
+                service_data = {}
+            result = request_json(
+                f"{SUPERVISOR_API}/services/{domain}/{service}",
+                method="POST",
+                token=supervisor_token,
+                payload=service_data,
+            )
+        elif action == "ha.history":
+            start = urllib.parse.quote(str(payload.get("start", "")), safe=":TZ+-")
+            entity_id = urllib.parse.quote(str(payload.get("entityId", "")), safe="._")
+            if not start or not entity_id:
+                raise ValueError("Période ou entité manquante")
+            result = request_json(
+                f"{SUPERVISOR_API}/history/period/{start}?filter_entity_id={entity_id}&minimal_response",
+                token=supervisor_token,
+            )
+        else:
+            raise ValueError("Commande non autorisée")
+        return {"type": "command.result", "id": command_id, "ok": True, "result": result}
+    except Exception as error:
+        return {
+            "type": "command.result",
+            "id": command_id,
+            "ok": False,
+            "error": str(error)[:240],
+        }
+
+
+def relay_forever(relay_url: str, house_id: str, relay_token: str, supervisor_token: str) -> None:
+    delay = 2
+    while True:
+        socket: websocket.WebSocket | None = None
+        try:
+            socket = websocket.create_connection(relay_url, timeout=30)
+            socket.send(json.dumps({
+                "type": "authenticate",
+                "houseId": house_id,
+                "token": relay_token,
+            }))
+            reply = json.loads(socket.recv())
+            if reply.get("type") != "authenticated":
+                raise RuntimeError("Authentification du relais refusée")
+            log("Liaison sécurisée VPS active")
+            delay = 2
+            socket.settimeout(45)
+            while True:
+                try:
+                    message = json.loads(socket.recv())
+                except websocket.WebSocketTimeoutException:
+                    socket.ping()
+                    continue
+                if message.get("type") == "command":
+                    socket.send(json.dumps(relay_command(supervisor_token, message)))
+        except Exception as error:
+            log(f"Relais indisponible ({error}), reconnexion dans {delay}s")
+        finally:
+            if socket:
+                try:
+                    socket.close()
+                except Exception:
+                    pass
+        time.sleep(delay)
+        delay = min(delay * 2, 60)
+
+
 def heartbeat(portal_url: str, agent_token: str, summary: dict[str, Any]) -> int:
     result = request_json(
         f"{portal_url}/agent/heartbeat",
@@ -102,11 +189,22 @@ def main() -> None:
     portal_url = str(options.get("portal_url", "")).rstrip("/")
     enrollment_code = str(options.get("enrollment_code", "")).strip().upper()
     interval = max(15, min(300, int(options.get("heartbeat_seconds", 30))))
+    relay_url = str(options.get("relay_url", "")).strip()
+    relay_house_id = str(options.get("relay_house_id", "")).strip()
+    relay_token = str(options.get("relay_token", "")).strip()
     supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not portal_url or not enrollment_code or not supervisor_token:
         raise SystemExit("Configuration incomplète : URL, code et accès Home Assistant requis")
 
     state = read_json(STATE_PATH, {})
+    if relay_url and relay_house_id and relay_token:
+        threading.Thread(
+            target=relay_forever,
+            args=(relay_url, relay_house_id, relay_token, supervisor_token),
+            daemon=True,
+        ).start()
+    else:
+        log("Liaison VPS non configurée")
     while True:
         try:
             if not state.get("token"):
