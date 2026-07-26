@@ -22,7 +22,7 @@ HA_TUNNELS: dict[str, websocket.WebSocket] = {}
 OPTIONS_PATH = Path("/data/options.json")
 STATE_PATH = Path("/data/agent-state.json")
 SUPERVISOR_API = "http://supervisor/core/api"
-SUPERVISOR_CORE = "http://supervisor/core"
+HOME_ASSISTANT_FRONTEND = "http://homeassistant:8123"
 
 
 def log(message: str) -> None:
@@ -153,7 +153,7 @@ def relay_command(
                 },
             }
             request = urllib.request.Request(
-                f"{SUPERVISOR_CORE}{path}",
+                f"{HOME_ASSISTANT_FRONTEND}{path}",
                 data=body if body or method not in {"GET", "DELETE"} else None,
                 headers=headers,
                 method=method,
@@ -176,7 +176,7 @@ def relay_command(
             if not tunnel_id or relay_send is None:
                 raise ValueError("Tunnel invalide")
             upstream = websocket.create_connection(
-                "ws://supervisor/core/api/websocket",
+                "ws://supervisor/core/websocket",
                 timeout=30,
             )
             HA_TUNNELS[tunnel_id] = upstream
