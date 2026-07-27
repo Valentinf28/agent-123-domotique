@@ -179,6 +179,7 @@ def relay_command(
                 method="POST",
                 token=supervisor_token,
                 payload=service_data,
+                timeout=60,
             )
         elif action == "ha.history":
             start = urllib.parse.quote(str(payload.get("start", "")), safe=":TZ+-")

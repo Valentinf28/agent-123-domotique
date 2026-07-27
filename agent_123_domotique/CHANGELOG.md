@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.5.4
+
+- Allongement du délai des commandes lentes, notamment le réveil et le pilotage des véhicules Tesla.
+
 ## 0.5.3
 
 - Suppression complète de toute écriture et restauration automatique des tableaux de bord Lovelace.
