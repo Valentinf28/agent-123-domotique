@@ -77,24 +77,9 @@ def apply_dashboard(
     dashboard: dict[str, Any],
     state: dict[str, Any],
 ) -> bool:
-    revision = str(dashboard.get("revision", ""))
-    config = dashboard.get("config")
-    if not revision or not isinstance(config, dict):
-        return False
-    if state.get("dashboard_revision") == revision:
-        return False
-    home_assistant_ws_command(
-        supervisor_token,
-        {
-            "type": "lovelace/config/save",
-            "url_path": None,
-            "config": config,
-        },
-    )
-    state["dashboard_revision"] = revision
-    write_state(state)
-    log("Tableau de bord 1.2.3 Home mis à jour")
-    return True
+    # Le portail ne doit jamais remplacer le tableau de bord principal du client.
+    # La génération automatique sera réintroduite sur un tableau dédié.
+    return False
 
 
 def request_json(
@@ -194,6 +179,7 @@ def relay_command(
                 method="POST",
                 token=supervisor_token,
                 payload=service_data,
+                timeout=60,
             )
         elif action == "ha.history":
             start = urllib.parse.quote(str(payload.get("start", "")), safe=":TZ+-")
