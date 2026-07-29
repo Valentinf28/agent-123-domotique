@@ -92,8 +92,14 @@ async function selectedAgent(dossierPublicId?: string | null) {
       if (agent) return { agent, dossier };
     }
   }
-  const [agent] = await getDb().select().from(agentBoxes)
-    .orderBy(desc(agentBoxes.lastSeenAt)).limit(1);
+  const agents = await getDb().select().from(agentBoxes)
+    .orderBy(desc(agentBoxes.lastSeenAt)).limit(20);
+  const agent = agents.find((candidate) => {
+    const inventory = parseInventory(candidate.inventoryJson);
+    return controlBindings.some((binding) =>
+      inventory.some((item) => item.entityId === binding.entityId)
+    );
+  }) ?? agents[0];
   if (!agent) return null;
   const [dossier] = await getDb().select().from(installationDossiers)
     .where(eq(installationDossiers.id, agent.dossierId)).limit(1);
