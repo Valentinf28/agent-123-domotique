@@ -33,3 +33,8 @@
 - Réception des associations validées par le technicien.
 - Génération et mise à jour automatique du tableau de bord Lovelace.
 - Conservation du tableau de bord existant tant qu'aucun appareil n'est associé.
+# 0.5.7
+
+- Ajout d’une file de commandes privée entre le portail 1.2.3 et la Green Box.
+- Les commandes clientes sont exécutées localement sans exposer Home Assistant.
+- Rafraîchissement ramené à 10 secondes pour le pilotage de démonstration.
