@@ -65,7 +65,7 @@ test("rafraîchit les mesures importantes toutes les cinq secondes sans renvoyer
   assert.match(heartbeat, /inventoryMode === "delta"/);
   assert.match(agent, /FULL_INVENTORY_SECONDS = 60/);
   assert.match(agent, /FAST_ENTITY_PREFIXES/);
-  assert.match(config, /version: "0\.5\.8"/);
+  assert.match(config, /version: "0\.5\.9"/);
   assert.match(config, /heartbeat_seconds: "int\(5,300\)"/);
 });
 
@@ -133,4 +133,27 @@ test("inclut les assistants et le nouveau tarif dans le forfait client", async (
   assert.match(schema, /energySnapshots/);
   assert.match(schema, /assistantUsage/);
   assert.match(migration, /UPDATE `installation_dossiers`/);
+});
+
+test("prévoit la production solaire et protège la batterie avant de piloter les appareils flexibles", async () => {
+  const [agent, planner, coach, portal, schema, migration] = await Promise.all([
+    readFile(new URL("../agent_123_domotique/agent.py", import.meta.url), "utf8"),
+    readFile(new URL("../lib/predictive-energy.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/energy-coach.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0009_predictive_energy.sql", import.meta.url), "utf8"),
+  ]);
+  assert.match(agent, /energy\/solar_forecast/);
+  assert.match(agent, /SOLAR_FORECAST_REFRESH_SECONDS = 15 \* 60/);
+  assert.match(planner, /batteryReservePercent/);
+  assert.match(planner, /Démarrage anticipé conseillé/);
+  assert.match(coach, /buildPredictiveEnergyPlan/);
+  assert.match(portal, /Caractéristiques énergétiques/);
+  assert.match(portal, /APPAREILS FLEXIBLES/);
+  assert.match(portal, /Chauffe-eau/);
+  assert.match(portal, /Recharge véhicule/);
+  assert.match(schema, /batteryCapacityWh/);
+  assert.match(schema, /flexibleLoadsJson/);
+  assert.match(migration, /predictive_control_enabled/);
 });

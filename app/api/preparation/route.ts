@@ -21,6 +21,24 @@ type PlannedDevicePayload = {
   matchedEntityName?: string | null;
 };
 
+type EnergyConfigurationPayload = {
+  solarPeakWatts?: number;
+  batteryCapacityWh?: number;
+  batteryReservePercent?: number;
+  flexibleLoads?: FlexibleLoadPayload[];
+};
+
+type FlexibleLoadPayload = {
+  id?: string;
+  name?: string;
+  category?: string;
+  icon?: string;
+  powerWatts?: number;
+  minimumRunMinutes?: number;
+  priority?: number;
+  enabled?: boolean;
+};
+
 const allowedLevels = new Set(["Automatique", "Assistée", "Expert"]);
 const allowedStatuses = new Set(["À préparer", "Prêt", "Détecté", "Associé", "Testé", "Bloqué"]);
 const allowedModules = new Set(["home", "solar", "heating", "access", "pool", "vehicle"]);
@@ -28,6 +46,42 @@ const defaultModules = ["home", "solar", "heating", "access", "vehicle"];
 
 function publicId(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
+function boundedInteger(value: unknown, fallback: number, minimum: number, maximum: number) {
+  const numeric = value === undefined ? fallback : Number(value);
+  const safeValue = Number.isFinite(numeric) ? numeric : fallback;
+  return Math.min(maximum, Math.max(minimum, Math.round(safeValue)));
+}
+
+function flexibleLoadsFrom(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function sanitizeFlexibleLoads(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).map((raw, index) => {
+    const item = raw && typeof raw === "object" ? raw as FlexibleLoadPayload : {};
+    const id = String(item.id ?? `appareil-${index + 1}`)
+      .toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
+    const name = String(item.name ?? "").trim().slice(0, 80);
+    if (!id || !name) throw new Error("INVALID_FLEXIBLE_LOAD");
+    return {
+      id,
+      name,
+      category: String(item.category ?? "other").trim().slice(0, 40) || "other",
+      icon: String(item.icon ?? "ϟ").slice(0, 8),
+      powerWatts: boundedInteger(item.powerWatts, 0, 0, 50_000),
+      minimumRunMinutes: boundedInteger(item.minimumRunMinutes, 60, 15, 720),
+      priority: boundedInteger(item.priority, 3, 1, 5),
+      enabled: item.enabled === true,
+    };
+  });
 }
 
 async function activeDossier(request?: Request, requestedPublicId?: string) {
@@ -67,6 +121,12 @@ export async function GET(request: Request) {
         enabledModules: (() => {
           try { return JSON.parse(dossier.enabledModules) as string[]; } catch { return defaultModules; }
         })(),
+        energyConfiguration: {
+          solarPeakWatts: dossier.solarPeakWatts,
+          batteryCapacityWh: dossier.batteryCapacityWh,
+          batteryReservePercent: dossier.batteryReservePercent,
+          flexibleLoads: flexibleLoadsFrom(dossier.flexibleLoadsJson),
+        },
       },
       items: items.map((item) => ({
         id: item.catalogId, brand: item.brand, model: item.model, category: item.category,
@@ -86,7 +146,12 @@ export async function PUT(request: Request) {
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
   try {
-    const body = await request.json() as { items?: PlannedDevicePayload[]; enabledModules?: string[]; dossierPublicId?: string };
+    const body = await request.json() as {
+      items?: PlannedDevicePayload[];
+      enabledModules?: string[];
+      dossierPublicId?: string;
+      energyConfiguration?: EnergyConfigurationPayload;
+    };
     if (!Array.isArray(body.items) || body.items.length > 200) {
       return Response.json({ error: "Liste invalide" }, { status: 400 });
     }
@@ -126,6 +191,16 @@ export async function PUT(request: Request) {
       try { return JSON.parse(dossier.enabledModules) as string[]; } catch { return defaultModules; }
     })();
     const enabledModules = [...new Set(["home", ...requestedModules.filter(module => allowedModules.has(module))])];
+    const requestedEnergy = body.energyConfiguration ?? {};
+    const existingFlexibleLoads = flexibleLoadsFrom(dossier.flexibleLoadsJson);
+    const energyConfiguration = {
+      solarPeakWatts: boundedInteger(requestedEnergy.solarPeakWatts, dossier.solarPeakWatts, 0, 100_000),
+      batteryCapacityWh: boundedInteger(requestedEnergy.batteryCapacityWh, dossier.batteryCapacityWh, 0, 500_000),
+      batteryReservePercent: boundedInteger(requestedEnergy.batteryReservePercent, dossier.batteryReservePercent, 5, 80),
+      flexibleLoads: requestedEnergy.flexibleLoads === undefined
+        ? existingFlexibleLoads
+        : sanitizeFlexibleLoads(requestedEnergy.flexibleLoads),
+    };
     await db.delete(plannedDevices).where(eq(plannedDevices.dossierId, dossier.id));
     if (items.length) {
       await db.insert(plannedDevices).values(items.map((item) => ({
@@ -134,12 +209,17 @@ export async function PUT(request: Request) {
     }
     await db.update(installationDossiers).set({
       enabledModules: JSON.stringify(enabledModules),
+      solarPeakWatts: energyConfiguration.solarPeakWatts,
+      batteryCapacityWh: energyConfiguration.batteryCapacityWh,
+      batteryReservePercent: energyConfiguration.batteryReservePercent,
+      flexibleLoadsJson: JSON.stringify(energyConfiguration.flexibleLoads),
       updatedAt: new Date().toISOString(),
     })
       .where(and(eq(installationDossiers.id, dossier.id), eq(installationDossiers.status, "preparation")));
-    return Response.json({ saved: true, count: items.length, enabledModules });
+    return Response.json({ saved: true, count: items.length, enabledModules, energyConfiguration });
   } catch (error) {
-    const invalid = error instanceof Error && ["INVALID_ITEM", "INVALID_ENTITY"].includes(error.message);
+    const invalid = error instanceof Error &&
+      ["INVALID_ITEM", "INVALID_ENTITY", "INVALID_FLEXIBLE_LOAD"].includes(error.message);
     return Response.json(
       { error: invalid ? "Un équipement ou son association est invalide" : "Enregistrement impossible" },
       { status: invalid ? 400 : 503 },

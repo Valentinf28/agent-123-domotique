@@ -114,6 +114,8 @@ async function openAiReply(
               mesuresActuelles: context.current,
               bilanSeptJours: context.week,
               nombreDeReleves: context.historySamples,
+              previsionSolaire: context.solarForecast,
+              plansPredictifs: context.predictivePlans,
               recommandationsCalculees: context.insights,
             }),
           }],
@@ -185,6 +187,9 @@ export async function GET(request: Request) {
         insights: context.insights,
         historySamples: context.historySamples,
         week: context.week,
+        solarForecast: context.solarForecast,
+        predictivePlan: context.predictivePlan,
+        predictivePlans: context.predictivePlans,
         ready: context.historySamples >= 4,
       },
     }, { headers: { "Cache-Control": "no-store" } });

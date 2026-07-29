@@ -17,6 +17,11 @@ export const installationDossiers = sqliteTable("installation_dossiers", {
   graceEndsAt: text("grace_ends_at"),
   subscriptionStartedAt: text("subscription_started_at"),
   subscriptionEndsAt: text("subscription_ends_at"),
+  solarPeakWatts: integer("solar_peak_watts").notNull().default(0),
+  batteryCapacityWh: integer("battery_capacity_wh").notNull().default(0),
+  batteryReservePercent: integer("battery_reserve_percent").notNull().default(25),
+  flexibleLoadsJson: text("flexible_loads_json").notNull().default("[]"),
+  predictiveControlEnabled: integer("predictive_control_enabled", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [

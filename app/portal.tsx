@@ -30,6 +30,24 @@ type CoachMessage = {
   id: string; role: "client" | "coach"; text: string;
   proposal?: CoachReply["automationProposal"];
 };
+type SolarForecastSlot = { startsAt: string; estimatedWh: number };
+type PredictiveEnergyPlan = {
+  loadId: string;
+  loadLabel: string;
+  loadCategory: string;
+  status: "ready_now" | "scheduled" | "protected" | "already_running" | "no_need" | "needs_forecast" | "needs_setup";
+  headline: string;
+  explanation: string;
+  forecastRemainingWh: number;
+  forecastNextSixHoursWh: number;
+  flexibleLoadEnergyWh: number;
+  projectedMinimumBatteryPercent: number;
+  projectedEndBatteryPercent: number;
+  expectedAvoidedExportWh: number;
+  suggestedStartAt: string | null;
+  peakAt: string | null;
+  confidence: "low" | "medium" | "high";
+};
 type MobileOverview = {
   energy: Record<string, string>;
   controls: {
@@ -56,6 +74,22 @@ type PlannedItem = CatalogItem & {
   matchedEntityId?: string | null; matchedEntityName?: string | null;
 };
 type AppModule = "home" | "solar" | "heating" | "access" | "pool" | "vehicle";
+type FlexibleLoadConfiguration = {
+  id: string;
+  name: string;
+  category: string;
+  icon: string;
+  powerWatts: number;
+  minimumRunMinutes: number;
+  priority: number;
+  enabled: boolean;
+};
+type EnergyConfiguration = {
+  solarPeakWatts: number;
+  batteryCapacityWh: number;
+  batteryReservePercent: number;
+  flexibleLoads: FlexibleLoadConfiguration[];
+};
 type AgentInventoryItem = {
   entityId: string; name: string; domain: string; state: string; deviceClass?: string | null;
 };
@@ -83,6 +117,15 @@ const appModules: { key: AppModule; label: string; description: string; icon: st
   { key: "access", label: "Équipements", description: "Lumières, volets, portail et caméras", icon: "◫" },
   { key: "pool", label: "Piscine", description: "PAC, filtration et qualité de l’eau", icon: "≋" },
   { key: "vehicle", label: "Véhicule", description: "Batterie, autonomie et recharge", icon: "◇" },
+];
+
+const flexibleLoadPresets: FlexibleLoadConfiguration[] = [
+  { id: "pac-piscine", name: "PAC piscine", category: "pool", icon: "≋", powerWatts: 2000, minimumRunMinutes: 60, priority: 2, enabled: true },
+  { id: "chauffe-eau", name: "Chauffe-eau", category: "hot_water", icon: "♨", powerWatts: 2400, minimumRunMinutes: 120, priority: 1, enabled: true },
+  { id: "recharge-vehicule", name: "Recharge véhicule", category: "vehicle", icon: "◇", powerWatts: 7400, minimumRunMinutes: 120, priority: 3, enabled: true },
+  { id: "filtration-piscine", name: "Filtration piscine", category: "filtration", icon: "≋", powerWatts: 700, minimumRunMinutes: 120, priority: 4, enabled: true },
+  { id: "chauffage-maison", name: "Chauffage maison", category: "heating", icon: "♨", powerWatts: 3000, minimumRunMinutes: 60, priority: 1, enabled: true },
+  { id: "appareil-flexible", name: "Autre appareil", category: "other", icon: "ϟ", powerWatts: 1000, minimumRunMinutes: 60, priority: 3, enabled: true },
 ];
 
 const catalogItems: CatalogItem[] = [
@@ -463,6 +506,12 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
   const [selectedRoom, setSelectedRoom] = useState("Salon");
   const [dossier, setDossier] = useState({ reference: "Chargement…", customerName: "" });
   const [enabledModules, setEnabledModules] = useState<AppModule[]>(["home", "solar", "heating", "access", "vehicle"]);
+  const [energyConfiguration, setEnergyConfiguration] = useState<EnergyConfiguration>({
+    solarPeakWatts: 0,
+    batteryCapacityWh: 0,
+    batteryReservePercent: 25,
+    flexibleLoads: [],
+  });
   const [saveState, setSaveState] = useState<"saved" | "saving" | "offline">("saving");
 
   useEffect(() => {
@@ -478,6 +527,7 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
         setDossier(payload.dossier);
         setPlannedItems(payload.items);
         if (Array.isArray(payload.dossier.enabledModules)) setEnabledModules(payload.dossier.enabledModules);
+        if (payload.dossier.energyConfiguration) setEnergyConfiguration(payload.dossier.energyConfiguration);
         setSaveState("saved");
       })
       .catch(() => {
@@ -488,15 +538,25 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
     return () => { active = false; };
   }, [dossierId, setPlannedItems]);
 
-  async function save(items: PlannedItem[], modules = enabledModules) {
+  async function save(
+    items: PlannedItem[],
+    modules = enabledModules,
+    energy = energyConfiguration,
+  ) {
     setPlannedItems(items);
     setEnabledModules(modules);
+    setEnergyConfiguration(energy);
     setSaveState("saving");
     try {
       const response = await fetch("/api/preparation", {
         method: "PUT",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ items, enabledModules: modules, dossierPublicId: dossierId }),
+        body: JSON.stringify({
+          items,
+          enabledModules: modules,
+          energyConfiguration: energy,
+          dossierPublicId: dossierId,
+        }),
       });
       if (!response.ok) throw new Error("save");
       setSaveState("saved");
@@ -531,6 +591,49 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
     void save(plannedItems, next);
   }
 
+  function updateEnergySetting(key: keyof EnergyConfiguration, value: number) {
+    if (key === "flexibleLoads") return;
+    const next = { ...energyConfiguration, [key]: Math.max(0, Math.round(value || 0)) };
+    setEnergyConfiguration(next);
+    void save(plannedItems, enabledModules, next);
+  }
+
+  function addFlexibleLoad(preset: FlexibleLoadConfiguration) {
+    if (energyConfiguration.flexibleLoads.some((load) => load.id === preset.id)) {
+      notify(`${preset.name} est déjà dans le plan énergétique`);
+      return;
+    }
+    const next = {
+      ...energyConfiguration,
+      flexibleLoads: [...energyConfiguration.flexibleLoads, { ...preset }],
+    };
+    void save(plannedItems, enabledModules, next);
+    notify(`${preset.name} ajouté au pilotage prédictif`);
+  }
+
+  function updateFlexibleLoad(
+    id: string,
+    update: Partial<FlexibleLoadConfiguration>,
+    persist = false,
+  ) {
+    const next = {
+      ...energyConfiguration,
+      flexibleLoads: energyConfiguration.flexibleLoads.map((load) =>
+        load.id === id ? { ...load, ...update } : load
+      ),
+    };
+    setEnergyConfiguration(next);
+    if (persist) void save(plannedItems, enabledModules, next);
+  }
+
+  function removeFlexibleLoad(id: string) {
+    const next = {
+      ...energyConfiguration,
+      flexibleLoads: energyConfiguration.flexibleLoads.filter((load) => load.id !== id),
+    };
+    void save(plannedItems, enabledModules, next);
+  }
+
   return <div className="content preparation">
     <div className="section-intro split">
       <div><span className="eyebrow">Dossier {dossier.reference} · {dossier.customerName}</span><h2>Préparer les objets à connecter</h2><p>La liste commerciale est transformée en procédure d’installation. Complétez les modèles avant le départ.</p></div>
@@ -552,6 +655,39 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
           <em>{module.required ? "Toujours actif" : enabled ? "Activé" : "Masqué"}</em>
         </button>;
       })}</div>
+    </section>
+    <section className="predictive-setup">
+      <div className="panel-title">
+        <div><small>PILOTAGE PRÉDICTIF</small><h3>Caractéristiques énergétiques</h3></div>
+        <span>Prévision solaire</span>
+      </div>
+      <p>Ces valeurs viennent en priorité de l’ERP. Le technicien les vérifie lors de la recette avant d’autoriser un futur pilotage automatique.</p>
+      <div className="predictive-fields">
+        <label><span>Puissance photovoltaïque</span><div><input type="number" min="0" max="100000" value={energyConfiguration.solarPeakWatts} onChange={event => setEnergyConfiguration({ ...energyConfiguration, solarPeakWatts: Number(event.target.value) })} onBlur={event => updateEnergySetting("solarPeakWatts", Number(event.target.value))} /><em>Wc</em></div></label>
+        <label><span>Capacité utile batterie</span><div><input type="number" min="0" max="500000" value={energyConfiguration.batteryCapacityWh} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryCapacityWh: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryCapacityWh", Number(event.target.value))} /><em>Wh</em></div></label>
+        <label><span>Réserve minimale</span><div><input type="number" min="5" max="80" value={energyConfiguration.batteryReservePercent} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryReservePercent: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryReservePercent", Number(event.target.value))} /><em>%</em></div></label>
+      </div>
+      <div className="flexible-load-heading">
+        <div><small>APPAREILS FLEXIBLES</small><h4>Ce que la maison peut décaler intelligemment</h4></div>
+        <span>{energyConfiguration.flexibleLoads.filter((load) => load.enabled).length} actif{energyConfiguration.flexibleLoads.filter((load) => load.enabled).length > 1 ? "s" : ""}</span>
+      </div>
+      <div className="flexible-load-presets">{flexibleLoadPresets.map((preset) =>
+        <button type="button" key={preset.id} onClick={() => addFlexibleLoad(preset)} disabled={energyConfiguration.flexibleLoads.some((load) => load.id === preset.id)}>
+          <i>{preset.icon}</i>{preset.name}<span>＋</span>
+        </button>
+      )}</div>
+      <div className="flexible-load-list">{energyConfiguration.flexibleLoads.map((load) =>
+        <article key={load.id} className={load.enabled ? "enabled" : ""}>
+          <button type="button" className="flexible-load-toggle" aria-pressed={load.enabled} onClick={() => updateFlexibleLoad(load.id, { enabled: !load.enabled }, true)}><i /></button>
+          <span className="flexible-load-icon">{load.icon}</span>
+          <label><span>Appareil</span><input value={load.name} onChange={event => updateFlexibleLoad(load.id, { name: event.target.value })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /></label>
+          <label><span>Puissance</span><div><input type="number" min="0" max="50000" value={load.powerWatts} onChange={event => updateFlexibleLoad(load.id, { powerWatts: Number(event.target.value) })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /><em>W</em></div></label>
+          <label><span>Cycle minimum</span><div><input type="number" min="15" max="720" value={load.minimumRunMinutes} onChange={event => updateFlexibleLoad(load.id, { minimumRunMinutes: Number(event.target.value) })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /><em>min</em></div></label>
+          <label><span>Priorité</span><select value={load.priority} onChange={event => updateFlexibleLoad(load.id, { priority: Number(event.target.value) }, true)}>{[1,2,3,4,5].map((priority) => <option value={priority} key={priority}>{priority}</option>)}</select></label>
+          <button type="button" className="flexible-load-remove" aria-label={`Retirer ${load.name}`} onClick={() => removeFlexibleLoad(load.id)}>×</button>
+        </article>
+      )}</div>
+      <div className="predictive-note"><span>☀</span><div><b>Source recommandée : Forecast.Solar dans Home Assistant</b><p>La box récupère la courbe horaire sans exposer l’adresse de la maison ni une clé météo dans l’application.</p></div></div>
     </section>
     <div className="prep-layout">
       <section className="catalog-panel">
@@ -1098,6 +1234,9 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachQuestion, setCoachQuestion] = useState("");
   const [coachInsights, setCoachInsights] = useState<EnergyCoachInsight[]>([]);
+  const [solarForecast, setSolarForecast] = useState<SolarForecastSlot[]>([]);
+  const [predictivePlan, setPredictivePlan] = useState<PredictiveEnergyPlan | null>(null);
+  const [predictivePlans, setPredictivePlans] = useState<PredictiveEnergyPlan[]>([]);
   const [coachSuggestions, setCoachSuggestions] = useState([
     "Que puis-je économiser ce mois-ci ?",
     "Quand recharger la voiture ?",
@@ -1122,6 +1261,14 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       .then((payload) => {
         if (active && Array.isArray(payload?.coach?.insights)) {
           setCoachInsights(payload.coach.insights);
+          setSolarForecast(Array.isArray(payload?.coach?.solarForecast?.slots)
+            ? payload.coach.solarForecast.slots
+            : []);
+          const plans = Array.isArray(payload?.coach?.predictivePlans)
+            ? payload.coach.predictivePlans
+            : payload?.coach?.predictivePlan ? [payload.coach.predictivePlan] : [];
+          setPredictivePlans(plans);
+          setPredictivePlan(plans[0] ?? null);
         }
       })
       .catch(() => undefined);
@@ -1171,6 +1318,13 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
     }
   }
 
+  const forecastMaximum = Math.max(1, ...solarForecast.slice(0, 12).map((slot) => slot.estimatedWh));
+  const forecastTime = (value: string | null) => value
+    ? new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
+    : "—";
+  const forecastKwh = (value: number) =>
+    `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value / 1000)} kWh`;
+
   return <div className="content">
     <div className="section-intro split"><div><span className="eyebrow">Simple et puissant</span><h2>Les habitudes qui travaillent pour vous</h2><p>Créez des règles faciles à comprendre, sans réglage technique.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
     <section className="home-assistant-card">
@@ -1182,6 +1336,34 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       </div>
       <button onClick={() => setCoachOpen((open) => !open)}>{coachOpen ? "Fermer le coach" : "Parler au coach"} <span>{coachOpen ? "×" : "→"}</span></button>
     </section>
+    {predictivePlan && <section className={`predictive-plan status-${predictivePlan.status}`} aria-label="Plan énergétique prédictif">
+      {predictivePlans.length > 1 && <div className="predictive-load-tabs">{predictivePlans.map((plan) =>
+        <button type="button" key={plan.loadId} className={plan.loadId === predictivePlan.loadId ? "selected" : ""} onClick={() => setPredictivePlan(plan)}>
+          {plan.loadLabel}
+        </button>
+      )}</div>}
+      <div className="predictive-plan-copy">
+        <span className="predictive-plan-icon">☀</span>
+        <div>
+          <small>PRÉVISION SOLAIRE · {predictivePlan.loadLabel.toUpperCase()} · BATTERIE</small>
+          <h3>{predictivePlan.headline}</h3>
+          <p>{predictivePlan.explanation}</p>
+        </div>
+        <em>{predictivePlan.status === "ready_now" ? "Démarrer maintenant" : predictivePlan.status === "scheduled" ? `Prévu à ${forecastTime(predictivePlan.suggestedStartAt)}` : predictivePlan.status === "protected" ? "Batterie protégée" : predictivePlan.status === "needs_forecast" ? "À configurer" : "Surveillance active"}</em>
+      </div>
+      <div className="predictive-plan-data">
+        <div><small>Solaire dans 6 h</small><strong>{forecastKwh(predictivePlan.forecastNextSixHoursWh)}</strong><span>Pic vers {forecastTime(predictivePlan.peakAt)}</span></div>
+        <div><small>Batterie minimale prévue</small><strong>{predictivePlan.projectedMinimumBatteryPercent} %</strong><span>Réserve toujours respectée</span></div>
+        <div><small>Énergie du cycle</small><strong>{forecastKwh(predictivePlan.flexibleLoadEnergyWh)}</strong><span>{forecastKwh(predictivePlan.expectedAvoidedExportWh)} de surplus valorisable</span></div>
+      </div>
+      {solarForecast.length > 0 && <div className="solar-forecast-chart" aria-label="Prévision solaire des prochaines heures">
+        {solarForecast.slice(0, 12).map((slot) => <div key={slot.startsAt}>
+          <i style={{ height: `${Math.max(4, Math.round(slot.estimatedWh / forecastMaximum * 100))}%` }} />
+          <span>{forecastTime(slot.startsAt)}</span>
+        </div>)}
+      </div>}
+      {["ready_now", "scheduled"].includes(predictivePlan.status) && <button className="predictive-ask" onClick={() => void askCoach(`Explique-moi le plan prédictif de ${predictivePlan.loadLabel} et les garde-fous batterie.`)}>Demander une explication au coach →</button>}
+    </section>}
     {coachInsights.length > 0 && <section className="energy-coach-insights" aria-label="Conseils énergétiques personnalisés">
       {coachInsights.slice(0, 3).map((insight) => <article className={`coach-insight ${insight.tone}`} key={insight.id}>
         <span>{insight.icon}</span>
