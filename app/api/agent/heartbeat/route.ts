@@ -11,6 +11,7 @@ export async function POST(request: Request) {
     const body = await request.json() as {
       haVersion?: string;
       inventoryCount?: number;
+      inventoryMode?: "full" | "delta";
       inventory?: Array<{
         entityId?: string; name?: string; domain?: string;
         state?: string; deviceClass?: string | null;
@@ -21,13 +22,28 @@ export async function POST(request: Request) {
         error?: string;
       }>;
     };
-    const inventory = Array.isArray(body.inventory) ? body.inventory.slice(0, 1000).map((item) => ({
+    const incomingInventory = Array.isArray(body.inventory) ? body.inventory.slice(0, 1000).map((item) => ({
       entityId: String(item.entityId ?? "").slice(0, 180),
       name: String(item.name ?? "").slice(0, 180),
       domain: String(item.domain ?? "").slice(0, 40),
       state: String(item.state ?? "").slice(0, 80),
       deviceClass: String(item.deviceClass ?? "").slice(0, 80) || null,
     })).filter((item) => item.entityId.includes(".")) : [];
+    let inventory = incomingInventory;
+    if (body.inventoryMode === "delta") {
+      try {
+        const previous = JSON.parse(agent.inventoryJson) as typeof incomingInventory;
+        const merged = new Map(
+          (Array.isArray(previous) ? previous : [])
+            .filter((item) => item && typeof item.entityId === "string")
+            .map((item) => [item.entityId, item]),
+        );
+        for (const item of incomingInventory) merged.set(item.entityId, item);
+        inventory = Array.from(merged.values()).slice(0, 1000);
+      } catch {
+        inventory = incomingInventory;
+      }
+    }
     const now = new Date().toISOString();
     await getDb().update(agentBoxes).set({
       status: "online",
@@ -82,7 +98,7 @@ export async function POST(request: Request) {
       }));
     const response: Record<string, unknown> = {
       accepted: true,
-      nextHeartbeatSeconds: 10,
+      nextHeartbeatSeconds: 5,
       commands: queuedCommands.map((command) => ({
         id: command.publicId,
         action: command.action,

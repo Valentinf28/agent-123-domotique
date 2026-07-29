@@ -48,7 +48,7 @@ type InstallationDossier = {
   publicId: string; reference: string; customerName: string; status: string; updatedAt: string;
 };
 
-const HOME_REFRESH_MS = 10_000;
+const HOME_REFRESH_MS = 5_000;
 const homeTabs: HomeTab[] = ["Accueil", "Énergie", "Confort", "Piscine", "Sécurité", "Véhicule"];
 
 const appModules: { key: AppModule; label: string; description: string; icon: string; required?: boolean }[] = [
@@ -769,7 +769,7 @@ function Dashboard({ setView, setModal, notify, devices, liveStatus, overview, l
   return <div className="content app-home">
     <section className="app-preview">
       <div className="app-tabs">{homeTabs.map((tab) => <button key={tab} className={homeTab === tab ? "selected" : ""} onClick={() => setHomeTab(tab)}>{tab}</button>)}</div>
-      <div className="app-connection"><i />{liveStatus === "connected" ? `Maison connectée · mise à jour automatique toutes les 10 s${lastSyncedAt ? ` · ${lastSyncedAt.toLocaleTimeString("fr-FR")}` : ""}` : liveStatus === "loading" ? "Connexion en cours…" : "Mode démonstration"}</div>
+      <div className="app-connection"><i />{liveStatus === "connected" ? `Maison connectée · mise à jour automatique toutes les 5 s${lastSyncedAt ? ` · ${lastSyncedAt.toLocaleTimeString("fr-FR")}` : ""}` : liveStatus === "loading" ? "Connexion en cours…" : "Mode démonstration"}</div>
       {(homeTab === "Accueil" || homeTab === "Énergie") && <div className="energy-flow">
         <div className="flow-lines"><span className="line solar-home"/><span className="line grid-home"/><span className="line battery-home"/><i className="hub"/></div>
         <FlowNode className="solar" icon="☀" label="Solaire" value={overview?.energy.solar ?? "0 W"} color="yellow" />

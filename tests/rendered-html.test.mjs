@@ -53,6 +53,22 @@ test("protège l’enrôlement et les remontées de la box", async () => {
   assert.match(gateway, /X-Agent-Authorization/);
 });
 
+test("rafraîchit les mesures importantes toutes les cinq secondes sans renvoyer tout l’inventaire", async () => {
+  const [portal, heartbeat, agent, config] = await Promise.all([
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/agent/heartbeat/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../agent_123_domotique/agent.py", import.meta.url), "utf8"),
+    readFile(new URL("../agent_123_domotique/config.yaml", import.meta.url), "utf8"),
+  ]);
+  assert.match(portal, /HOME_REFRESH_MS = 5_000/);
+  assert.match(heartbeat, /nextHeartbeatSeconds: 5/);
+  assert.match(heartbeat, /inventoryMode === "delta"/);
+  assert.match(agent, /FULL_INVENTORY_SECONDS = 60/);
+  assert.match(agent, /FAST_ENTITY_PREFIXES/);
+  assert.match(config, /version: "0\.5\.8"/);
+  assert.match(config, /heartbeat_seconds: "int\(5,300\)"/);
+});
+
 test("garde Home Assistant hors du parcours client", async () => {
   const [clientPage, portal, heartbeat, schema, worker, mobileProvision] = await Promise.all([
     readFile(new URL("../app/ma-maison/page.tsx", import.meta.url), "utf8"),

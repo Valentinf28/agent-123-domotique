@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.8
+
+- Rafraîchissement des mesures importantes toutes les 5 secondes.
+- Inventaire complet conservé toutes les 60 secondes pour limiter le trafic.
+- Envoi intermédiaire compact pour l’énergie, le confort, la piscine, la sécurité et les véhicules.
+
 ## 0.5.6
 
 - Conservation de l'environnement sécurisé Home Assistant lors du démarrage autonome.
