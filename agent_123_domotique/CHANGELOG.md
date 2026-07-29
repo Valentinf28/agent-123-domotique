@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.9
+
+- Récupération de la courbe solaire horaire fournie par Home Assistant.
+- Mise en cache locale des prévisions afin de limiter les appels au service météo.
+- Transmission des créneaux prévisionnels au moteur de pilotage 1.2.3 Home.
+
 ## 0.5.8
 
 - Rafraîchissement des mesures importantes toutes les 5 secondes.

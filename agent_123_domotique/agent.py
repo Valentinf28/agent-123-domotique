@@ -24,6 +24,10 @@ STATE_PATH = Path("/data/agent-state.json")
 SUPERVISOR_API = "http://supervisor/core/api"
 HOME_ASSISTANT_FRONTEND = "http://homeassistant:8123"
 FULL_INVENTORY_SECONDS = 60
+SOLAR_FORECAST_REFRESH_SECONDS = 15 * 60
+SOLAR_FORECAST_PREFIX = "sensor.1_2_3_home_solar_forecast_"
+SOLAR_FORECAST_CACHE: list[dict[str, Any]] = []
+SOLAR_FORECAST_FETCHED_AT = 0.0
 FAST_ENTITY_PREFIXES = (
     "sensor.inverter_",
     "sensor.onduleur_",
@@ -106,7 +110,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.7",
+        "User-Agent": "Agent-123-Domotique/0.5.9",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -162,6 +166,8 @@ def home_assistant_summary(
             "state": str(state.get("state", "")),
             "deviceClass": attributes.get("device_class"),
         })
+    if full_inventory:
+        inventory.extend(solar_forecast_inventory(supervisor_token))
     return {
         "haVersion": str(config.get("version", "")),
         "inventoryCount": len(states),
@@ -169,6 +175,56 @@ def home_assistant_summary(
         "availableCount": available,
         "inventory": inventory,
     }
+
+
+def solar_forecast_inventory(supervisor_token: str) -> list[dict[str, Any]]:
+    """Expose Home Assistant's solar forecast as ordinary, short-lived inventory rows."""
+    global SOLAR_FORECAST_CACHE, SOLAR_FORECAST_FETCHED_AT
+    now = time.monotonic()
+    if (
+        SOLAR_FORECAST_CACHE and
+        now - SOLAR_FORECAST_FETCHED_AT < SOLAR_FORECAST_REFRESH_SECONDS
+    ):
+        return SOLAR_FORECAST_CACHE
+    try:
+        response = home_assistant_ws_command(
+            supervisor_token,
+            {"type": "energy/solar_forecast"},
+        )
+        sources = response.get("result") if set(response) == {"result"} else response
+        if not isinstance(sources, dict):
+            sources = {}
+        combined: dict[str, float] = {}
+        for source in sources.values():
+            if not isinstance(source, dict):
+                continue
+            wh_hours = source.get("wh_hours")
+            if not isinstance(wh_hours, dict):
+                continue
+            for timestamp, raw_value in wh_hours.items():
+                try:
+                    value = max(0.0, float(raw_value))
+                except (TypeError, ValueError):
+                    continue
+                combined[str(timestamp)] = combined.get(str(timestamp), 0.0) + value
+        entries = []
+        for index, (timestamp, watt_hours) in enumerate(sorted(combined.items())[:72]):
+            entries.append({
+                "entityId": f"{SOLAR_FORECAST_PREFIX}{index:02d}",
+                "name": f"Prévision solaire {timestamp}",
+                "domain": "sensor",
+                "state": str(round(watt_hours)),
+                "deviceClass": "energy",
+            })
+        SOLAR_FORECAST_CACHE = entries
+        SOLAR_FORECAST_FETCHED_AT = now
+        if entries:
+            log(f"Prévision solaire reçue · {len(entries)} créneaux")
+        return entries
+    except Exception as error:
+        SOLAR_FORECAST_FETCHED_AT = now
+        log(f"Prévision solaire indisponible ({error})")
+        return SOLAR_FORECAST_CACHE
 
 
 def relay_command(
