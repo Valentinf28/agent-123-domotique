@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.12
+
+- Prise en charge directe des capteurs Open-Meteo Solar Forecast.
+- Sélection automatique de la première source solaire réellement disponible.
+- Repli transparent lorsque Forecast.Solar est présent mais indisponible.
+
 ## 0.5.11
 
 - Utilisation automatique des capteurs Forecast.Solar actifs par défaut.
