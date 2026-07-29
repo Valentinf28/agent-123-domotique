@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { agentBoxes, installationDossiers, plannedDevices } from "../../../../db/schema";
+import { agentBoxes, agentCommands, installationDossiers, plannedDevices } from "../../../../db/schema";
 import { authenticatedAgent, sha256 } from "../../../../lib/agent-auth";
 import { buildDashboardConfig } from "../../../../lib/dashboard-config";
 
@@ -14,6 +14,11 @@ export async function POST(request: Request) {
       inventory?: Array<{
         entityId?: string; name?: string; domain?: string;
         state?: string; deviceClass?: string | null;
+      }>;
+      commandResults?: Array<{
+        id?: string;
+        ok?: boolean;
+        error?: string;
       }>;
     };
     const inventory = Array.isArray(body.inventory) ? body.inventory.slice(0, 1000).map((item) => ({
@@ -33,6 +38,34 @@ export async function POST(request: Request) {
       updatedAt: now,
     }).where(eq(agentBoxes.id, agent.id));
     const db = getDb();
+    const commandResults = Array.isArray(body.commandResults)
+      ? body.commandResults.slice(0, 50)
+      : [];
+    for (const result of commandResults) {
+      const commandId = String(result.id ?? "").slice(0, 80);
+      if (!commandId) continue;
+      await db.update(agentCommands).set({
+        status: result.ok ? "completed" : "failed",
+        error: result.ok ? null : String(result.error ?? "Commande refusée").slice(0, 240),
+        completedAt: now,
+      }).where(and(
+        eq(agentCommands.publicId, commandId),
+        eq(agentCommands.dossierId, agent.dossierId),
+      ));
+    }
+    const queuedCommands = await db.select().from(agentCommands)
+      .where(and(
+        eq(agentCommands.dossierId, agent.dossierId),
+        eq(agentCommands.status, "queued"),
+      )).limit(20);
+    if (queuedCommands.length) {
+      for (const command of queuedCommands) {
+        await db.update(agentCommands).set({
+          status: "delivered",
+          deliveredAt: now,
+        }).where(eq(agentCommands.id, command.id));
+      }
+    }
     const [dossier] = await db.select().from(installationDossiers)
       .where(eq(installationDossiers.id, agent.dossierId)).limit(1);
     const associations = await db.select().from(plannedDevices)
@@ -47,16 +80,23 @@ export async function POST(request: Request) {
         name: item.matchedEntityName || `${item.brand} ${item.model}`,
         room: item.room,
       }));
-    if (!configuredDevices.length) {
-      return Response.json({ accepted: true, nextHeartbeatSeconds: 30 });
-    }
-    const dashboardConfig = buildDashboardConfig(enabledModules, configuredDevices);
-    const dashboardRevision = await sha256(JSON.stringify(dashboardConfig));
-    return Response.json({
+    const response: Record<string, unknown> = {
       accepted: true,
-      nextHeartbeatSeconds: 30,
-      dashboard: { revision: dashboardRevision, config: dashboardConfig },
-    });
+      nextHeartbeatSeconds: 10,
+      commands: queuedCommands.map((command) => ({
+        id: command.publicId,
+        action: command.action,
+        payload: (() => {
+          try { return JSON.parse(command.payloadJson) as unknown; } catch { return {}; }
+        })(),
+      })),
+    };
+    if (configuredDevices.length) {
+      const dashboardConfig = buildDashboardConfig(enabledModules, configuredDevices);
+      const dashboardRevision = await sha256(JSON.stringify(dashboardConfig));
+      response.dashboard = { revision: dashboardRevision, config: dashboardConfig };
+    }
+    return Response.json(response);
   } catch {
     return Response.json({ error: "État invalide" }, { status: 400 });
   }

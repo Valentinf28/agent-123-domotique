@@ -1,4 +1,8 @@
-# Passerelle Lovelace sécurisée
+# Passerelle Lovelace sécurisée — procédure support uniquement
+
+> Cette passerelle ne fait plus partie du parcours client. L’application et le
+> portail 1.2.3 utilisent leurs propres interfaces. Ce document est conservé
+> uniquement comme référence de diagnostic pour le support technique.
 
 ## Résultat de la vérification
 

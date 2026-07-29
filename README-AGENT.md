@@ -17,5 +17,6 @@ Le code expire après 30 minutes et ne peut être utilisé qu'une seule fois.
 
 ## Données transmises
 
-Cette première version transmet uniquement la version de Home Assistant et le
-nombre total d'entités. Le jeton interne Home Assistant reste dans la box.
+L’agent transmet la version, l’inventaire utile et les états nécessaires au
+portail. Il récupère aussi une file de commandes autorisées et les exécute
+localement. Le jeton interne Home Assistant reste dans la box.

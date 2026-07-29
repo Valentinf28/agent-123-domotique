@@ -4,13 +4,22 @@ import { installationDossiers, mobilePairingCodes, plannedDevices } from "../../
 import { sha256 } from "../../../../lib/agent-auth";
 
 const viewCatalog = {
-  home: { key: "home", label: "Maison", icon: "home-variant-outline", path: "/lovelace/0" },
-  solar: { key: "solar", label: "Solaire", icon: "solar-power", path: "/lovelace/solaire" },
-  heating: { key: "heating", label: "Chauffage", icon: "home-thermometer-outline", path: "/lovelace/chauffage" },
-  access: { key: "access", label: "Équipements", icon: "lightbulb-group-outline", path: "/lovelace/equipements" },
-  pool: { key: "pool", label: "Piscine", icon: "pool", path: "/lovelace/piscine" },
-  vehicle: { key: "vehicle", label: "Véhicule", icon: "car-electric", path: "/lovelace/vehicule" },
+  home: { key: "home", label: "Maison", icon: "home-variant-outline", path: "/app" },
+  solar: { key: "solar", label: "Solaire", icon: "solar-power", path: "/app/energie" },
+  heating: { key: "heating", label: "Chauffage", icon: "home-thermometer-outline", path: "/app/confort" },
+  access: { key: "access", label: "Équipements", icon: "lightbulb-group-outline", path: "/app/equipements" },
+  pool: { key: "pool", label: "Piscine", icon: "pool", path: "/app/piscine" },
+  vehicle: { key: "vehicle", label: "Véhicule", icon: "car-electric", path: "/app/vehicule" },
 } as const;
+
+function publicDeviceId(value: string) {
+  let hash = 2166136261;
+  for (const char of value) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `appareil_${(hash >>> 0).toString(36)}`;
+}
 
 export async function POST(request: Request) {
   try {
@@ -36,10 +45,12 @@ export async function POST(request: Request) {
       .where(eq(plannedDevices.dossierId, dossier.id));
     await db.update(mobilePairingCodes).set({ usedAt: new Date().toISOString() })
       .where(eq(mobilePairingCodes.id, pairing.id));
+    const origin = new URL(request.url).origin;
     return Response.json({
       installationId: dossier.publicId,
       houseName: dossier.customerName || "Ma Maison",
-      homeAssistantUrl: "http://homeassistant.local:8123",
+      portalUrl: `${origin}/ma-maison`,
+      apiBaseUrl: `${origin}/api`,
       modules,
       views,
       configuredDevices: configuredDevices
@@ -49,7 +60,7 @@ export async function POST(request: Request) {
           name: device.matchedEntityName || `${device.brand} ${device.model}`,
           room: device.room,
           category: device.category,
-          entityId: device.matchedEntityId,
+          publicId: publicDeviceId(device.matchedEntityId as string),
         })),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch {

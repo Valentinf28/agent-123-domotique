@@ -1,6 +1,6 @@
 name: "Agent 1.2.3 Domotique"
 description: "Prépare, diagnostique et rattache cette maison au portail technicien."
-version: "0.5.6"
+version: "0.5.7"
 slug: "agent_123_domotique"
 url: "https://123panneaux-solaires.fr"
 init: false
@@ -14,14 +14,14 @@ arch:
 options:
   portal_url: "https://ma-maison-ha-gateway.valentin-ma-maison.workers.dev"
   enrollment_code: ""
-  heartbeat_seconds: 30
+  heartbeat_seconds: 10
   relay_url: "wss://domotique.123panneaux-solaires.fr/v1/agent"
   relay_house_id: ""
   relay_token: ""
 schema:
   portal_url: url
   enrollment_code: "match(^[A-Z2-9]{8}$)"
-  heartbeat_seconds: "int(15,300)"
+  heartbeat_seconds: "int(5,300)"
   relay_url: str
   relay_house_id: str
   relay_token: password

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import LovelaceShell from "./shell";
+import Portal from "../portal";
 
 export const metadata: Metadata = {
   title: "Tableau de bord",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function MaMaisonPage() {
-  return <LovelaceShell />;
+  return <Portal customerOnly />;
 }

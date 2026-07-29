@@ -93,7 +93,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.6",
+        "User-Agent": "Agent-123-Domotique/0.5.7",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -356,7 +356,7 @@ def main() -> None:
     options = read_json(OPTIONS_PATH, {})
     portal_url = str(options.get("portal_url", "")).rstrip("/")
     enrollment_code = str(options.get("enrollment_code", "")).strip().upper()
-    interval = max(15, min(300, int(options.get("heartbeat_seconds", 30))))
+    interval = max(5, min(300, int(options.get("heartbeat_seconds", 10))))
     relay_url = str(options.get("relay_url", "")).strip()
     relay_house_id = str(options.get("relay_house_id", "")).strip()
     relay_token = str(options.get("relay_token", "")).strip()
@@ -384,8 +384,26 @@ def main() -> None:
             if not state.get("token"):
                 state = enroll(portal_url, enrollment_code)
             summary = home_assistant_summary(supervisor_token)
+            command_results = state.pop("command_results", [])
+            if command_results:
+                summary["commandResults"] = command_results
             heartbeat_result = heartbeat(portal_url, str(state["token"]), summary)
-            interval = max(15, min(300, int(heartbeat_result.get("nextHeartbeatSeconds", 30))))
+            interval = max(5, min(300, int(heartbeat_result.get("nextHeartbeatSeconds", 10))))
+            commands = heartbeat_result.get("commands")
+            if isinstance(commands, list):
+                results = []
+                for command in commands[:20]:
+                    if not isinstance(command, dict):
+                        continue
+                    result = relay_command(supervisor_token, command)
+                    results.append({
+                        "id": str(command.get("id", "")),
+                        "ok": bool(result.get("ok")),
+                        "error": str(result.get("error", ""))[:240],
+                    })
+                if results:
+                    state["command_results"] = results
+                    write_state(state)
             dashboard = heartbeat_result.get("dashboard")
             if isinstance(dashboard, dict):
                 apply_dashboard(supervisor_token, dashboard, state)

@@ -72,6 +72,21 @@ export const agentBoxes = sqliteTable("agent_boxes", {
   uniqueIndex("agent_boxes_dossier_idx").on(table.dossierId),
 ]);
 
+export const agentCommands = sqliteTable("agent_commands", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  publicId: text("public_id").notNull(),
+  dossierId: integer("dossier_id").notNull().references(() => installationDossiers.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),
+  payloadJson: text("payload_json").notNull().default("{}"),
+  status: text("status").notNull().default("queued"),
+  error: text("error"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  deliveredAt: text("delivered_at"),
+  completedAt: text("completed_at"),
+}, (table) => [
+  uniqueIndex("agent_commands_public_id_idx").on(table.publicId),
+]);
+
 export const mobilePairingCodes = sqliteTable("mobile_pairing_codes", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   publicId: text("public_id").notNull(),

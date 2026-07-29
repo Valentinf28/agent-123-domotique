@@ -1,5 +1,5 @@
 import { getChatGPTUser } from "../../chatgpt-auth";
-import { getPortalHome } from "../../../lib/home-connector";
+import { getAgentPortalHome } from "../../../lib/agent-home";
 
 /**
  * Façade serveur du portail.
@@ -8,7 +8,7 @@ import { getPortalHome } from "../../../lib/home-connector";
  * depuis le service métier, puis appelle le connecteur privé de la maison. Le navigateur
  * ne reçoit que des identifiants publics opaques et des libellés conviviaux.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const user = await getChatGPTUser();
   const localDevelopment =
     process.env.NODE_ENV === "development" &&
@@ -18,7 +18,8 @@ export async function GET() {
   }
 
   try {
-    const home = await getPortalHome();
+    const dossier = new URL(request.url).searchParams.get("dossier");
+    const home = await getAgentPortalHome(dossier);
     return Response.json({
       mode: "connected",
       viewer: { displayName: user?.displayName ?? "Développement local" },

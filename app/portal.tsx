@@ -16,7 +16,17 @@ type Automation = {
 };
 type MobileOverview = {
   energy: Record<string, string>;
-  controls: { label: string; active: boolean; available: boolean }[];
+  controls: {
+    publicId: string; label: string; icon: string;
+    active: boolean; available: boolean;
+  }[];
+  comfort?: {
+    indoorTemperature: string; heatingSetpoint: string;
+    poolTemperature: string; poolSetpoint: string;
+    hotWaterTemperature: string; hotWaterAvailable: string;
+    hotWaterPower: string; hotWaterMode: string;
+    teslaBattery: string; teslaPower: string; demoMode: string;
+  };
 };
 type CompatibilityLevel = "Automatique" | "Assistée" | "Expert";
 type CatalogItem = {
@@ -79,11 +89,13 @@ const nav: { label: View; icon: string }[] = [
   { label: "Journal", icon: "≡" },
 ];
 
-export default function Portal() {
+export default function Portal({ customerOnly = false }: { customerOnly?: boolean }) {
   const [view, setView] = useState<View>("Accueil");
   const [search, setSearch] = useState("");
   const [room, setRoom] = useState("Toutes");
-  const [role, setRole] = useState<"Client" | "Installateur">("Client");
+  const [role, setRole] = useState<"Client" | "Installateur">(
+    customerOnly ? "Client" : "Installateur",
+  );
   const [toast, setToast] = useState("");
   const [modal, setModal] = useState<string | null>(null);
   const [guideStep, setGuideStep] = useState(1);
@@ -118,7 +130,10 @@ export default function Portal() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/home", { headers: { Accept: "application/json" } })
+    const query = selectedDossierId
+      ? `?dossier=${encodeURIComponent(selectedDossierId)}`
+      : "";
+    fetch(`/api/home${query}`, { headers: { Accept: "application/json" } })
       .then(async (response) => {
         if (!response.ok) throw new Error("connection");
         return response.json();
@@ -166,7 +181,7 @@ export default function Portal() {
       })
       .catch(() => setLiveStatus("demo"));
     return () => { active = false; };
-  }, []);
+  }, [selectedDossierId]);
 
   const filtered = useMemo(() => devices.filter((device) =>
     (room === "Toutes" || device.room === room) &&
@@ -254,6 +269,45 @@ export default function Portal() {
     ));
   }
 
+  async function setHomeControl(
+    control: MobileOverview["controls"][number],
+    enabled: boolean,
+  ) {
+    if (!control.available) {
+      notify(`${control.label} est momentanément indisponible`);
+      return;
+    }
+    setMobileOverview((current) => current ? {
+      ...current,
+      controls: current.controls.map((item) =>
+        item.publicId === control.publicId ? { ...item, active: enabled } : item
+      ),
+    } : current);
+    try {
+      const response = await fetch(
+        `/api/home/controls/${encodeURIComponent(control.publicId)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            active: enabled,
+            dossierPublicId: selectedDossierId || undefined,
+          }),
+        },
+      );
+      if (!response.ok) throw new Error("command");
+      notify(`${control.label} · commande envoyée à la Green Box`);
+    } catch {
+      setMobileOverview((current) => current ? {
+        ...current,
+        controls: current.controls.map((item) =>
+          item.publicId === control.publicId ? { ...item, active: control.active } : item
+        ),
+      } : current);
+      notify(`La commande ${control.label} n’a pas pu être envoyée`);
+    }
+  }
+
   async function deleteAutomation(automation: Automation) {
     const response = await fetch(
       `/api/automations/${encodeURIComponent(automation.id)}`,
@@ -276,8 +330,10 @@ export default function Portal() {
         </nav>
         <div className="sidebar-bottom">
           <div className="connection"><i /> Maison connectée <small>Dernière synchro à l’instant</small></div>
-          <button className="profile" onClick={() => setRole(role === "Client" ? "Installateur" : "Client")}>
-            <span>VF</span><b>Valentin Fettig<small>{role} · Basculer</small></b><em>⌄</em>
+          <button className="profile" disabled={customerOnly} onClick={() => {
+            if (!customerOnly) setRole(role === "Client" ? "Installateur" : "Client");
+          }}>
+            <span>VF</span><b>Valentin Fettig<small>{customerOnly ? "Application client" : `${role} · Basculer`}</small></b>{!customerOnly && <em>⌄</em>}
           </button>
         </div>
       </aside>
@@ -296,14 +352,14 @@ export default function Portal() {
               </select>
             </label>}
             {role === "Installateur" && <button className="icon-button" aria-label="Créer un dossier" title="Créer un dossier" onClick={() => setNewDossierOpen(true)}>＋</button>}
-            <Link className="dashboard-link" href="/ma-maison">Ouvrir Ma Maison</Link>
+            {!customerOnly && <Link className="dashboard-link" href="/ma-maison">Vue client</Link>}
             <button className="icon-button" aria-label="Actualiser" onClick={() => notify("Maison actualisée à l’instant")}>↻</button>
             <button className="icon-button notification" aria-label="Notifications" onClick={() => setModal("alertes")}>♢<i /></button>
             <button className="primary" onClick={() => setView("Ajouter")}><span>＋</span> Ajouter un appareil</button>
           </div>
         </header>
 
-        {view === "Accueil" && <Dashboard setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} />}
+        {view === "Accueil" && <Dashboard setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} onControl={setHomeControl} />}
         {view === "Préparation" && <Preparation dossierId={selectedDossierId} plannedItems={plannedItems} setPlannedItems={setPlannedItems} notify={notify} setView={setView} />}
         {view === "Installation" && <Installation dossierId={selectedDossierId} notify={notify} />}
         {view === "Appareils" && <Devices filtered={filtered} areas={areas} search={search} setSearch={setSearch} room={room} setRoom={setRoom} notify={notify} manage={(device) => { setSelectedDevice(device); setModal("appareil"); }} updateDevice={updateDevice} />}
@@ -654,17 +710,21 @@ function friendlyState(state: string) {
   return states[state.toLowerCase()] ?? state;
 }
 
-function Dashboard({ setView, setModal, notify, devices, liveStatus, overview }: {
+function Dashboard({ setView, setModal, notify, devices, liveStatus, overview, onControl }: {
   setView: (v: View) => void; setModal: (v: string) => void;
   notify: (v: string) => void; devices: Device[];
   liveStatus: "loading" | "connected" | "demo";
   overview: MobileOverview | null;
+  onControl: (
+    control: MobileOverview["controls"][number],
+    enabled: boolean,
+  ) => Promise<void>;
 }) {
   const available = devices.filter((device) => device.online).length;
   const lowBattery = devices.filter((device) => device.battery !== undefined && device.battery < 20).length;
   return <div className="content app-home">
     <section className="app-preview">
-      <div className="app-tabs"><button className="selected">Home</button><button>Énergie</button><button>Piscine</button><button>Spa</button></div>
+      <div className="app-tabs"><button className="selected">Accueil</button><button>Énergie</button><button>Confort</button><button>Piscine</button><button>Sécurité</button><button>Véhicule</button></div>
       <div className="app-connection"><i />{liveStatus === "connected" ? "Maison connectée" : liveStatus === "loading" ? "Connexion en cours…" : "Mode démonstration"}</div>
       <div className="energy-flow">
         <div className="flow-lines"><span className="line solar-home"/><span className="line grid-home"/><span className="line battery-home"/><i className="hub"/></div>
@@ -676,19 +736,28 @@ function Dashboard({ setView, setModal, notify, devices, liveStatus, overview }:
       </div>
       <div className="mobile-controls">
         {(overview?.controls ?? [
-          {label:"Portail",active:false,available:true},{label:"Terrasse",active:false,available:true},
-          {label:"PAC piscine",active:false,available:true},{label:"Filtration",active:false,available:true},
-          {label:"Spa",active:false,available:true},{label:"Filtration spa",active:false,available:true},
-        ]).map((control, index) => <button key={control.label} onClick={() => notify(`${control.label} : commande disponible prochainement`)}>
+          {publicId:"demo-heat",label:"Chauffage",icon:"♨",active:false,available:false},
+          {publicId:"demo-filter",label:"Filtration",icon:"≋",active:false,available:false},
+          {publicId:"demo-pool",label:"PAC piscine",icon:"♨",active:false,available:false},
+          {publicId:"demo-lock",label:"Serrure Nuki",icon:"▣",active:false,available:false},
+          {publicId:"demo-camera",label:"Caméras",icon:"◉",active:false,available:false},
+          {publicId:"demo-water",label:"Ballon d’eau chaude",icon:"♨",active:false,available:false},
+        ]).map((control) => <button key={control.publicId} disabled={!control.available} onClick={() => void onControl(control, !control.active)}>
           <span className={control.active ? "control-state active" : "control-state"}>{!control.available ? "INDISPONIBLE" : control.active ? "ACTIF" : "ARRÊT"}</span>
-          <i>{["▯","♨","♒","▤","♨","▤"][index]}</i><b>{control.label}</b>
+          <i>{control.icon}</i><b>{control.label}</b>
         </button>)}
       </div>
       <div className="today-energy"><div><small>Aujourd’hui</small><strong>{overview?.energy.dailyProduction ?? "—"}</strong><span>Production</span></div><div><small>Consommation</small><strong>{overview?.energy.dailyConsumption ?? "—"}</strong><span>Maison</span></div><button onClick={() => notify("Détail énergétique")}>Voir l’énergie →</button></div>
     </section>
+    <section className="home-modules">
+      <article><span className="module-symbol hot-water">♨</span><div><small>Ballon d’eau chaude</small><strong>{overview?.comfort?.hotWaterTemperature ?? "—"}</strong><p>{overview?.comfort?.hotWaterMode ?? "En attente"} · {overview?.comfort?.hotWaterAvailable ?? "—"} disponible</p></div><em>{overview?.comfort?.hotWaterPower ?? "0 W"}</em></article>
+      <article><span className="module-symbol comfort">⌂</span><div><small>Confort</small><strong>{overview?.comfort?.indoorTemperature ?? "—"}</strong><p>Consigne {overview?.comfort?.heatingSetpoint ?? "—"}</p></div><em>Chauffage</em></article>
+      <article><span className="module-symbol pool">≋</span><div><small>Piscine simulée</small><strong>{overview?.comfort?.poolTemperature ?? "—"}</strong><p>Consigne {overview?.comfort?.poolSetpoint ?? "—"}</p></div><em>Démo</em></article>
+      <article><span className="module-symbol vehicle">◇</span><div><small>Tesla</small><strong>{overview?.comfort?.teslaBattery ?? "—"}</strong><p>Recharge {overview?.comfort?.teslaPower ?? "0 W"}</p></div><em>Véhicule</em></article>
+    </section>
     <section className="hero">
       <div><span className="eyebrow"><i /> {liveStatus === "connected" ? "Maison connectée en direct" : liveStatus === "loading" ? "Connexion en cours" : "Mode démonstration"}</span><h2>Votre maison est calme<br />et sous contrôle.</h2><p>{liveStatus === "connected" ? `${available} appareils sur ${devices.length} sont disponibles.` : "Les informations de démonstration sont affichées temporairement."}</p></div>
-      <div className="hero-temperature"><span>Ensoleillé</span><strong>24°</strong><small>Intérieur · 21,5°</small></div>
+      <div className="hero-temperature"><span>{overview?.comfort?.demoMode ?? "Maison"}</span><strong>{overview?.comfort?.indoorTemperature ?? "—"}</strong><small>Consigne · {overview?.comfort?.heatingSetpoint ?? "—"}</small></div>
     </section>
     <div className="metrics">
       <article><span className="metric-icon yellow">◫</span><div><small>Appareils</small><strong>{devices.length}</strong><p><i /> {available} disponibles</p></div><button onClick={() => setView("Appareils")}>›</button></article>

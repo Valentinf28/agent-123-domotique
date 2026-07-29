@@ -52,3 +52,22 @@ test("protège l’enrôlement et les remontées de la box", async () => {
   assert.match(heartbeat, /authenticatedAgent/);
   assert.match(gateway, /X-Agent-Authorization/);
 });
+
+test("garde Home Assistant hors du parcours client", async () => {
+  const [clientPage, portal, heartbeat, schema, worker, mobileProvision] = await Promise.all([
+    readFile(new URL("../app/ma-maison/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/agent/heartbeat/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/mobile/provision/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(clientPage, /Portal customerOnly/);
+  assert.doesNotMatch(clientPage, /Lovelace|iframe|Home Assistant/i);
+  assert.doesNotMatch(portal, /iframe|lovelace/i);
+  assert.match(heartbeat, /commands/);
+  assert.match(schema, /agentCommands/);
+  assert.doesNotMatch(worker, /Lovelace|HA_ACCESS_TOKEN|HA_BASE_URL|ma-maison\/ha/i);
+  assert.doesNotMatch(mobileProvision, /homeAssistantUrl|entityId:/i);
+  assert.match(mobileProvision, /portalUrl/);
+});
