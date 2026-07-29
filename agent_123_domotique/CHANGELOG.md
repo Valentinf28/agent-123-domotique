@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.5.6
+
+- Conservation de l'environnement sécurisé Home Assistant lors du démarrage autonome.
+
 ## 0.5.5
 
 - Démarrage autonome de l'agent, sans dépendance au lanceur `with-contenv`.
