@@ -106,3 +106,12 @@ test("gère l’essai de 30 jours sans couper la domotique locale", async () => 
   assert.match(relay, /role == "client"/);
   assert.doesNotMatch(relay, /role == "agent".*entitlement/s);
 });
+
+test("inclut l’assistant domotique dans le forfait client", async () => {
+  const portal = await readFile(new URL("../app/portal.tsx", import.meta.url), "utf8");
+  assert.match(portal, /Assistant domotique inclus/i);
+  assert.match(portal, /INCLUS DANS VOTRE FORFAIT/i);
+  assert.match(portal, /Dites-lui simplement ce que vous souhaitez/i);
+  assert.match(portal, /avant de l’activer/i);
+  assert.match(portal, /Bientôt/i);
+});

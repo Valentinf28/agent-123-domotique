@@ -799,7 +799,11 @@ function SubscriptionCard({ subscription, saving, update }: {
     cancelled: "Abonnement résilié",
   };
   return <section className={`subscription-card subscription-${subscription.status}`}>
-    <div><span>↗</span><p><b>Accès extérieur 4G/5G</b><small>{labels[subscription.status]} · Le Wi‑Fi et les automatismes locaux restent disponibles.</small></p></div>
+    <div className="subscription-heading"><span>✦</span><p><b>Forfait 1.2.3 Home</b><small>{labels[subscription.status]} · Le Wi‑Fi et les automatismes locaux restent disponibles.</small></p></div>
+    <div className="subscription-benefits" aria-label="Services inclus dans le forfait">
+      <span><i>↗</i><b>Accès distant 4G/5G</b></span>
+      <span><i>✦</i><b>Assistant domotique inclus</b><em>Bientôt</em></span>
+    </div>
     <strong>{subscription.interval === "yearly" ? "79 € / an" : "7,90 € / mois"}</strong>
     <div className="subscription-actions">
       {subscription.status === "not_started" && <button disabled={saving} onClick={() => void update("start_trial")}>Démarrer l’essai</button>}
@@ -1075,6 +1079,15 @@ function Automations({ items, setModal, notify, selectAutomation, setEnabled }: 
 }) {
   return <div className="content">
     <div className="section-intro split"><div><span className="eyebrow">Simple et puissant</span><h2>Les habitudes qui travaillent pour vous</h2><p>Créez des règles faciles à comprendre, sans réglage technique.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
+    <section className="home-assistant-card">
+      <div className="home-assistant-symbol">✦</div>
+      <div>
+        <small>BIENTÔT · INCLUS DANS VOTRE FORFAIT</small>
+        <h3>Votre assistant domotique</h3>
+        <p>Dites-lui simplement ce que vous souhaitez. Il préparera l’automatisation, vous l’expliquera clairement et vous demandera votre accord avant de l’activer.</p>
+      </div>
+      <button onClick={() => notify("L’assistant domotique sera bientôt disponible dans votre forfait")}>Découvrir l’assistant <span>→</span></button>
+    </section>
     <div className="automation-layout"><section><h3>Vos automatisations <span>{items.length}</span></h3><div className="automation-list">{items.map((a)=><article key={a.id}>
       <span className="automation-icon">{a.icon}</span><div><h4>{a.name}</h4><p><b>QUAND</b> {a.trigger}</p><p><b>ALORS</b> {a.action}</p></div>
       <label className="switch"><input type="checkbox" checked={a.active} onChange={(event)=>{
