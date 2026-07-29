@@ -224,7 +224,14 @@ export async function POST(request: Request) {
     }
     const context = await getEnergyCoachContext(body.dossierPublicId);
     const ai = await openAiReply(message, context);
-    const reply = ai.reply ?? localReply(message, context.insights);
+    const diagnosticRequest = message === "__assistant_diagnostic__";
+    const reply = diagnosticRequest
+      ? {
+          answer: `Diagnostic assistant : ${ai.diagnostic}`,
+          automationProposal: null,
+          suggestedQuestions: [],
+        }
+      : ai.reply ?? localReply(message, context.insights);
     return Response.json({
       reply,
       assistantSource: ai.reply ? "openai" : "local",
