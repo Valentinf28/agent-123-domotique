@@ -19,6 +19,11 @@ type CoachReply = {
   suggestedQuestions: string[];
 };
 
+type OpenAiOutcome = {
+  reply: CoachReply | null;
+  diagnostic: string;
+};
+
 async function authorized() {
   const user = await getChatGPTUser();
   const localDevelopment =
@@ -69,14 +74,17 @@ function responseText(payload: {
 async function openAiReply(
   message: string,
   context: Awaited<ReturnType<typeof getEnergyCoachContext>>,
-): Promise<CoachReply | null> {
+): Promise<OpenAiOutcome> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) return null;
+  if (!apiKey) return { reply: null, diagnostic: "missing_key" };
   if (!await consumeAssistantRequest(context.dossier.id)) {
     return {
-      answer: "Le coach a atteint sa limite de protection pour ce mois. Les recommandations automatiques restent disponibles et le service reprendra au prochain cycle.",
-      automationProposal: null,
-      suggestedQuestions: [],
+      reply: {
+        answer: "Le coach a atteint sa limite de protection pour ce mois. Les recommandations automatiques restent disponibles et le service reprendra au prochain cycle.",
+        automationProposal: null,
+        suggestedQuestions: [],
+      },
+      diagnostic: "house_limit",
     };
   }
   const safetyIdentifier = await sha256(`energy-coach:${context.dossier.publicId}`);
@@ -157,17 +165,28 @@ async function openAiReply(
       }),
       signal: controller.signal,
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => null) as {
+        error?: { code?: string; type?: string };
+      } | null;
+      const errorCode = errorPayload?.error?.code ?? errorPayload?.error?.type ?? "unknown";
+      return { reply: null, diagnostic: `openai_${response.status}_${errorCode}` };
+    }
     const payload = await response.json() as {
       output_text?: string;
       output?: Array<{ content?: Array<{ text?: string }> }>;
     };
     const text = responseText(payload);
-    if (!text) return null;
+    if (!text) return { reply: null, diagnostic: "empty_response" };
     const parsed = JSON.parse(text) as CoachReply;
-    return typeof parsed.answer === "string" ? parsed : null;
-  } catch {
-    return null;
+    return typeof parsed.answer === "string"
+      ? { reply: parsed, diagnostic: "ok" }
+      : { reply: null, diagnostic: "invalid_response" };
+  } catch (error) {
+    const diagnostic = error instanceof Error && error.name === "AbortError"
+      ? "timeout"
+      : "network_or_parse";
+    return { reply: null, diagnostic };
   } finally {
     clearTimeout(timeout);
   }
@@ -204,9 +223,13 @@ export async function POST(request: Request) {
       return Response.json({ error: "Question trop courte" }, { status: 400 });
     }
     const context = await getEnergyCoachContext(body.dossierPublicId);
-    const reply = await openAiReply(message, context) ??
-      localReply(message, context.insights);
-    return Response.json({ reply }, { headers: { "Cache-Control": "no-store" } });
+    const ai = await openAiReply(message, context);
+    const reply = ai.reply ?? localReply(message, context.insights);
+    return Response.json({
+      reply,
+      assistantSource: ai.reply ? "openai" : "local",
+      assistantDiagnostic: ai.diagnostic,
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return Response.json({ error: "Le coach ne peut pas répondre pour le moment" }, { status: 502 });
   }
