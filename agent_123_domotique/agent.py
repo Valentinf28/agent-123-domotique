@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import base64
+import math
 import os
 import ssl
 import threading
@@ -12,6 +13,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -110,7 +112,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.9",
+        "User-Agent": "Agent-123-Domotique/0.5.10",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -167,7 +169,7 @@ def home_assistant_summary(
             "deviceClass": attributes.get("device_class"),
         })
     if full_inventory:
-        inventory.extend(solar_forecast_inventory(supervisor_token))
+        inventory.extend(solar_forecast_inventory(supervisor_token, states))
     return {
         "haVersion": str(config.get("version", "")),
         "inventoryCount": len(states),
@@ -177,7 +179,144 @@ def home_assistant_summary(
     }
 
 
-def solar_forecast_inventory(supervisor_token: str) -> list[dict[str, Any]]:
+def _forecast_energy_wh(state: dict[str, Any] | None) -> float | None:
+    if not state:
+        return None
+    try:
+        value = max(0.0, float(state.get("state", "")))
+    except (TypeError, ValueError):
+        return None
+    attributes = state.get("attributes")
+    unit = str(attributes.get("unit_of_measurement", "") if isinstance(attributes, dict) else "")
+    if unit.lower() == "wh":
+        return value
+    # Forecast.Solar exposes its aggregate energy sensors in kWh.
+    return value * 1000
+
+
+def _forecast_peak_hour(
+    state: dict[str, Any] | None,
+    fallback: float = 12.5,
+) -> float:
+    if not state:
+        return fallback
+    raw = str(state.get("state", "")).strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(raw)
+        if parsed.tzinfo:
+            parsed = parsed.astimezone()
+        return parsed.hour + parsed.minute / 60
+    except ValueError:
+        return fallback
+
+
+def _hourly_shape(starts_at: datetime, peak_hour: float) -> float:
+    local = starts_at.astimezone()
+    hour = local.hour + 0.5
+    if hour < 5 or hour > 21:
+        return 0.0
+    return math.exp(-0.5 * ((hour - peak_hour) / 3.4) ** 2)
+
+
+def _distribute_energy(
+    entries: list[float],
+    slots: list[datetime],
+    start: int,
+    end: int,
+    total_wh: float,
+    peak_hour: float,
+    fixed: dict[int, float] | None = None,
+) -> None:
+    fixed = fixed or {}
+    for index, value in fixed.items():
+        if start <= index < end:
+            entries[index] = max(0.0, value)
+    residual = max(
+        0.0,
+        total_wh - sum(entries[index] for index in fixed if start <= index < end),
+    )
+    flexible = [index for index in range(start, end) if index not in fixed]
+    weights = [_hourly_shape(slots[index], peak_hour) for index in flexible]
+    weight_total = sum(weights)
+    if not flexible:
+        return
+    if weight_total <= 0:
+        weights = [1.0] * len(flexible)
+        weight_total = float(len(flexible))
+    for index, weight in zip(flexible, weights):
+        entries[index] = residual * weight / weight_total
+
+
+def fallback_solar_forecast_inventory(
+    states: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Build a 24-hour curve from Forecast.Solar aggregate sensors.
+
+    Home Assistant 2026.7.2 can reject ``energy/solar_forecast`` even though
+    Forecast.Solar's ordinary sensors are healthy. This fallback keeps the
+    predictive coach useful without calling the weather provider again.
+    """
+    state_by_id = {
+        str(state.get("entity_id", "")): state
+        for state in states
+        if isinstance(state, dict)
+    }
+    next_12 = _forecast_energy_wh(state_by_id.get("sensor.energy_production_next_12hours"))
+    next_24 = _forecast_energy_wh(state_by_id.get("sensor.energy_production_next_24hours"))
+    current_hour = _forecast_energy_wh(state_by_id.get("sensor.energy_current_hour"))
+    next_hour = _forecast_energy_wh(state_by_id.get("sensor.energy_next_hour"))
+    if next_12 is None and next_24 is None and current_hour is None and next_hour is None:
+        return []
+
+    reference = now or datetime.now().astimezone()
+    if reference.tzinfo is None:
+        reference = reference.astimezone()
+    first_slot = reference.replace(minute=0, second=0, microsecond=0)
+    slots = [first_slot + timedelta(hours=index) for index in range(24)]
+    values = [0.0] * len(slots)
+
+    next_12 = max(0.0, next_12 or 0.0)
+    next_24 = max(next_12, next_24 if next_24 is not None else next_12)
+    peak_today = _forecast_peak_hour(
+        state_by_id.get("sensor.power_highest_peak_time_today"),
+    )
+    peak_tomorrow = _forecast_peak_hour(
+        state_by_id.get("sensor.power_highest_peak_time_tomorrow"),
+        peak_today,
+    )
+    fixed = {}
+    if current_hour is not None:
+        fixed[0] = current_hour
+    if next_hour is not None:
+        fixed[1] = next_hour
+    _distribute_energy(values, slots, 0, 12, next_12, peak_today, fixed)
+    _distribute_energy(
+        values,
+        slots,
+        12,
+        24,
+        max(0.0, next_24 - next_12),
+        peak_tomorrow,
+    )
+
+    return [
+        {
+            "entityId": f"{SOLAR_FORECAST_PREFIX}{index:02d}",
+            "name": f"Prévision solaire {slot.isoformat()}",
+            "domain": "sensor",
+            "state": str(round(values[index])),
+            "deviceClass": "energy",
+        }
+        for index, slot in enumerate(slots)
+    ]
+
+
+def solar_forecast_inventory(
+    supervisor_token: str,
+    states: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Expose Home Assistant's solar forecast as ordinary, short-lived inventory rows."""
     global SOLAR_FORECAST_CACHE, SOLAR_FORECAST_FETCHED_AT
     now = time.monotonic()
@@ -216,6 +355,10 @@ def solar_forecast_inventory(supervisor_token: str) -> list[dict[str, Any]]:
                 "state": str(round(watt_hours)),
                 "deviceClass": "energy",
             })
+        if not entries:
+            entries = fallback_solar_forecast_inventory(states)
+            if entries:
+                log("Prévision solaire reconstruite depuis les capteurs Forecast.Solar")
         SOLAR_FORECAST_CACHE = entries
         SOLAR_FORECAST_FETCHED_AT = now
         if entries:
@@ -223,6 +366,14 @@ def solar_forecast_inventory(supervisor_token: str) -> list[dict[str, Any]]:
         return entries
     except Exception as error:
         SOLAR_FORECAST_FETCHED_AT = now
+        fallback = fallback_solar_forecast_inventory(states)
+        if fallback:
+            SOLAR_FORECAST_CACHE = fallback
+            log(
+                "Prévision solaire reconstruite depuis les capteurs "
+                f"Forecast.Solar (courbe Home Assistant indisponible : {error})"
+            )
+            return fallback
         log(f"Prévision solaire indisponible ({error})")
         return SOLAR_FORECAST_CACHE
 
