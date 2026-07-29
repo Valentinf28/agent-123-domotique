@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
 type HomeTab = "Accueil" | "Énergie" | "Confort" | "Piscine" | "Sécurité" | "Véhicule";
@@ -26,7 +26,7 @@ type MobileOverview = {
     poolTemperature: string; poolSetpoint: string;
     hotWaterTemperature: string; hotWaterAvailable: string;
     hotWaterPower: string; hotWaterMode: string;
-    teslaBattery: string; teslaPower: string; demoMode: string;
+    teslaBattery: string; teslaPower: string; teslaPlugged?: string; demoMode: string;
   };
 };
 type CompatibilityLevel = "Automatique" | "Assistée" | "Expert";
@@ -864,14 +864,7 @@ function Dashboard({ setView, setModal, notify, devices, liveStatus, overview, l
     <section className="app-preview">
       <div className="app-tabs">{homeTabs.map((tab) => <button key={tab} className={homeTab === tab ? "selected" : ""} onClick={() => setHomeTab(tab)}>{tab}</button>)}</div>
       <div className="app-connection"><i />{liveStatus === "connected" ? `Maison connectée · mise à jour automatique toutes les 5 s${lastSyncedAt ? ` · ${lastSyncedAt.toLocaleTimeString("fr-FR")}` : ""}` : liveStatus === "loading" ? "Connexion en cours…" : "Mode démonstration"}</div>
-      {(homeTab === "Accueil" || homeTab === "Énergie") && <div className="energy-flow">
-        <div className="flow-lines"><span className="line solar-home"/><span className="line grid-home"/><span className="line battery-home"/><i className="hub"/></div>
-        <FlowNode className="solar" icon="☀" label="Solaire" value={overview?.energy.solar ?? "0 W"} color="yellow" />
-        <FlowNode className="grid" icon="♜" label="Réseau" value={overview?.energy.grid ?? "0 W"} color="blue" />
-        <FlowNode className="house" icon="⌂" label="Maison" value={overview?.energy.home ?? "0 W"} color="teal" />
-        <FlowNode className="battery-node" icon="▰" label="Batterie" value={overview?.energy.battery ?? "0 %"} sub={overview?.energy.batteryPower} color="green" />
-        <FlowNode className="filter-node" icon="♒" label="Filtration" value={overview?.energy.filtration ?? "0 W"} color="cyan" />
-      </div>}
+      {(homeTab === "Accueil" || homeTab === "Énergie") && <EnergyScene overview={overview} />}
       {homeTab === "Confort" && <div className="home-tab-summary"><span className="module-symbol comfort">⌂</span><div><small>Température intérieure</small><strong>{overview?.comfort?.indoorTemperature ?? "—"}</strong><p>Consigne de chauffage · {overview?.comfort?.heatingSetpoint ?? "—"}</p></div><div><small>Eau chaude</small><strong>{overview?.comfort?.hotWaterTemperature ?? "—"}</strong><p>{overview?.comfort?.hotWaterAvailable ?? "—"} disponible · {overview?.comfort?.hotWaterPower ?? "0 W"}</p></div></div>}
       {homeTab === "Piscine" && <div className="home-tab-summary"><span className="module-symbol pool">≋</span><div><small>Température piscine</small><strong>{overview?.comfort?.poolTemperature ?? "—"}</strong><p>Consigne · {overview?.comfort?.poolSetpoint ?? "—"}</p></div><div><small>Filtration</small><strong>{overview?.energy.filtration ?? "0 W"}</strong><p>Installation simulée pour la démonstration</p></div></div>}
       {homeTab === "Sécurité" && <div className="home-tab-summary"><span className="module-symbol">▣</span><div><small>Protection de la maison</small><strong>Sécurité</strong><p>Serrure et caméras pilotées depuis le portail</p></div><div><small>État</small><strong>{visibleControls.every((control) => control.available) ? "Connecté" : "À vérifier"}</strong><p>{visibleControls.length} équipements supervisés</p></div></div>}
@@ -922,10 +915,126 @@ function Dashboard({ setView, setModal, notify, devices, liveStatus, overview, l
   </div>;
 }
 
-function FlowNode({ className, icon, label, value, sub, color }: {
-  className: string; icon: string; label: string; value: string; sub?: string; color: string;
+function powerNumber(value?: string) {
+  if (!value) return 0;
+  const normalized = value
+    .replace(/[\s\u00a0\u202f]/g, "")
+    .replace(",", ".");
+  const numeric = Number(normalized.match(/-?\d+(?:\.\d+)?/)?.[0] ?? 0);
+  return /kw/i.test(normalized) ? numeric * 1000 : numeric;
+}
+
+function formatWatts(value: number) {
+  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(value))} W`;
+}
+
+function flowDuration(value: number) {
+  const pixelsPerSecond = 6 + Math.min(Math.abs(value), 10_000) * 0.009;
+  return Math.max(500, Math.round(32_000 / pixelsPerSecond));
+}
+
+function SceneFlow({ route, active, reverse, color, power }: {
+  route: "solar" | "grid" | "home" | "battery" | "vehicle";
+  active: boolean;
+  reverse?: boolean;
+  color: string;
+  power: number;
 }) {
-  return <div className={`flow-node ${className} ${color}`}><small>{label}</small><span>{icon}</span><strong>{value}</strong>{sub && <em>{sub}</em>}</div>;
+  const style = {
+    "--flow-color": color,
+    "--flow-duration": `${flowDuration(power)}ms`,
+  } as CSSProperties;
+  const segmentCount = route === "solar" || route === "battery" ? 1 : 3;
+  return <div
+    className={`scene-flow route-${route}${active ? " is-active" : ""}${reverse ? " is-reverse" : ""}`}
+    style={style}
+    aria-hidden="true"
+  >
+    {Array.from({ length: segmentCount }, (_, index) => <span key={index} />)}
+  </div>;
+}
+
+function SceneLabel({ className, icon, title, value, sub, color }: {
+  className: string;
+  icon: string;
+  title: string;
+  value: string;
+  sub?: string;
+  color: string;
+}) {
+  return <div className={`scene-label ${className}`}>
+    <span className="scene-label-title"><i style={{ color }}>{icon}</i>{title}</span>
+    <strong>{value}</strong>
+    {sub && <em>{sub}</em>}
+  </div>;
+}
+
+function EnergyScene({ overview }: { overview: MobileOverview | null }) {
+  const [isDay, setIsDay] = useState(true);
+
+  useEffect(() => {
+    const updateDaylight = () => {
+      const hour = new Date().getHours();
+      setIsDay(hour >= 7 && hour < 20);
+    };
+    updateDaylight();
+    const timer = window.setInterval(updateDaylight, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const solarWatts = powerNumber(overview?.energy.solar);
+  const homeWatts = powerNumber(overview?.energy.home);
+  const gridWatts = powerNumber(overview?.energy.grid);
+  const batteryWatts = powerNumber(overview?.energy.batteryPower);
+  const vehicleWatts = Math.max(0, powerNumber(overview?.comfort?.teslaPower));
+  const pluggedState = overview?.comfort?.teslaPlugged?.toLowerCase() ?? "";
+  const vehiclePlugged = vehicleWatts > 5
+    || ["on", "connected", "charging", "complete", "stopped", "no_power", "starting", "branchée"].some((state) => pluggedState.includes(state));
+  const inverterY = isDay ? "52.22%" : "50.16%";
+  const batteryEndY = isDay ? "58.41%" : "56.51%";
+
+  return <div className="energy-scene-wrap">
+    <div
+      className={`energy-scene-card ${isDay ? "is-day" : "is-night"}`}
+      style={{
+        "--inverter-y": inverterY,
+        "--battery-end-y": batteryEndY,
+      } as CSSProperties}
+    >
+      <img
+        src={isDay ? "/energy/energy-home-day.png" : "/energy/energy-home-night.png"}
+        alt=""
+        className="energy-scene-house"
+      />
+      <div className="energy-scene-shade" />
+
+      <SceneFlow route="solar" active={solarWatts > 5} color="#ffe700" power={solarWatts} />
+      <SceneFlow route="grid" active={Math.abs(gridWatts) > 5} reverse={gridWatts > 0} color="#438ed0" power={gridWatts} />
+      <SceneFlow route="home" active={homeWatts > 5} color="#55c8bd" power={homeWatts} />
+      <SceneFlow route="battery" active={Math.abs(batteryWatts) > 5} reverse={batteryWatts > 0} color="#f05d9b" power={batteryWatts} />
+      <SceneFlow route="vehicle" active={vehiclePlugged && vehicleWatts > 5} color="#4ed6f5" power={vehicleWatts} />
+      <span className="scene-inverter-hub" aria-hidden="true" />
+
+      <SceneLabel className="scene-production" icon="☀" title="Production" value={formatWatts(solarWatts)} color="#ffe700" />
+      <SceneLabel
+        className="scene-grid"
+        icon="♜"
+        title="Réseau"
+        value={Math.abs(gridWatts) < 5 ? "0 W" : `${gridWatts > 0 ? "→ " : "← "}${formatWatts(gridWatts)}`}
+        color="#438ed0"
+      />
+      <SceneLabel className="scene-home" icon="⌂" title="Consommation" value={formatWatts(homeWatts)} color="#55c8bd" />
+      <SceneLabel
+        className="scene-battery"
+        icon="▰"
+        title="Batterie"
+        value={overview?.energy.battery ?? "0 %"}
+        sub={Math.abs(batteryWatts) < 5 ? "0 W" : `${batteryWatts > 0 ? "↑ " : "↓ "}${formatWatts(batteryWatts)}`}
+        color="#f05d9b"
+      />
+      {vehiclePlugged && <SceneLabel className="scene-vehicle" icon="◇" title="Voiture" value={formatWatts(vehicleWatts)} color="#4ed6f5" />}
+    </div>
+  </div>;
 }
 
 function Devices({ filtered, areas, search, setSearch, room, setRoom, notify, manage, updateDevice }: {

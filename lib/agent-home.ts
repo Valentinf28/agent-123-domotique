@@ -70,8 +70,24 @@ const valueBindings = {
   heatingSetpoint: ["input_number.demo_heating_setpoint"],
   poolTemperature: ["input_number.demo_pool_temperature"],
   poolSetpoint: ["input_number.demo_pool_setpoint"],
-  teslaBattery: ["input_number.demo_tesla_soc"],
-  teslaPower: ["input_number.demo_tesla_charge_power"],
+  teslaBattery: [
+    "sensor.tesla_model_x_battery",
+    "sensor.tesla_y_battery",
+    "input_number.demo_tesla_soc",
+  ],
+  teslaPower: [
+    "sensor.tesla_model_x_charger_power",
+    "sensor.tesla_y_charger_power",
+    "input_number.demo_tesla_charge_power",
+  ],
+  teslaPlugged: [
+    "binary_sensor.tesla_model_x_charger",
+    "binary_sensor.tesla_model_x_charger_connected",
+    "sensor.tesla_model_x_charging_state",
+    "binary_sensor.tesla_y_charger",
+    "binary_sensor.tesla_y_charger_connected",
+    "sensor.tesla_y_charging_state",
+  ],
   demoMode: ["input_select.demo_mode"],
 } as const;
 
@@ -242,6 +258,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
         hotWaterMode: formatted(find(inventory, valueBindings.hotWaterMode), ""),
         teslaBattery: formatted(find(inventory, valueBindings.teslaBattery), "%"),
         teslaPower: formatted(find(inventory, valueBindings.teslaPower), "W", "0 W"),
+        teslaPlugged: formatted(find(inventory, valueBindings.teslaPlugged), "", "off"),
         demoMode: formatted(find(inventory, valueBindings.demoMode), ""),
       },
     },
