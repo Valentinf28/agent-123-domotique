@@ -112,7 +112,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.10",
+        "User-Agent": "Agent-123-Domotique/0.5.11",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -247,6 +247,42 @@ def _distribute_energy(
         entries[index] = residual * weight / weight_total
 
 
+def _distribute_daily_energy(
+    entries: list[float],
+    slots: list[datetime],
+    target_date,
+    total_wh: float,
+    peak_hour: float,
+    *,
+    remaining_only: bool,
+) -> None:
+    indexes = [
+        index
+        for index, slot in enumerate(slots)
+        if slot.astimezone().date() == target_date
+    ]
+    if not indexes or total_wh <= 0:
+        return
+    weights = [_hourly_shape(slots[index], peak_hour) for index in indexes]
+    if remaining_only:
+        weight_total = sum(weights)
+    else:
+        start = slots[indexes[0]].astimezone().replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        weight_total = sum(
+            _hourly_shape(start + timedelta(hours=hour), peak_hour)
+            for hour in range(24)
+        )
+    if weight_total <= 0:
+        return
+    for index, weight in zip(indexes, weights):
+        entries[index] = total_wh * weight / weight_total
+
+
 def fallback_solar_forecast_inventory(
     states: list[dict[str, Any]],
     *,
@@ -267,7 +303,23 @@ def fallback_solar_forecast_inventory(
     next_24 = _forecast_energy_wh(state_by_id.get("sensor.energy_production_next_24hours"))
     current_hour = _forecast_energy_wh(state_by_id.get("sensor.energy_current_hour"))
     next_hour = _forecast_energy_wh(state_by_id.get("sensor.energy_next_hour"))
-    if next_12 is None and next_24 is None and current_hour is None and next_hour is None:
+    today_remaining = _forecast_energy_wh(
+        state_by_id.get("sensor.energy_production_today_remaining")
+    )
+    tomorrow = _forecast_energy_wh(
+        state_by_id.get("sensor.energy_production_tomorrow")
+    )
+    if all(
+        value is None
+        for value in (
+            next_12,
+            next_24,
+            current_hour,
+            next_hour,
+            today_remaining,
+            tomorrow,
+        )
+    ):
         return []
 
     reference = now or datetime.now().astimezone()
@@ -277,8 +329,6 @@ def fallback_solar_forecast_inventory(
     slots = [first_slot + timedelta(hours=index) for index in range(24)]
     values = [0.0] * len(slots)
 
-    next_12 = max(0.0, next_12 or 0.0)
-    next_24 = max(next_12, next_24 if next_24 is not None else next_12)
     peak_today = _forecast_peak_hour(
         state_by_id.get("sensor.power_highest_peak_time_today"),
     )
@@ -286,20 +336,41 @@ def fallback_solar_forecast_inventory(
         state_by_id.get("sensor.power_highest_peak_time_tomorrow"),
         peak_today,
     )
-    fixed = {}
-    if current_hour is not None:
-        fixed[0] = current_hour
-    if next_hour is not None:
-        fixed[1] = next_hour
-    _distribute_energy(values, slots, 0, 12, next_12, peak_today, fixed)
-    _distribute_energy(
-        values,
-        slots,
-        12,
-        24,
-        max(0.0, next_24 - next_12),
-        peak_tomorrow,
-    )
+    if next_12 is not None or next_24 is not None:
+        next_12 = max(0.0, next_12 or 0.0)
+        next_24 = max(next_12, next_24 if next_24 is not None else next_12)
+        fixed = {}
+        if current_hour is not None:
+            fixed[0] = current_hour
+        if next_hour is not None:
+            fixed[1] = next_hour
+        _distribute_energy(values, slots, 0, 12, next_12, peak_today, fixed)
+        _distribute_energy(
+            values,
+            slots,
+            12,
+            24,
+            max(0.0, next_24 - next_12),
+            peak_tomorrow,
+        )
+    else:
+        today = reference.astimezone().date()
+        _distribute_daily_energy(
+            values,
+            slots,
+            today,
+            max(0.0, today_remaining or 0.0),
+            peak_today,
+            remaining_only=True,
+        )
+        _distribute_daily_energy(
+            values,
+            slots,
+            today + timedelta(days=1),
+            max(0.0, tomorrow or 0.0),
+            peak_tomorrow,
+            remaining_only=False,
+        )
 
     return [
         {
