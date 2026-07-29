@@ -93,7 +93,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.5",
+        "User-Agent": "Agent-123-Domotique/0.5.6",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
