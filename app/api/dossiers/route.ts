@@ -35,8 +35,10 @@ export async function POST(request: Request) {
     if (reference.length < 3 || customerName.length < 2) {
       return Response.json({ error: "Référence et client requis" }, { status: 400 });
     }
+    const dossierPublicId = publicId();
     const [created] = await getDb().insert(installationDossiers).values({
-      publicId: publicId(),
+      publicId: dossierPublicId,
+      relayHouseId: dossierPublicId,
       reference,
       customerName,
     }).returning();

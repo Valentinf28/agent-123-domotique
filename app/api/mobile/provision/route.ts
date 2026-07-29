@@ -2,6 +2,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { installationDossiers, mobilePairingCodes, plannedDevices } from "../../../../db/schema";
 import { sha256 } from "../../../../lib/agent-auth";
+import { subscriptionSummary } from "../../../../lib/subscription";
 
 const viewCatalog = {
   home: { key: "home", label: "Maison", icon: "home-variant-outline", path: "/app" },
@@ -51,6 +52,7 @@ export async function POST(request: Request) {
       houseName: dossier.customerName || "Ma Maison",
       portalUrl: `${origin}/ma-maison`,
       apiBaseUrl: `${origin}/api`,
+      subscription: subscriptionSummary(dossier),
       modules,
       views,
       configuredDevices: configuredDevices

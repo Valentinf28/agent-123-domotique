@@ -42,8 +42,10 @@ async function activeDossier(request?: Request, requestedPublicId?: string) {
     .where(eq(installationDossiers.status, "preparation"))
     .orderBy(asc(installationDossiers.id)).limit(1);
   if (existing) return existing;
+  const dossierPublicId = publicId("installation");
   const [created] = await db.insert(installationDossiers).values({
-    publicId: publicId("installation"),
+    publicId: dossierPublicId,
+    relayHouseId: dossierPublicId,
     reference: "DOSSIER-PILOTE",
     customerName: "Maison pilote",
   }).returning();

@@ -47,6 +47,16 @@ type AgentInventoryItem = {
 type InstallationDossier = {
   publicId: string; reference: string; customerName: string; status: string; updatedAt: string;
 };
+type SubscriptionSummary = {
+  status: "not_started" | "trialing" | "active" | "past_due" | "suspended" | "cancelled";
+  remoteAccessAllowed: boolean;
+  accessEndsAt: string | null;
+  remainingDays: number | null;
+  trialEndsAt: string | null;
+  graceEndsAt: string | null;
+  priceCents: number;
+  interval: "monthly" | "yearly";
+};
 
 const HOME_REFRESH_MS = 5_000;
 const homeTabs: HomeTab[] = ["Accueil", "Énergie", "Confort", "Piscine", "Sécurité", "Véhicule"];
@@ -561,6 +571,8 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
   const [agent, setAgent] = useState<{ status: string; haVersion?: string | null; inventoryCount: number; lastSeenAt?: string | null; inventory?: AgentInventoryItem[] } | null>(null);
   const [enrollment, setEnrollment] = useState<{ code: string; expiresAt: string } | null>(null);
   const [mobilePairing, setMobilePairing] = useState<{ code: string; expiresAt: string } | null>(null);
+  const [subscription, setSubscription] = useState<SubscriptionSummary | null>(null);
+  const [subscriptionSaving, setSubscriptionSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -580,6 +592,10 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
     fetch(`/api/agent/enrollment?dossier=${encodeURIComponent(dossierId)}`, { headers: { Accept: "application/json" } })
       .then(response => response.ok ? response.json() : Promise.reject())
       .then(payload => { if (active) setAgent(payload.agent); })
+      .catch(() => undefined);
+    fetch(`/api/subscriptions/${encodeURIComponent(dossierId)}`, { headers: { Accept: "application/json" } })
+      .then(response => response.ok ? response.json() : Promise.reject())
+      .then(payload => { if (active) setSubscription(payload.subscription); })
       .catch(() => undefined);
     return () => { active = false; };
   }, [dossierId]);
@@ -691,6 +707,41 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
     }
   }
 
+  async function updateSubscription(
+    action: "start_trial" | "activate" | "mark_past_due" | "suspend",
+    interval?: "monthly" | "yearly",
+  ) {
+    setSubscriptionSaving(true);
+    try {
+      const response = await fetch(`/api/subscriptions/${encodeURIComponent(dossierId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ action, interval }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Mise à jour impossible");
+      setSubscription(payload.subscription);
+      const messages = {
+        start_trial: "Essai de 30 jours démarré",
+        activate: "Abonnement activé",
+        mark_past_due: "Délai de grâce de 7 jours démarré",
+        suspend: "Accès extérieur suspendu, fonctionnement local conservé",
+      };
+      notify(messages[action]);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "L’abonnement n’a pas pu être mis à jour");
+    } finally {
+      setSubscriptionSaving(false);
+    }
+  }
+
+  async function completeInstallation() {
+    if (subscription?.status === "not_started") {
+      await updateSubscription("start_trial");
+    }
+    notify("Installation terminée · accès extérieur offert pendant 30 jours");
+  }
+
   const tested = items.filter(item => item.status === "Testé").reduce((sum, item) => sum + item.quantity, 0);
   const total = items.reduce((sum, item) => sum + item.quantity, 0);
   const blocked = items.filter(item => item.status === "Bloqué").length;
@@ -721,8 +772,51 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
         </article>;
       })}</section>}
     <section className="mobile-pairing"><div><span>▣</span><p><b>Application du client</b><small>Le code configure automatiquement la maison et les onglets choisis pendant la préparation.</small></p></div><strong>{mobilePairing ? mobilePairing.code : "Aucun code actif"}</strong><button onClick={createMobilePairing}>{mobilePairing ? "Nouveau code" : "Générer le code"}</button></section>
-    <section className="handover"><div><span>✓</span><p><b>Remise au client</b><small>Disponible lorsque tous les équipements sont testés et qu’aucun blocage ne subsiste.</small></p></div><button disabled={progress < 100 || blocked > 0} onClick={() => notify("Rapport de mise en service généré")}>Terminer l’installation</button></section>
+    <SubscriptionCard
+      subscription={subscription}
+      saving={subscriptionSaving}
+      update={updateSubscription}
+    />
+    <section className="handover"><div><span>✓</span><p><b>Remise au client</b><small>La validation démarre les 30 jours d’accès 4G/5G offerts. La domotique locale restera toujours disponible.</small></p></div><button disabled={progress < 100 || blocked > 0 || subscriptionSaving} onClick={() => void completeInstallation()}>{subscription?.status === "not_started" ? "Terminer et démarrer l’essai" : "Terminer l’installation"}</button></section>
   </div>;
+}
+
+function SubscriptionCard({ subscription, saving, update }: {
+  subscription: SubscriptionSummary | null;
+  saving: boolean;
+  update: (
+    action: "start_trial" | "activate" | "mark_past_due" | "suspend",
+    interval?: "monthly" | "yearly",
+  ) => Promise<void>;
+}) {
+  if (!subscription) return null;
+  const labels: Record<SubscriptionSummary["status"], string> = {
+    not_started: "Essai non démarré",
+    trialing: `Essai offert · ${subscription.remainingDays ?? 0} jour${subscription.remainingDays === 1 ? "" : "s"} restant${subscription.remainingDays === 1 ? "" : "s"}`,
+    active: `Abonnement ${subscription.interval === "yearly" ? "annuel" : "mensuel"} actif`,
+    past_due: `Paiement à régulariser · ${subscription.remainingDays ?? 0} jour${subscription.remainingDays === 1 ? "" : "s"} de grâce`,
+    suspended: "Accès extérieur suspendu",
+    cancelled: "Abonnement résilié",
+  };
+  return <section className={`subscription-card subscription-${subscription.status}`}>
+    <div><span>↗</span><p><b>Accès extérieur 4G/5G</b><small>{labels[subscription.status]} · Le Wi‑Fi et les automatismes locaux restent disponibles.</small></p></div>
+    <strong>{subscription.interval === "yearly" ? "79 € / an" : "7,90 € / mois"}</strong>
+    <div className="subscription-actions">
+      {subscription.status === "not_started" && <button disabled={saving} onClick={() => void update("start_trial")}>Démarrer l’essai</button>}
+      {["trialing", "suspended", "cancelled"].includes(subscription.status) && <>
+        <button disabled={saving} onClick={() => void update("activate", "monthly")}>Activer mensuel</button>
+        <button disabled={saving} onClick={() => void update("activate", "yearly")}>Activer annuel</button>
+      </>}
+      {subscription.status === "active" && <>
+        <button disabled={saving} onClick={() => void update("mark_past_due")}>Signaler un impayé</button>
+        <button disabled={saving} onClick={() => void update("suspend")}>Suspendre</button>
+      </>}
+      {subscription.status === "past_due" && <>
+        <button disabled={saving} onClick={() => void update("activate", subscription.interval)}>Paiement reçu</button>
+        <button disabled={saving} onClick={() => void update("suspend")}>Suspendre</button>
+      </>}
+    </div>
+  </section>;
 }
 
 function friendlyState(state: string) {

@@ -4,14 +4,24 @@ import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core
 export const installationDossiers = sqliteTable("installation_dossiers", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   publicId: text("public_id").notNull(),
+  relayHouseId: text("relay_house_id"),
   reference: text("reference").notNull(),
   customerName: text("customer_name").notNull(),
   enabledModules: text("enabled_modules").notNull().default('["home","solar","heating","access","vehicle"]'),
   status: text("status").notNull().default("preparation"),
+  subscriptionStatus: text("subscription_status").notNull().default("not_started"),
+  subscriptionPriceCents: integer("subscription_price_cents").notNull().default(790),
+  subscriptionInterval: text("subscription_interval").notNull().default("monthly"),
+  trialStartedAt: text("trial_started_at"),
+  trialEndsAt: text("trial_ends_at"),
+  graceEndsAt: text("grace_ends_at"),
+  subscriptionStartedAt: text("subscription_started_at"),
+  subscriptionEndsAt: text("subscription_ends_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("installation_dossiers_public_id_idx").on(table.publicId),
+  uniqueIndex("installation_dossiers_relay_house_id_idx").on(table.relayHouseId),
 ]);
 
 export const plannedDevices = sqliteTable("planned_devices", {

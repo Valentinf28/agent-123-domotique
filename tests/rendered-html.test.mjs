@@ -87,3 +87,22 @@ test("garde Home Assistant hors du parcours client", async () => {
   assert.doesNotMatch(mobileProvision, /homeAssistantUrl|entityId:/i);
   assert.match(mobileProvision, /portalUrl/);
 });
+
+test("gère l’essai de 30 jours sans couper la domotique locale", async () => {
+  const [schema, subscription, entitlement, portal, relay] = await Promise.all([
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/subscription.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/relay/entitlement/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../../domotique-relay/app.py", import.meta.url), "utf8"),
+  ]);
+  assert.match(schema, /subscriptionStatus/);
+  assert.match(subscription, /TRIAL_DAYS = 30/);
+  assert.match(subscription, /GRACE_DAYS = 7/);
+  assert.match(subscription, /remoteAccessAllowed/);
+  assert.match(entitlement, /X-Relay-Authorization/);
+  assert.match(portal, /accès 4G\/5G offerts/i);
+  assert.match(portal, /automatismes locaux restent disponibles/i);
+  assert.match(relay, /role == "client"/);
+  assert.doesNotMatch(relay, /role == "agent".*entitlement/s);
+});
