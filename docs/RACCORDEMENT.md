@@ -12,6 +12,12 @@ techniques par des identifiants opaques. Une commande cliente est placée dans l
 file du dossier, récupérée au prochain contact de l’agent, puis exécutée
 localement.
 
+La Green Box envoie son état toutes les 10 secondes. La vue client relit
+automatiquement `/api/home` au même rythme et le bouton d’actualisation force une
+lecture immédiate. Les onglets Énergie, Confort, Piscine, Sécurité et Véhicule
+reconstituent dans le portail la vue domotique utile au client, sans charger ni
+exposer l’interface Home Assistant.
+
 ## Architecture cible
 
 1. Le navigateur appelle uniquement les routes `/api/*` du portail.

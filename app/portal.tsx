@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
+type HomeTab = "Accueil" | "Énergie" | "Confort" | "Piscine" | "Sécurité" | "Véhicule";
 type Device = {
   id: string; name: string; room: string; areaPublicId: string | null;
   category: string; state: string;
@@ -46,6 +47,9 @@ type AgentInventoryItem = {
 type InstallationDossier = {
   publicId: string; reference: string; customerName: string; status: string; updatedAt: string;
 };
+
+const HOME_REFRESH_MS = 10_000;
+const homeTabs: HomeTab[] = ["Accueil", "Énergie", "Confort", "Piscine", "Sécurité", "Véhicule"];
 
 const appModules: { key: AppModule; label: string; description: string; icon: string; required?: boolean }[] = [
   { key: "home", label: "Maison", description: "Résumé et raccourcis essentiels", icon: "⌂", required: true },
@@ -106,6 +110,8 @@ export default function Portal({ customerOnly = false }: { customerOnly?: boolea
   const [selectedAutomation, setSelectedAutomation] = useState<Automation | null>(null);
   const [liveStatus, setLiveStatus] = useState<"loading" | "connected" | "demo">("loading");
   const [mobileOverview, setMobileOverview] = useState<MobileOverview | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [homeRefreshToken, setHomeRefreshToken] = useState(0);
   const [plannedItems, setPlannedItems] = useState<PlannedItem[]>([
     { ...catalogItems[5], quantity: 1, room: "Local technique", status: "Prêt" },
     { ...catalogItems[6], quantity: 4, room: "Salon", status: "À préparer" },
@@ -134,55 +140,70 @@ export default function Portal({ customerOnly = false }: { customerOnly?: boolea
     const query = selectedDossierId
       ? `?dossier=${encodeURIComponent(selectedDossierId)}`
       : "";
-    fetch(`/api/home${query}`, { headers: { Accept: "application/json" } })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("connection");
-        return response.json();
+
+    function loadHome() {
+      fetch(`/api/home${query}`, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
       })
-      .then((payload) => {
-        if (!active || !payload?.home?.devices) return;
-        const categoryIcons: Record<string, string> = {
-          "Éclairage": "◉", "Climat": "♨", "Sécurité": "▣",
-          "Volets": "▤", "Interrupteurs": "ϟ", "Capteurs": "⌁",
-          "Ventilation": "◌", "Entretien": "◇", "Multimédia": "▷",
-        };
-        const mapped: Device[] = payload.home.devices.map((device: {
-          publicId: string; name: string; room: string; category: string;
-          areaPublicId: string | null; state: string; available: boolean;
-          battery: number | null; visible: boolean;
-        }) => ({
-          id: device.publicId,
-          name: device.name,
-          room: device.room,
-          areaPublicId: device.areaPublicId,
-          category: device.category,
-          state: friendlyState(device.state),
-          detail: device.available ? "Synchronisé à l’instant" : "À vérifier",
-          battery: device.battery ?? undefined,
-          online: device.available,
-          visible: device.visible,
-          icon: categoryIcons[device.category] ?? "◇",
-        }));
-        setDevices(mapped);
-        setAreas(payload.home.areas ?? []);
-        setAutomationItems((payload.home.automations ?? []).map((automation: {
-          publicId: string; name: string; trigger: string; action: string;
-          enabled: boolean; lastTriggered: string | null;
-        }) => ({
-          id: automation.publicId,
-          name: automation.name,
-          trigger: automation.trigger,
-          action: automation.action,
-          active: automation.enabled,
-          lastTriggered: automation.lastTriggered,
-          icon: "⌁",
-        })));
-        setMobileOverview(payload.home.mobileOverview ?? null);
-        setLiveStatus("connected");
-      })
-      .catch(() => setLiveStatus("demo"));
-    return () => { active = false; };
-  }, [selectedDossierId]);
+        .then(async (response) => {
+          if (!response.ok) throw new Error("connection");
+          return response.json();
+        })
+        .then((payload) => {
+          if (!active || !payload?.home?.devices) return;
+          const categoryIcons: Record<string, string> = {
+            "Éclairage": "◉", "Climat": "♨", "Sécurité": "▣",
+            "Volets": "▤", "Interrupteurs": "ϟ", "Capteurs": "⌁",
+            "Ventilation": "◌", "Entretien": "◇", "Multimédia": "▷",
+          };
+          const mapped: Device[] = payload.home.devices.map((device: {
+            publicId: string; name: string; room: string; category: string;
+            areaPublicId: string | null; state: string; available: boolean;
+            battery: number | null; visible: boolean;
+          }) => ({
+            id: device.publicId,
+            name: device.name,
+            room: device.room,
+            areaPublicId: device.areaPublicId,
+            category: device.category,
+            state: friendlyState(device.state),
+            detail: device.available ? "Synchronisé à l’instant" : "À vérifier",
+            battery: device.battery ?? undefined,
+            online: device.available,
+            visible: device.visible,
+            icon: categoryIcons[device.category] ?? "◇",
+          }));
+          setDevices(mapped);
+          setAreas(payload.home.areas ?? []);
+          setAutomationItems((payload.home.automations ?? []).map((automation: {
+            publicId: string; name: string; trigger: string; action: string;
+            enabled: boolean; lastTriggered: string | null;
+          }) => ({
+            id: automation.publicId,
+            name: automation.name,
+            trigger: automation.trigger,
+            action: automation.action,
+            active: automation.enabled,
+            lastTriggered: automation.lastTriggered,
+            icon: "⌁",
+          })));
+          setMobileOverview(payload.home.mobileOverview ?? null);
+          setLastSyncedAt(new Date());
+          setLiveStatus("connected");
+        })
+        .catch(() => {
+          if (active) setLiveStatus("demo");
+        });
+    }
+
+    loadHome();
+    const refreshTimer = window.setInterval(loadHome, HOME_REFRESH_MS);
+    return () => {
+      active = false;
+      window.clearInterval(refreshTimer);
+    };
+  }, [selectedDossierId, homeRefreshToken]);
 
   const filtered = useMemo(() => devices.filter((device) =>
     (room === "Toutes" || device.room === room) &&
@@ -330,7 +351,7 @@ export default function Portal({ customerOnly = false }: { customerOnly?: boolea
           </button>)}
         </nav>
         <div className="sidebar-bottom">
-          <div className="connection"><i /> Maison connectée <small>Dernière synchro à l’instant</small></div>
+          <div className="connection"><i /> Maison connectée <small>{lastSyncedAt ? `Synchronisée à ${lastSyncedAt.toLocaleTimeString("fr-FR")}` : "Connexion en cours…"}</small></div>
           <button className="profile" disabled={customerOnly} onClick={() => {
             if (!customerOnly) setRole(role === "Client" ? "Installateur" : "Client");
           }}>
@@ -354,13 +375,16 @@ export default function Portal({ customerOnly = false }: { customerOnly?: boolea
             </label>}
             {role === "Installateur" && <button className="icon-button" aria-label="Créer un dossier" title="Créer un dossier" onClick={() => setNewDossierOpen(true)}>＋</button>}
             {!customerOnly && <Link className="dashboard-link" href="/ma-maison">Vue client</Link>}
-            <button className="icon-button" aria-label="Actualiser" onClick={() => notify("Maison actualisée à l’instant")}>↻</button>
+            <button className="icon-button" aria-label="Actualiser" onClick={() => {
+              setHomeRefreshToken((value) => value + 1);
+              notify("Actualisation demandée");
+            }}>↻</button>
             <button className="icon-button notification" aria-label="Notifications" onClick={() => setModal("alertes")}>♢<i /></button>
             <button className="primary" onClick={() => setView("Ajouter")}><span>＋</span> Ajouter un appareil</button>
           </div>
         </header>
 
-        {view === "Accueil" && <Dashboard setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} onControl={setHomeControl} />}
+        {view === "Accueil" && <Dashboard setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} lastSyncedAt={lastSyncedAt} onControl={setHomeControl} />}
         {view === "Préparation" && <Preparation dossierId={selectedDossierId} plannedItems={plannedItems} setPlannedItems={setPlannedItems} notify={notify} setView={setView} />}
         {view === "Installation" && <Installation dossierId={selectedDossierId} notify={notify} />}
         {view === "Appareils" && <Devices filtered={filtered} areas={areas} search={search} setSearch={setSearch} room={room} setRoom={setRoom} notify={notify} manage={(device) => { setSelectedDevice(device); setModal("appareil"); }} updateDevice={updateDevice} />}
@@ -711,44 +735,60 @@ function friendlyState(state: string) {
   return states[state.toLowerCase()] ?? state;
 }
 
-function Dashboard({ setView, setModal, notify, devices, liveStatus, overview, onControl }: {
+function Dashboard({ setView, setModal, notify, devices, liveStatus, overview, lastSyncedAt, onControl }: {
   setView: (v: View) => void; setModal: (v: string) => void;
   notify: (v: string) => void; devices: Device[];
   liveStatus: "loading" | "connected" | "demo";
   overview: MobileOverview | null;
+  lastSyncedAt: Date | null;
   onControl: (
     control: MobileOverview["controls"][number],
     enabled: boolean,
   ) => Promise<void>;
 }) {
+  const [homeTab, setHomeTab] = useState<HomeTab>("Accueil");
   const available = devices.filter((device) => device.online).length;
   const lowBattery = devices.filter((device) => device.battery !== undefined && device.battery < 20).length;
+  const controls = overview?.controls ?? [
+    {publicId:"demo-heat",label:"Chauffage",icon:"♨",active:false,available:false},
+    {publicId:"demo-filter",label:"Filtration",icon:"≋",active:false,available:false},
+    {publicId:"demo-pool",label:"PAC piscine",icon:"♨",active:false,available:false},
+    {publicId:"demo-lock",label:"Serrure Nuki",icon:"▣",active:false,available:false},
+    {publicId:"demo-camera",label:"Caméras",icon:"◉",active:false,available:false},
+    {publicId:"demo-water",label:"Ballon d’eau chaude",icon:"♨",active:false,available:false},
+  ];
+  const controlLabels: Partial<Record<HomeTab, string[]>> = {
+    Confort: ["Chauffage", "Ballon d’eau chaude"],
+    Piscine: ["Filtration", "PAC piscine"],
+    Sécurité: ["Serrure Nuki", "Caméras"],
+  };
+  const visibleControls = homeTab === "Accueil"
+    ? controls
+    : controls.filter((control) => controlLabels[homeTab]?.includes(control.label));
+
   return <div className="content app-home">
     <section className="app-preview">
-      <div className="app-tabs"><button className="selected">Accueil</button><button>Énergie</button><button>Confort</button><button>Piscine</button><button>Sécurité</button><button>Véhicule</button></div>
-      <div className="app-connection"><i />{liveStatus === "connected" ? "Maison connectée" : liveStatus === "loading" ? "Connexion en cours…" : "Mode démonstration"}</div>
-      <div className="energy-flow">
+      <div className="app-tabs">{homeTabs.map((tab) => <button key={tab} className={homeTab === tab ? "selected" : ""} onClick={() => setHomeTab(tab)}>{tab}</button>)}</div>
+      <div className="app-connection"><i />{liveStatus === "connected" ? `Maison connectée · mise à jour automatique toutes les 10 s${lastSyncedAt ? ` · ${lastSyncedAt.toLocaleTimeString("fr-FR")}` : ""}` : liveStatus === "loading" ? "Connexion en cours…" : "Mode démonstration"}</div>
+      {(homeTab === "Accueil" || homeTab === "Énergie") && <div className="energy-flow">
         <div className="flow-lines"><span className="line solar-home"/><span className="line grid-home"/><span className="line battery-home"/><i className="hub"/></div>
         <FlowNode className="solar" icon="☀" label="Solaire" value={overview?.energy.solar ?? "0 W"} color="yellow" />
         <FlowNode className="grid" icon="♜" label="Réseau" value={overview?.energy.grid ?? "0 W"} color="blue" />
         <FlowNode className="house" icon="⌂" label="Maison" value={overview?.energy.home ?? "0 W"} color="teal" />
         <FlowNode className="battery-node" icon="▰" label="Batterie" value={overview?.energy.battery ?? "0 %"} sub={overview?.energy.batteryPower} color="green" />
         <FlowNode className="filter-node" icon="♒" label="Filtration" value={overview?.energy.filtration ?? "0 W"} color="cyan" />
-      </div>
-      <div className="mobile-controls">
-        {(overview?.controls ?? [
-          {publicId:"demo-heat",label:"Chauffage",icon:"♨",active:false,available:false},
-          {publicId:"demo-filter",label:"Filtration",icon:"≋",active:false,available:false},
-          {publicId:"demo-pool",label:"PAC piscine",icon:"♨",active:false,available:false},
-          {publicId:"demo-lock",label:"Serrure Nuki",icon:"▣",active:false,available:false},
-          {publicId:"demo-camera",label:"Caméras",icon:"◉",active:false,available:false},
-          {publicId:"demo-water",label:"Ballon d’eau chaude",icon:"♨",active:false,available:false},
-        ]).map((control) => <button key={control.publicId} disabled={!control.available} onClick={() => void onControl(control, !control.active)}>
+      </div>}
+      {homeTab === "Confort" && <div className="home-tab-summary"><span className="module-symbol comfort">⌂</span><div><small>Température intérieure</small><strong>{overview?.comfort?.indoorTemperature ?? "—"}</strong><p>Consigne de chauffage · {overview?.comfort?.heatingSetpoint ?? "—"}</p></div><div><small>Eau chaude</small><strong>{overview?.comfort?.hotWaterTemperature ?? "—"}</strong><p>{overview?.comfort?.hotWaterAvailable ?? "—"} disponible · {overview?.comfort?.hotWaterPower ?? "0 W"}</p></div></div>}
+      {homeTab === "Piscine" && <div className="home-tab-summary"><span className="module-symbol pool">≋</span><div><small>Température piscine</small><strong>{overview?.comfort?.poolTemperature ?? "—"}</strong><p>Consigne · {overview?.comfort?.poolSetpoint ?? "—"}</p></div><div><small>Filtration</small><strong>{overview?.energy.filtration ?? "0 W"}</strong><p>Installation simulée pour la démonstration</p></div></div>}
+      {homeTab === "Sécurité" && <div className="home-tab-summary"><span className="module-symbol">▣</span><div><small>Protection de la maison</small><strong>Sécurité</strong><p>Serrure et caméras pilotées depuis le portail</p></div><div><small>État</small><strong>{visibleControls.every((control) => control.available) ? "Connecté" : "À vérifier"}</strong><p>{visibleControls.length} équipements supervisés</p></div></div>}
+      {homeTab === "Véhicule" && <div className="home-tab-summary"><span className="module-symbol vehicle">◇</span><div><small>Tesla</small><strong>{overview?.comfort?.teslaBattery ?? "—"}</strong><p>Niveau de batterie</p></div><div><small>Recharge</small><strong>{overview?.comfort?.teslaPower ?? "0 W"}</strong><p>Puissance instantanée</p></div></div>}
+      {visibleControls.length > 0 && <div className="mobile-controls">
+        {visibleControls.map((control) => <button key={control.publicId} disabled={!control.available} onClick={() => void onControl(control, !control.active)}>
           <span className={control.active ? "control-state active" : "control-state"}>{!control.available ? "INDISPONIBLE" : control.active ? "ACTIF" : "ARRÊT"}</span>
           <i>{control.icon}</i><b>{control.label}</b>
         </button>)}
-      </div>
-      <div className="today-energy"><div><small>Aujourd’hui</small><strong>{overview?.energy.dailyProduction ?? "—"}</strong><span>Production</span></div><div><small>Consommation</small><strong>{overview?.energy.dailyConsumption ?? "—"}</strong><span>Maison</span></div><button onClick={() => notify("Détail énergétique")}>Voir l’énergie →</button></div>
+      </div>}
+      {(homeTab === "Accueil" || homeTab === "Énergie") && <div className="today-energy"><div><small>Aujourd’hui</small><strong>{overview?.energy.dailyProduction ?? "—"}</strong><span>Production</span></div><div><small>Consommation</small><strong>{overview?.energy.dailyConsumption ?? "—"}</strong><span>Maison</span></div><button onClick={() => setHomeTab("Énergie")}>Voir l’énergie →</button></div>}
     </section>
     <section className="home-modules">
       <article><span className="module-symbol hot-water">♨</span><div><small>Ballon d’eau chaude</small><strong>{overview?.comfort?.hotWaterTemperature ?? "—"}</strong><p>{overview?.comfort?.hotWaterMode ?? "En attente"} · {overview?.comfort?.hotWaterAvailable ?? "—"} disponible</p></div><em>{overview?.comfort?.hotWaterPower ?? "0 W"}</em></article>
