@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.10
+
+- Contournement du défaut Forecast.Solar de Home Assistant 2026.7.2.
+- Reconstruction locale d'une courbe sur 24 heures à partir des capteurs Forecast.Solar.
+- Conservation de la courbe native comme source prioritaire lorsqu'elle est disponible.
+
 ## 0.5.9
 
 - Récupération de la courbe solaire horaire fournie par Home Assistant.
