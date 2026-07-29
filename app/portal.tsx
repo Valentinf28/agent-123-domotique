@@ -118,6 +118,7 @@ export default function Portal({ customerOnly = false }: { customerOnly?: boolea
   const [creatingDossier, setCreatingDossier] = useState(false);
 
   useEffect(() => {
+    if (customerOnly) return;
     fetch("/api/dossiers", { headers: { Accept: "application/json" } })
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((payload) => {
@@ -126,7 +127,7 @@ export default function Portal({ customerOnly = false }: { customerOnly?: boolea
         setSelectedDossierId((current) => current || next[0]?.publicId || "");
       })
       .catch(() => undefined);
-  }, []);
+  }, [customerOnly]);
 
   useEffect(() => {
     let active = true;
