@@ -126,7 +126,7 @@ function active(item: InventoryItem | null) {
   return Boolean(item && ["on", "open", "heat", "heating", "locked"].includes(item.state.toLowerCase()));
 }
 
-async function selectedAgent(dossierPublicId?: string | null) {
+export async function selectAgentForDossier(dossierPublicId?: string | null) {
   const defaultDossierReference =
     process.env.DEFAULT_CLIENT_DOSSIER_REFERENCE?.trim();
   if (dossierPublicId || defaultDossierReference) {
@@ -156,7 +156,7 @@ async function selectedAgent(dossierPublicId?: string | null) {
 }
 
 export async function getAgentPortalHome(dossierPublicId?: string | null) {
-  const selected = await selectedAgent(dossierPublicId);
+  const selected = await selectAgentForDossier(dossierPublicId);
   if (!selected) throw new Error("CONNECTOR_NOT_CONFIGURED");
   const inventory = parseInventory(selected.agent.inventoryJson);
   const byEntity = new Map(inventory.map((item) => [item.entityId, item]));
@@ -270,7 +270,7 @@ export async function queueAgentControl(
   desiredActive: boolean,
   dossierPublicId?: string | null,
 ) {
-  const selected = await selectedAgent(dossierPublicId);
+  const selected = await selectAgentForDossier(dossierPublicId);
   if (!selected) throw new Error("CONNECTOR_NOT_CONFIGURED");
   const binding = controlBindings.find(
     (candidate) => publicId(candidate.entityId, "commande") === publicControlId,

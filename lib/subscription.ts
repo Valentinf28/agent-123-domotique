@@ -1,7 +1,7 @@
 export const TRIAL_DAYS = 30;
 export const GRACE_DAYS = 7;
-export const MONTHLY_PRICE_CENTS = 790;
-export const YEARLY_PRICE_CENTS = 7900;
+export const MONTHLY_PRICE_CENTS = 990;
+export const YEARLY_PRICE_CENTS = 9900;
 
 export type SubscriptionStatus =
   | "not_started"

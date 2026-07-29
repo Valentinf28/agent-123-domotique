@@ -6,6 +6,8 @@ interface Fetcher {
   fetch(request: Request): Promise<Response>;
 }
 
+// The platform injects this binding at runtime; Drizzle narrows its concrete shape.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type D1Database = any;
 
 declare class WebSocketPair {

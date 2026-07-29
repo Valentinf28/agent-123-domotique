@@ -15,6 +15,21 @@ type Automation = {
   id: string; name: string; trigger: string; action: string;
   active: boolean; icon: string; lastTriggered?: string | null;
 };
+type EnergyCoachInsight = {
+  id: string; icon: string; tone: "positive" | "attention" | "tip";
+  title: string; description: string; impact: string; action: string;
+};
+type CoachReply = {
+  answer: string;
+  automationProposal: {
+    name: string; trigger: string; action: string; rationale: string;
+  } | null;
+  suggestedQuestions: string[];
+};
+type CoachMessage = {
+  id: string; role: "client" | "coach"; text: string;
+  proposal?: CoachReply["automationProposal"];
+};
 type MobileOverview = {
   energy: Record<string, string>;
   controls: {
@@ -398,7 +413,7 @@ export default function Portal({ customerOnly = false }: { customerOnly?: boolea
         {view === "Préparation" && <Preparation dossierId={selectedDossierId} plannedItems={plannedItems} setPlannedItems={setPlannedItems} notify={notify} setView={setView} />}
         {view === "Installation" && <Installation dossierId={selectedDossierId} notify={notify} />}
         {view === "Appareils" && <Devices filtered={filtered} areas={areas} search={search} setSearch={setSearch} room={room} setRoom={setRoom} notify={notify} manage={(device) => { setSelectedDevice(device); setModal("appareil"); }} updateDevice={updateDevice} />}
-        {view === "Automatisations" && <Automations items={automationItems} setModal={setModal} notify={notify} selectAutomation={setSelectedAutomation} setEnabled={setAutomationEnabled} />}
+        {view === "Automatisations" && <Automations dossierId={selectedDossierId} items={automationItems} setModal={setModal} notify={notify} selectAutomation={setSelectedAutomation} setEnabled={setAutomationEnabled} />}
         {view === "Ajouter" && <AddDevice step={guideStep} setStep={setGuideStep} notify={notify} />}
         {view === "Journal" && <Journal role={role} />}
       </main>
@@ -802,9 +817,10 @@ function SubscriptionCard({ subscription, saving, update }: {
     <div className="subscription-heading"><span>✦</span><p><b>Forfait 1.2.3 Home</b><small>{labels[subscription.status]} · Le Wi‑Fi et les automatismes locaux restent disponibles.</small></p></div>
     <div className="subscription-benefits" aria-label="Services inclus dans le forfait">
       <span><i>↗</i><b>Accès distant 4G/5G</b></span>
-      <span><i>✦</i><b>Assistant domotique inclus</b><em>Bientôt</em></span>
+      <span><i>✦</i><b>Assistant domotique</b><em>Inclus</em></span>
+      <span><i>⌁</i><b>Coach énergie</b><em>Inclus</em></span>
     </div>
-    <strong>{subscription.interval === "yearly" ? "79 € / an" : "7,90 € / mois"}</strong>
+    <strong>{subscription.interval === "yearly" ? "99 € / an" : "9,90 € / mois"}</strong>
     <div className="subscription-actions">
       {subscription.status === "not_started" && <button disabled={saving} onClick={() => void update("start_trial")}>Démarrer l’essai</button>}
       {["trialing", "suspended", "cancelled"].includes(subscription.status) && <>
@@ -1071,23 +1087,139 @@ function Devices({ filtered, areas, search, setSearch, room, setRoom, notify, ma
   </div>;
 }
 
-function Automations({ items, setModal, notify, selectAutomation, setEnabled }: {
+function Automations({ dossierId, items, setModal, notify, selectAutomation, setEnabled }: {
+  dossierId: string;
   items: Automation[]; setModal: (value: string) => void;
   notify: (value: string) => void;
   selectAutomation: (automation: Automation | null) => void;
   setEnabled: (automation: Automation, enabled: boolean) => Promise<void>;
 }) {
+  const [coachOpen, setCoachOpen] = useState(false);
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [coachQuestion, setCoachQuestion] = useState("");
+  const [coachInsights, setCoachInsights] = useState<EnergyCoachInsight[]>([]);
+  const [coachSuggestions, setCoachSuggestions] = useState([
+    "Que puis-je économiser ce mois-ci ?",
+    "Quand recharger la voiture ?",
+    "Comment augmenter mon autoconsommation ?",
+  ]);
+  const [coachMessages, setCoachMessages] = useState<CoachMessage[]>([
+    {
+      id: "welcome",
+      role: "coach",
+      text: "Bonjour ! J’analyse la maison et je peux vous aider à réduire la consommation sans sacrifier votre confort.",
+    },
+  ]);
+
+  useEffect(() => {
+    let active = true;
+    const query = dossierId ? `?dossier=${encodeURIComponent(dossierId)}` : "";
+    fetch(`/api/assistant/energy${query}`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((payload) => {
+        if (active && Array.isArray(payload?.coach?.insights)) {
+          setCoachInsights(payload.coach.insights);
+        }
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [dossierId]);
+
+  async function askCoach(suggested?: string) {
+    const message = (suggested ?? coachQuestion).trim();
+    if (message.length < 3 || coachLoading) return;
+    setCoachOpen(true);
+    setCoachQuestion("");
+    setCoachMessages((messages) => [...messages, {
+      id: `client-${Date.now()}`,
+      role: "client",
+      text: message,
+    }]);
+    setCoachLoading(true);
+    try {
+      const response = await fetch("/api/assistant/energy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          message,
+          dossierPublicId: dossierId || undefined,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.reply?.answer) throw new Error("coach");
+      const reply = payload.reply as CoachReply;
+      setCoachMessages((messages) => [...messages, {
+        id: `coach-${Date.now()}`,
+        role: "coach",
+        text: reply.answer,
+        proposal: reply.automationProposal,
+      }]);
+      if (reply.suggestedQuestions?.length) {
+        setCoachSuggestions(reply.suggestedQuestions.slice(0, 3));
+      }
+    } catch {
+      setCoachMessages((messages) => [...messages, {
+        id: `coach-error-${Date.now()}`,
+        role: "coach",
+        text: "Je n’arrive pas à analyser les données pour le moment. Vos équipements continuent de fonctionner normalement.",
+      }]);
+    } finally {
+      setCoachLoading(false);
+    }
+  }
+
   return <div className="content">
     <div className="section-intro split"><div><span className="eyebrow">Simple et puissant</span><h2>Les habitudes qui travaillent pour vous</h2><p>Créez des règles faciles à comprendre, sans réglage technique.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
     <section className="home-assistant-card">
       <div className="home-assistant-symbol">✦</div>
       <div>
-        <small>BIENTÔT · INCLUS DANS VOTRE FORFAIT</small>
-        <h3>Votre assistant domotique</h3>
-        <p>Dites-lui simplement ce que vous souhaitez. Il préparera l’automatisation, vous l’expliquera clairement et vous demandera votre accord avant de l’activer.</p>
+        <small>COACH ÉNERGIE · INCLUS DANS VOTRE FORFAIT</small>
+        <h3>Votre maison vous aide à moins consommer</h3>
+        <p>Le coach analyse vos habitudes, chiffre les économies possibles et peut préparer une automatisation. Rien n’est activé sans votre accord.</p>
       </div>
-      <button onClick={() => notify("L’assistant domotique sera bientôt disponible dans votre forfait")}>Découvrir l’assistant <span>→</span></button>
+      <button onClick={() => setCoachOpen((open) => !open)}>{coachOpen ? "Fermer le coach" : "Parler au coach"} <span>{coachOpen ? "×" : "→"}</span></button>
     </section>
+    {coachInsights.length > 0 && <section className="energy-coach-insights" aria-label="Conseils énergétiques personnalisés">
+      {coachInsights.slice(0, 3).map((insight) => <article className={`coach-insight ${insight.tone}`} key={insight.id}>
+        <span>{insight.icon}</span>
+        <div><small>{insight.impact}</small><h3>{insight.title}</h3><p>{insight.description}</p></div>
+        <button onClick={() => void askCoach(insight.action)} aria-label={`Demander conseil : ${insight.title}`}>→</button>
+      </article>)}
+    </section>}
+    {coachOpen && <section className="energy-coach-chat" aria-label="Conversation avec le coach énergie">
+      <header><div><span>✦</span><p><b>Coach 1.2.3 Home</b><small><i /> Analyse personnalisée de votre maison</small></p></div><em>Inclus</em></header>
+      <div className="coach-conversation" aria-live="polite">
+        {coachMessages.map((message) => <div className={`coach-message ${message.role}`} key={message.id}>
+          <p>{message.text}</p>
+          {message.proposal && <article className="coach-proposal">
+            <small>AUTOMATISATION PROPOSÉE · NON ACTIVÉE</small>
+            <b>{message.proposal.name}</b>
+            <span><strong>Quand</strong>{message.proposal.trigger}</span>
+            <span><strong>Alors</strong>{message.proposal.action}</span>
+            <button onClick={() => {
+              selectAutomation(null);
+              setModal("automation");
+              notify("Vérifiez la proposition avant de la confirmer");
+            }}>Examiner cette proposition</button>
+          </article>}
+        </div>)}
+        {coachLoading && <div className="coach-message coach"><p><i className="coach-thinking" /> J’analyse les mesures…</p></div>}
+      </div>
+      <div className="coach-suggestions">{coachSuggestions.map((suggestion) =>
+        <button key={suggestion} disabled={coachLoading} onClick={() => void askCoach(suggestion)}>{suggestion}</button>
+      )}</div>
+      <form className="coach-composer" onSubmit={(event) => {
+        event.preventDefault();
+        void askCoach();
+      }}>
+        <input value={coachQuestion} maxLength={600} onChange={(event) => setCoachQuestion(event.target.value)} placeholder="Ex. Comment consommer davantage mon solaire ?" aria-label="Votre question au coach énergie" />
+        <button disabled={coachLoading || coachQuestion.trim().length < 3} aria-label="Envoyer la question">↑</button>
+      </form>
+      <footer>Les conseils sont basés sur les données disponibles et restent des estimations.</footer>
+    </section>}
     <div className="automation-layout"><section><h3>Vos automatisations <span>{items.length}</span></h3><div className="automation-list">{items.map((a)=><article key={a.id}>
       <span className="automation-icon">{a.icon}</span><div><h4>{a.name}</h4><p><b>QUAND</b> {a.trigger}</p><p><b>ALORS</b> {a.action}</p></div>
       <label className="switch"><input type="checkbox" checked={a.active} onChange={(event)=>{

@@ -1,8 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { agentBoxes, agentCommands, installationDossiers, plannedDevices } from "../../../../db/schema";
+import { agentBoxes, agentCommands, energySnapshots, installationDossiers, plannedDevices } from "../../../../db/schema";
 import { authenticatedAgent, sha256 } from "../../../../lib/agent-auth";
 import { buildDashboardConfig } from "../../../../lib/dashboard-config";
+import { energySnapshotFromInventory, fifteenMinuteBucket } from "../../../../lib/energy-coach";
 
 export async function POST(request: Request) {
   const agent = await authenticatedAgent(request);
@@ -44,16 +45,29 @@ export async function POST(request: Request) {
         inventory = incomingInventory;
       }
     }
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
+    const energySampleDue = !agent.lastEnergySampleAt ||
+      nowDate.getTime() - Date.parse(agent.lastEnergySampleAt) >= 15 * 60 * 1000;
     await getDb().update(agentBoxes).set({
       status: "online",
       haVersion: String(body.haVersion ?? "").slice(0, 40) || null,
       inventoryCount: Math.min(10000, Math.max(0, Math.round(Number(body.inventoryCount) || 0))),
       inventoryJson: JSON.stringify(inventory),
       lastSeenAt: now,
+      ...(energySampleDue ? { lastEnergySampleAt: now } : {}),
       updatedAt: now,
     }).where(eq(agentBoxes.id, agent.id));
     const db = getDb();
+    if (energySampleDue) {
+      const snapshot = energySnapshotFromInventory(inventory);
+      await db.insert(energySnapshots).values({
+        dossierId: agent.dossierId,
+        bucket: fifteenMinuteBucket(nowDate),
+        capturedAt: now,
+        ...snapshot,
+      }).onConflictDoNothing();
+    }
     const commandResults = Array.isArray(body.commandResults)
       ? body.commandResults.slice(0, 50)
       : [];

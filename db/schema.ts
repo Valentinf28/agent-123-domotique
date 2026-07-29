@@ -10,7 +10,7 @@ export const installationDossiers = sqliteTable("installation_dossiers", {
   enabledModules: text("enabled_modules").notNull().default('["home","solar","heating","access","vehicle"]'),
   status: text("status").notNull().default("preparation"),
   subscriptionStatus: text("subscription_status").notNull().default("not_started"),
-  subscriptionPriceCents: integer("subscription_price_cents").notNull().default(790),
+  subscriptionPriceCents: integer("subscription_price_cents").notNull().default(990),
   subscriptionInterval: text("subscription_interval").notNull().default("monthly"),
   trialStartedAt: text("trial_started_at"),
   trialEndsAt: text("trial_ends_at"),
@@ -74,12 +74,42 @@ export const agentBoxes = sqliteTable("agent_boxes", {
   inventoryJson: text("inventory_json").notNull().default("[]"),
   status: text("status").notNull().default("enrolled"),
   lastSeenAt: text("last_seen_at"),
+  lastEnergySampleAt: text("last_energy_sample_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("agent_boxes_public_id_idx").on(table.publicId),
   uniqueIndex("agent_boxes_token_hash_idx").on(table.tokenHash),
   uniqueIndex("agent_boxes_dossier_idx").on(table.dossierId),
+]);
+
+export const energySnapshots = sqliteTable("energy_snapshots", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  dossierId: integer("dossier_id").notNull().references(() => installationDossiers.id, { onDelete: "cascade" }),
+  bucket: text("bucket").notNull(),
+  capturedAt: text("captured_at").notNull(),
+  solarWatts: integer("solar_watts").notNull().default(0),
+  homeWatts: integer("home_watts").notNull().default(0),
+  gridWatts: integer("grid_watts").notNull().default(0),
+  batteryPercent: integer("battery_percent").notNull().default(0),
+  batteryWatts: integer("battery_watts").notNull().default(0),
+  filtrationWatts: integer("filtration_watts").notNull().default(0),
+  hotWaterWatts: integer("hot_water_watts").notNull().default(0),
+  vehicleWatts: integer("vehicle_watts").notNull().default(0),
+  dailyProductionWh: integer("daily_production_wh").notNull().default(0),
+  dailyConsumptionWh: integer("daily_consumption_wh").notNull().default(0),
+}, (table) => [
+  uniqueIndex("energy_snapshots_dossier_bucket_idx").on(table.dossierId, table.bucket),
+]);
+
+export const assistantUsage = sqliteTable("assistant_usage", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  dossierId: integer("dossier_id").notNull().references(() => installationDossiers.id, { onDelete: "cascade" }),
+  month: text("month").notNull(),
+  requestCount: integer("request_count").notNull().default(0),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("assistant_usage_dossier_month_idx").on(table.dossierId, table.month),
 ]);
 
 export const agentCommands = sqliteTable("agent_commands", {

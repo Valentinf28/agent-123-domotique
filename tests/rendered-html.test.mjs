@@ -107,11 +107,30 @@ test("gère l’essai de 30 jours sans couper la domotique locale", async () => 
   assert.doesNotMatch(relay, /role == "agent".*entitlement/s);
 });
 
-test("inclut l’assistant domotique dans le forfait client", async () => {
-  const portal = await readFile(new URL("../app/portal.tsx", import.meta.url), "utf8");
-  assert.match(portal, /Assistant domotique inclus/i);
+test("inclut les assistants et le nouveau tarif dans le forfait client", async () => {
+  const [portal, subscription, route, coach, heartbeat, schema, migration] = await Promise.all([
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/subscription.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/assistant/energy/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/energy-coach.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/agent/heartbeat/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0008_energy_coach.sql", import.meta.url), "utf8"),
+  ]);
+  assert.match(portal, /Assistant domotique/i);
+  assert.match(portal, /Coach énergie/i);
   assert.match(portal, /INCLUS DANS VOTRE FORFAIT/i);
-  assert.match(portal, /Dites-lui simplement ce que vous souhaitez/i);
-  assert.match(portal, /avant de l’activer/i);
-  assert.match(portal, /Bientôt/i);
+  assert.match(portal, /9,90 € \/ mois/i);
+  assert.match(portal, /99 € \/ an/i);
+  assert.match(subscription, /MONTHLY_PRICE_CENTS = 990/);
+  assert.match(subscription, /YEARLY_PRICE_CENTS = 9900/);
+  assert.match(route, /OPENAI_API_KEY/);
+  assert.match(route, /safety_identifier/);
+  assert.match(route, /Toute automatisation reste un brouillon/);
+  assert.doesNotMatch(route, /agentCommands|ha\.services\.call/);
+  assert.match(coach, /consumeAssistantRequest/);
+  assert.match(heartbeat, /fifteenMinuteBucket/);
+  assert.match(schema, /energySnapshots/);
+  assert.match(schema, /assistantUsage/);
+  assert.match(migration, /UPDATE `installation_dossiers`/);
 });
