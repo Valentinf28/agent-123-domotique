@@ -28,11 +28,39 @@ const controlBindings: ControlBinding[] = [
 ];
 
 const valueBindings = {
-  solar: ["input_number.demo_solar_power"],
-  home: ["input_number.demo_house_power"],
-  grid: ["sensor.1_2_3_home_puissance_reseau"],
-  battery: ["input_number.demo_battery_soc"],
-  batteryPower: ["sensor.1_2_3_home_puissance_batterie"],
+  solar: [
+    "sensor.inverter_pv_power",
+    "sensor.onduleur_pv_power",
+    "input_number.demo_solar_power",
+  ],
+  home: [
+    "sensor.inverter_load_power",
+    "sensor.onduleur_load_power",
+    "input_number.demo_house_power",
+  ],
+  grid: [
+    "sensor.inverter_grid_power",
+    "sensor.onduleur_grid_power",
+    "sensor.1_2_3_home_puissance_reseau",
+  ],
+  battery: [
+    "sensor.inverter_battery",
+    "sensor.onduleur_battery",
+    "input_number.demo_battery_soc",
+  ],
+  batteryPower: [
+    "sensor.inverter_battery_power",
+    "sensor.onduleur_battery_power",
+    "sensor.1_2_3_home_puissance_batterie",
+  ],
+  dailyProduction: [
+    "sensor.inverter_today_production",
+    "sensor.onduleur_today_production",
+  ],
+  dailyConsumption: [
+    "sensor.inverter_today_load_consumption",
+    "sensor.onduleur_today_load_consumption",
+  ],
   filtration: ["sensor.filtration_piscine_puissance"],
   hotWaterPower: ["sensor.1_2_3_home_puissance_chauffe_eau"],
   hotWaterAvailable: ["sensor.1_2_3_home_eau_chaude_disponible"],
@@ -199,8 +227,8 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
         battery: formatted(find(inventory, valueBindings.battery), "%", "0 %"),
         batteryPower: formatted(find(inventory, valueBindings.batteryPower), "W", "0 W"),
         filtration: formatted(find(inventory, valueBindings.filtration), "W", "0 W"),
-        dailyProduction: "—",
-        dailyConsumption: "—",
+        dailyProduction: formatted(find(inventory, valueBindings.dailyProduction), "kWh"),
+        dailyConsumption: formatted(find(inventory, valueBindings.dailyConsumption), "kWh"),
       },
       controls,
       comfort: {
