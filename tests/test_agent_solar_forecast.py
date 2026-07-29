@@ -69,6 +69,28 @@ class SolarForecastFallbackTests(unittest.TestCase):
 
         self.assertAlmostEqual(sum(int(item["state"]) for item in entries), 1200, delta=10)
 
+    def test_uses_default_today_and_tomorrow_sensors(self):
+        states = [
+            forecast_state("sensor.energy_production_today_remaining", "0", "kWh"),
+            forecast_state("sensor.energy_production_tomorrow", "18.2", "kWh"),
+            forecast_state(
+                "sensor.power_highest_peak_time_tomorrow",
+                "2026-07-30T11:30:00+02:00",
+            ),
+        ]
+        entries = agent.fallback_solar_forecast_inventory(
+            states,
+            now=datetime(2026, 7, 29, 21, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(len(entries), 24)
+        self.assertAlmostEqual(
+            sum(int(item["state"]) for item in entries),
+            18200,
+            delta=25,
+        )
+        self.assertGreater(max(int(item["state"]) for item in entries), 1000)
+
     def test_returns_empty_without_forecast_sensors(self):
         self.assertEqual(agent.fallback_solar_forecast_inventory([]), [])
 

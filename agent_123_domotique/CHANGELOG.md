@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.11
+
+- Utilisation automatique des capteurs Forecast.Solar actifs par défaut.
+- Prise en charge de l'énergie restante aujourd'hui et de la prévision de demain.
+- Aucune activation manuelle de capteur requise sur la box client.
+
 ## 0.5.10
 
 - Contournement du défaut Forecast.Solar de Home Assistant 2026.7.2.
