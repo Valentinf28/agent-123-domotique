@@ -23,6 +23,19 @@ OPTIONS_PATH = Path("/data/options.json")
 STATE_PATH = Path("/data/agent-state.json")
 SUPERVISOR_API = "http://supervisor/core/api"
 HOME_ASSISTANT_FRONTEND = "http://homeassistant:8123"
+FULL_INVENTORY_SECONDS = 60
+FAST_ENTITY_PREFIXES = (
+    "sensor.inverter_",
+    "sensor.onduleur_",
+    "sensor.1_2_3_home_",
+    "sensor.filtration_piscine_",
+    "input_boolean.demo_",
+    "input_boolean.chauffe_eau_",
+    "input_number.demo_",
+    "input_number.chauffe_eau_",
+    "input_select.demo_",
+    "input_select.chauffe_eau_",
+)
 
 
 def log(message: str) -> None:
@@ -119,7 +132,11 @@ def enroll(portal_url: str, code: str) -> dict[str, Any]:
     return state
 
 
-def home_assistant_summary(supervisor_token: str) -> dict[str, Any]:
+def home_assistant_summary(
+    supervisor_token: str,
+    *,
+    full_inventory: bool = True,
+) -> dict[str, Any]:
     config = request_json(f"{SUPERVISOR_API}/config", token=supervisor_token)
     states = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
     if not isinstance(config, dict) or not isinstance(states, list):
@@ -133,6 +150,8 @@ def home_assistant_summary(supervisor_token: str) -> dict[str, Any]:
         if not isinstance(state, dict):
             continue
         entity_id = str(state.get("entity_id", ""))
+        if not full_inventory and not entity_id.startswith(FAST_ENTITY_PREFIXES):
+            continue
         attributes = state.get("attributes")
         if not isinstance(attributes, dict):
             attributes = {}
@@ -146,6 +165,7 @@ def home_assistant_summary(supervisor_token: str) -> dict[str, Any]:
     return {
         "haVersion": str(config.get("version", "")),
         "inventoryCount": len(states),
+        "inventoryMode": "full" if full_inventory else "delta",
         "availableCount": available,
         "inventory": inventory,
     }
@@ -356,7 +376,7 @@ def main() -> None:
     options = read_json(OPTIONS_PATH, {})
     portal_url = str(options.get("portal_url", "")).rstrip("/")
     enrollment_code = str(options.get("enrollment_code", "")).strip().upper()
-    interval = max(5, min(300, int(options.get("heartbeat_seconds", 10))))
+    interval = max(5, min(300, int(options.get("heartbeat_seconds", 5))))
     relay_url = str(options.get("relay_url", "")).strip()
     relay_house_id = str(options.get("relay_house_id", "")).strip()
     relay_token = str(options.get("relay_token", "")).strip()
@@ -367,6 +387,7 @@ def main() -> None:
         raise SystemExit("Configuration incomplète : code d'installation ou liaison VPS requis")
 
     state = read_json(STATE_PATH, {})
+    last_full_inventory_at = 0.0
     if relay_url and relay_house_id and relay_token:
         threading.Thread(
             target=relay_forever,
@@ -383,12 +404,21 @@ def main() -> None:
         try:
             if not state.get("token"):
                 state = enroll(portal_url, enrollment_code)
-            summary = home_assistant_summary(supervisor_token)
+            full_inventory = (
+                last_full_inventory_at == 0.0 or
+                time.monotonic() - last_full_inventory_at >= FULL_INVENTORY_SECONDS
+            )
+            summary = home_assistant_summary(
+                supervisor_token,
+                full_inventory=full_inventory,
+            )
             command_results = state.pop("command_results", [])
             if command_results:
                 summary["commandResults"] = command_results
             heartbeat_result = heartbeat(portal_url, str(state["token"]), summary)
-            interval = max(5, min(300, int(heartbeat_result.get("nextHeartbeatSeconds", 10))))
+            if full_inventory:
+                last_full_inventory_at = time.monotonic()
+            interval = max(5, min(300, int(heartbeat_result.get("nextHeartbeatSeconds", 5))))
             commands = heartbeat_result.get("commands")
             if isinstance(commands, list):
                 results = []
