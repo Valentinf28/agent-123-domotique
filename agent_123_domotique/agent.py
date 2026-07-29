@@ -112,7 +112,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.11",
+        "User-Agent": "Agent-123-Domotique/0.5.12",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -288,26 +288,50 @@ def fallback_solar_forecast_inventory(
     *,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """Build a 24-hour curve from Forecast.Solar aggregate sensors.
+    """Build a 24-hour curve from aggregate solar forecast sensors.
 
     Home Assistant 2026.7.2 can reject ``energy/solar_forecast`` even though
-    Forecast.Solar's ordinary sensors are healthy. This fallback keeps the
-    predictive coach useful without calling the weather provider again.
+    ordinary forecast sensors are healthy. This fallback accepts Forecast.Solar
+    and Open-Meteo, without calling the weather provider again.
     """
     state_by_id = {
         str(state.get("entity_id", "")): state
         for state in states
         if isinstance(state, dict)
     }
+
+    def first_state(*entity_ids: str) -> dict[str, Any] | None:
+        for entity_id in entity_ids:
+            candidate = state_by_id.get(entity_id)
+            if candidate and str(candidate.get("state", "")) not in {
+                "unavailable",
+                "unknown",
+                "",
+            }:
+                return candidate
+        return None
+
     next_12 = _forecast_energy_wh(state_by_id.get("sensor.energy_production_next_12hours"))
     next_24 = _forecast_energy_wh(state_by_id.get("sensor.energy_production_next_24hours"))
-    current_hour = _forecast_energy_wh(state_by_id.get("sensor.energy_current_hour"))
-    next_hour = _forecast_energy_wh(state_by_id.get("sensor.energy_next_hour"))
+    current_hour = _forecast_energy_wh(first_state(
+        "sensor.energy_current_hour",
+        "sensor.maison_energy_current_hour",
+    ))
+    next_hour = _forecast_energy_wh(first_state(
+        "sensor.energy_next_hour",
+        "sensor.maison_energy_next_hour",
+    ))
     today_remaining = _forecast_energy_wh(
-        state_by_id.get("sensor.energy_production_today_remaining")
+        first_state(
+            "sensor.energy_production_today_remaining",
+            "sensor.maison_energy_production_today_remaining",
+        )
     )
     tomorrow = _forecast_energy_wh(
-        state_by_id.get("sensor.energy_production_tomorrow")
+        first_state(
+            "sensor.energy_production_tomorrow",
+            "sensor.maison_energy_production_tomorrow",
+        )
     )
     if all(
         value is None
@@ -330,10 +354,16 @@ def fallback_solar_forecast_inventory(
     values = [0.0] * len(slots)
 
     peak_today = _forecast_peak_hour(
-        state_by_id.get("sensor.power_highest_peak_time_today"),
+        first_state(
+            "sensor.power_highest_peak_time_today",
+            "sensor.maison_power_highest_peak_time_today",
+        ),
     )
     peak_tomorrow = _forecast_peak_hour(
-        state_by_id.get("sensor.power_highest_peak_time_tomorrow"),
+        first_state(
+            "sensor.power_highest_peak_time_tomorrow",
+            "sensor.maison_power_highest_peak_time_tomorrow",
+        ),
         peak_today,
     )
     if next_12 is not None or next_24 is not None:
@@ -429,7 +459,7 @@ def solar_forecast_inventory(
         if not entries:
             entries = fallback_solar_forecast_inventory(states)
             if entries:
-                log("Prévision solaire reconstruite depuis les capteurs Forecast.Solar")
+                log("Prévision solaire reconstruite depuis les capteurs disponibles")
         SOLAR_FORECAST_CACHE = entries
         SOLAR_FORECAST_FETCHED_AT = now
         if entries:
@@ -441,8 +471,8 @@ def solar_forecast_inventory(
         if fallback:
             SOLAR_FORECAST_CACHE = fallback
             log(
-                "Prévision solaire reconstruite depuis les capteurs "
-                f"Forecast.Solar (courbe Home Assistant indisponible : {error})"
+                "Prévision solaire reconstruite depuis les capteurs disponibles "
+                f"(courbe Home Assistant indisponible : {error})"
             )
             return fallback
         log(f"Prévision solaire indisponible ({error})")
