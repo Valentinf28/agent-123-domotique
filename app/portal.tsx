@@ -100,6 +100,10 @@ export default function Portal() {
   ]);
   const [dossiers, setDossiers] = useState<InstallationDossier[]>([]);
   const [selectedDossierId, setSelectedDossierId] = useState("");
+  const [newDossierOpen, setNewDossierOpen] = useState(false);
+  const [newDossierReference, setNewDossierReference] = useState("");
+  const [newDossierCustomer, setNewDossierCustomer] = useState("");
+  const [creatingDossier, setCreatingDossier] = useState(false);
 
   useEffect(() => {
     fetch("/api/dossiers", { headers: { Accept: "application/json" } })
@@ -172,6 +176,39 @@ export default function Portal() {
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
+  }
+
+  async function createDossier() {
+    const reference = newDossierReference.trim().toUpperCase();
+    const customerName = newDossierCustomer.trim();
+    if (reference.length < 3 || customerName.length < 2) {
+      notify("Renseignez une référence et un nom");
+      return;
+    }
+    setCreatingDossier(true);
+    try {
+      const response = await fetch("/api/dossiers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ reference, customerName }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.dossier) {
+        throw new Error(payload?.error || "Création impossible");
+      }
+      const dossier = payload.dossier as InstallationDossier;
+      setDossiers((items) => [...items, dossier]);
+      setSelectedDossierId(dossier.publicId);
+      setNewDossierOpen(false);
+      setNewDossierReference("");
+      setNewDossierCustomer("");
+      setView("Préparation");
+      notify(`Dossier ${dossier.reference} créé`);
+    } catch {
+      notify("La création du dossier a échoué");
+    } finally {
+      setCreatingDossier(false);
+    }
   }
 
   async function updateDevice(
@@ -258,6 +295,7 @@ export default function Portal() {
                 {dossiers.map((dossier) => <option key={dossier.publicId} value={dossier.publicId}>{dossier.reference} · {dossier.customerName}</option>)}
               </select>
             </label>}
+            {role === "Installateur" && <button className="icon-button" aria-label="Créer un dossier" title="Créer un dossier" onClick={() => setNewDossierOpen(true)}>＋</button>}
             <Link className="dashboard-link" href="/ma-maison">Ouvrir Ma Maison</Link>
             <button className="icon-button" aria-label="Actualiser" onClick={() => notify("Maison actualisée à l’instant")}>↻</button>
             <button className="icon-button notification" aria-label="Notifications" onClick={() => setModal("alertes")}>♢<i /></button>
@@ -281,6 +319,27 @@ export default function Portal() {
       </nav>
 
       {toast && <div className="toast">✓ {toast}</div>}
+      {newDossierOpen && <div className="modal-backdrop" role="presentation">
+        <section className="modal" role="dialog" aria-modal="true" aria-labelledby="new-dossier-title">
+          <button className="modal-close" aria-label="Fermer" onClick={() => setNewDossierOpen(false)}>×</button>
+          <div className="modal-symbol">⌂</div>
+          <small>NOUVELLE INSTALLATION</small>
+          <h3 id="new-dossier-title">Créer un dossier</h3>
+          <p>Créez une identité distincte avant d’enrôler la box. Une box restaurée ne doit jamais conserver l’identité de l’installation source.</p>
+          <label className="field">Référence
+            <input value={newDossierReference} onChange={(event) => setNewDossierReference(event.target.value)} placeholder="SHOWROOM-123" autoFocus />
+          </label>
+          <label className="field">Nom de l’installation
+            <input value={newDossierCustomer} onChange={(event) => setNewDossierCustomer(event.target.value)} placeholder="1.2.3 Home Démo" />
+          </label>
+          <div className="modal-actions">
+            <button onClick={() => setNewDossierOpen(false)}>Annuler</button>
+            <button className="primary" disabled={creatingDossier} onClick={() => void createDossier()}>
+              {creatingDossier ? "Création…" : "Créer le dossier"}
+            </button>
+          </div>
+        </section>
+      </div>}
       {modal && <Modal key={`${modal}:${selectedDevice?.id ?? selectedAutomation?.id ?? "none"}`} type={modal} close={() => setModal(null)} notify={notify} device={selectedDevice} areas={areas} saveDevice={updateDevice} automation={selectedAutomation} deleteAutomation={deleteAutomation} />}
     </div>
   );
