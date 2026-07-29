@@ -83,9 +83,14 @@ function active(item: InventoryItem | null) {
 }
 
 async function selectedAgent(dossierPublicId?: string | null) {
-  if (dossierPublicId) {
+  const defaultDossierReference =
+    process.env.DEFAULT_CLIENT_DOSSIER_REFERENCE?.trim();
+  if (dossierPublicId || defaultDossierReference) {
     const [dossier] = await getDb().select().from(installationDossiers)
-      .where(eq(installationDossiers.publicId, dossierPublicId)).limit(1);
+      .where(dossierPublicId
+        ? eq(installationDossiers.publicId, dossierPublicId)
+        : eq(installationDossiers.reference, defaultDossierReference as string)
+      ).limit(1);
     if (dossier) {
       const [agent] = await getDb().select().from(agentBoxes)
         .where(eq(agentBoxes.dossierId, dossier.id)).limit(1);
