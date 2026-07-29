@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.5.5
+
+- Démarrage autonome de l'agent, sans dépendance au lanceur `with-contenv`.
+- Journal de démarrage disponible immédiatement pour faciliter la recette en atelier.
+
 ## 0.5.4
 
 - Allongement du délai des commandes lentes, notamment le réveil et le pilotage des véhicules Tesla.
