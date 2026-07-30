@@ -13,9 +13,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
@@ -42,6 +43,23 @@ FAST_ENTITY_PREFIXES = (
     "input_number.chauffe_eau_",
     "input_select.demo_",
     "input_select.chauffe_eau_",
+)
+SHELLY_DAILY_ENERGY_BINDINGS = (
+    (
+        "sensor.shellyem3_483fdac38616_channel_b_energy",
+        "sensor.1_2_3_home_today_consumption",
+        "Consommation maison aujourd'hui",
+    ),
+    (
+        "sensor.shellyem3_483fdac38616_channel_c_energy",
+        "sensor.1_2_3_home_today_energy_import",
+        "Énergie achetée aujourd'hui",
+    ),
+    (
+        "sensor.shellyem3_483fdac38616_channel_c_energy_returned",
+        "sensor.1_2_3_home_today_energy_export",
+        "Énergie injectée aujourd'hui",
+    ),
 )
 
 
@@ -125,6 +143,76 @@ def request_json(
         return json.loads(response.read().decode("utf-8"))
 
 
+def daily_energy_delta(current_state: str, history: Any) -> float | None:
+    try:
+        current = float(current_state)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(history, list):
+        return None
+    series = history[0] if history and isinstance(history[0], list) else history
+    baseline = None
+    for row in series:
+        if not isinstance(row, dict):
+            continue
+        try:
+            baseline = float(row.get("state"))
+            break
+        except (TypeError, ValueError):
+            continue
+    if baseline is None or current < baseline:
+        return None
+    return round(current - baseline, 4)
+
+
+def shelly_daily_energy_inventory(
+    supervisor_token: str,
+    config: dict[str, Any],
+    states: list[Any],
+    *,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    try:
+        timezone_name = str(config.get("time_zone", "Europe/Paris"))
+        try:
+            local_timezone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            local_timezone = timezone.utc
+        current_time = now.astimezone(local_timezone) if now else datetime.now(local_timezone)
+        day_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        encoded_start = urllib.parse.quote(day_start.isoformat(), safe=":TZ+-")
+        by_entity_id = {
+            str(item.get("entity_id")): item
+            for item in states
+            if isinstance(item, dict) and item.get("entity_id")
+        }
+        entries = []
+        for source_entity_id, target_entity_id, name in SHELLY_DAILY_ENERGY_BINDINGS:
+            current = by_entity_id.get(source_entity_id)
+            if not current:
+                continue
+            encoded_entity_id = urllib.parse.quote(source_entity_id, safe="._")
+            history = request_json(
+                f"{SUPERVISOR_API}/history/period/{encoded_start}"
+                f"?filter_entity_id={encoded_entity_id}&minimal_response",
+                token=supervisor_token,
+            )
+            delta = daily_energy_delta(str(current.get("state", "")), history)
+            if delta is None:
+                continue
+            entries.append({
+                "entityId": target_entity_id,
+                "name": name,
+                "domain": "sensor",
+                "state": str(delta),
+                "deviceClass": "energy",
+            })
+        return entries
+    except Exception as error:
+        log(f"Compteurs journaliers Shelly indisponibles ({error})")
+        return []
+
+
 def enroll(portal_url: str, code: str) -> dict[str, Any]:
     result = request_json(
         f"{portal_url}/agent/enroll",
@@ -170,6 +258,11 @@ def home_assistant_summary(
             "deviceClass": attributes.get("device_class"),
         })
     if full_inventory:
+        inventory.extend(shelly_daily_energy_inventory(
+            supervisor_token,
+            config,
+            states,
+        ))
         inventory.extend(solar_forecast_inventory(supervisor_token, states))
     return {
         "haVersion": str(config.get("version", "")),
