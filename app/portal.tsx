@@ -61,7 +61,7 @@ type MobileOverview = {
   energy: Record<string, string>;
   controls: {
     publicId: string; label: string; icon: string;
-    active: boolean; available: boolean;
+    active: boolean; available: boolean; controllable?: boolean;
   }[];
   comfort?: {
     indoorTemperature: string; heatingSetpoint: string;
@@ -1055,8 +1055,8 @@ function Dashboard({ setView, setModal, notify, devices, liveStatus, overview, l
       {homeTab === "Sécurité" && <div className="home-tab-summary"><span className="module-symbol">▣</span><div><small>Protection de la maison</small><strong>Sécurité</strong><p>Serrure et caméras pilotées depuis le portail</p></div><div><small>État</small><strong>{visibleControls.every((control) => control.available) ? "Connecté" : "À vérifier"}</strong><p>{visibleControls.length} équipements supervisés</p></div></div>}
       {homeTab === "Véhicule" && <div className="home-tab-summary"><span className="module-symbol vehicle">◇</span><div><small>Tesla</small><strong>{overview?.comfort?.teslaBattery ?? "—"}</strong><p>Niveau de batterie</p></div><div><small>Recharge</small><strong>{overview?.comfort?.teslaPower ?? "0 W"}</strong><p>Puissance instantanée</p></div></div>}
       {visibleControls.length > 0 && <div className="mobile-controls">
-        {visibleControls.map((control) => <button key={control.publicId} disabled={!control.available} onClick={() => void onControl(control, !control.active)}>
-          <span className={control.active ? "control-state active" : "control-state"}>{!control.available ? "INDISPONIBLE" : control.active ? "ACTIF" : "ARRÊT"}</span>
+        {visibleControls.map((control) => <button key={control.publicId} disabled={!control.available || control.controllable === false} onClick={() => void onControl(control, !control.active)}>
+          <span className={control.active ? "control-state active" : "control-state"}>{!control.available ? "INDISPONIBLE" : control.controllable === false ? "EN LIGNE" : control.active ? "ACTIF" : "ARRÊT"}</span>
           <i>{control.icon}</i><b>{control.label}</b>
         </button>)}
       </div>}

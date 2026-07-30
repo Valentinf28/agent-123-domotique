@@ -11,20 +11,47 @@ type InventoryItem = {
 };
 
 type ControlBinding = {
-  entityId: string;
+  entityIds: readonly string[];
   label: string;
   icon: string;
   room: string;
   category: string;
+  controllable?: boolean;
 };
 
 const controlBindings: ControlBinding[] = [
-  { entityId: "input_boolean.demo_heating", label: "Chauffage", icon: "♨", room: "Maison", category: "Confort" },
-  { entityId: "input_boolean.demo_pool_filtration", label: "Filtration", icon: "≋", room: "Piscine", category: "Piscine" },
-  { entityId: "input_boolean.demo_pool_heat_pump", label: "PAC piscine", icon: "♨", room: "Piscine", category: "Piscine" },
-  { entityId: "input_boolean.demo_nuki_locked", label: "Serrure Nuki", icon: "▣", room: "Entrée", category: "Sécurité" },
-  { entityId: "input_boolean.demo_camera_surveillance", label: "Caméras", icon: "◉", room: "Extérieur", category: "Sécurité" },
-  { entityId: "input_boolean.chauffe_eau_shelly", label: "Ballon d’eau chaude", icon: "♨", room: "Local technique", category: "Eau chaude" },
+  {
+    entityIds: ["climate.152832117468341_climate_zone1", "input_boolean.demo_heating"],
+    label: "Chauffage", icon: "♨", room: "Maison", category: "Confort",
+  },
+  {
+    entityIds: ["switch.filtration_piscine_switch", "input_boolean.demo_pool_filtration"],
+    label: "Filtration", icon: "≋", room: "Piscine", category: "Piscine",
+  },
+  {
+    entityIds: ["climate.pompe_a_chaleur_piscine", "input_boolean.demo_pool_heat_pump"],
+    label: "PAC piscine", icon: "♨", room: "Piscine", category: "Piscine",
+  },
+  {
+    entityIds: ["lock.nuki", "input_boolean.demo_nuki_locked"],
+    label: "Serrure Nuki", icon: "▣", room: "Entrée", category: "Sécurité",
+  },
+  {
+    entityIds: [
+      "camera.terrasse_maison_live_view",
+      "camera.portail_maison_live_view",
+      "input_boolean.demo_camera_surveillance",
+    ],
+    label: "Caméras", icon: "◉", room: "Extérieur", category: "Sécurité",
+    controllable: false,
+  },
+  {
+    entityIds: [
+      "switch.ce_wifi_commutateur_sur_rail_din_avec_mesure_2_switch",
+      "input_boolean.chauffe_eau_shelly",
+    ],
+    label: "Ballon d’eau chaude", icon: "♨", room: "Local technique", category: "Eau chaude",
+  },
 ];
 
 const valueBindings = {
@@ -64,7 +91,10 @@ const valueBindings = {
     "sensor.onduleur_today_load_consumption",
   ],
   filtration: ["sensor.filtration_piscine_puissance"],
-  hotWaterPower: ["sensor.1_2_3_home_puissance_chauffe_eau"],
+  hotWaterPower: [
+    "sensor.ce_wifi_commutateur_sur_rail_din_avec_mesure_2_puissance",
+    "sensor.1_2_3_home_puissance_chauffe_eau",
+  ],
   hotWaterAvailable: ["sensor.1_2_3_home_eau_chaude_disponible"],
   hotWaterTemperature: ["input_number.chauffe_eau_temperature"],
   hotWaterMode: ["input_select.chauffe_eau_mode"],
@@ -133,6 +163,10 @@ function active(item: InventoryItem | null) {
   return Boolean(item && ["on", "open", "heat", "heating", "locked"].includes(item.state.toLowerCase()));
 }
 
+function resolvedControl(inventory: InventoryItem[], binding: ControlBinding) {
+  return find(inventory, binding.entityIds);
+}
+
 export async function selectAgentForDossier(dossierPublicId?: string | null) {
   const defaultDossierReference =
     process.env.DEFAULT_CLIENT_DOSSIER_REFERENCE?.trim();
@@ -153,7 +187,9 @@ export async function selectAgentForDossier(dossierPublicId?: string | null) {
   const agent = agents.find((candidate) => {
     const inventory = parseInventory(candidate.inventoryJson);
     return controlBindings.some((binding) =>
-      inventory.some((item) => item.entityId === binding.entityId)
+      binding.entityIds.some((entityId) =>
+        inventory.some((item) => item.entityId === entityId)
+      )
     );
   }) ?? agents[0];
   if (!agent) return null;
@@ -166,28 +202,30 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
   const selected = await selectAgentForDossier(dossierPublicId);
   if (!selected) throw new Error("CONNECTOR_NOT_CONFIGURED");
   const inventory = parseInventory(selected.agent.inventoryJson);
-  const byEntity = new Map(inventory.map((item) => [item.entityId, item]));
   const online = Boolean(
     selected.agent.lastSeenAt &&
     Date.now() - Date.parse(selected.agent.lastSeenAt) < 120_000
   );
 
   const controls = controlBindings.map((binding) => {
-    const item = byEntity.get(binding.entityId) ?? null;
+    const item = resolvedControl(inventory, binding);
+    const entityId = item?.entityId ?? binding.entityIds[0];
     return {
-      publicId: publicId(binding.entityId, "commande"),
+      publicId: publicId(entityId, "commande"),
       label: binding.label,
       icon: binding.icon,
       active: active(item),
       available: online && Boolean(item) && !["unknown", "unavailable"].includes(item.state),
+      controllable: binding.controllable !== false,
     };
   });
 
   const devices = controlBindings.map((binding) => {
-    const item = byEntity.get(binding.entityId) ?? null;
+    const item = resolvedControl(inventory, binding);
+    const entityId = item?.entityId ?? binding.entityIds[0];
     const available = online && Boolean(item) && !["unknown", "unavailable"].includes(item.state);
     return {
-      publicId: publicId(binding.entityId),
+      publicId: publicId(entityId),
       name: binding.label,
       room: binding.room,
       areaPublicId: publicId(binding.room, "piece"),
@@ -279,19 +317,28 @@ export async function queueAgentControl(
 ) {
   const selected = await selectAgentForDossier(dossierPublicId);
   if (!selected) throw new Error("CONNECTOR_NOT_CONFIGURED");
-  const binding = controlBindings.find(
-    (candidate) => publicId(candidate.entityId, "commande") === publicControlId,
-  );
-  if (!binding) throw new Error("CONTROL_NOT_FOUND");
+  const inventory = parseInventory(selected.agent.inventoryJson);
+  const resolved = controlBindings
+    .map((binding) => ({ binding, item: resolvedControl(inventory, binding) }))
+    .find(({ item }) =>
+      item && publicId(item.entityId, "commande") === publicControlId
+    );
+  if (!resolved?.item || resolved.binding.controllable === false) {
+    throw new Error("CONTROL_NOT_FOUND");
+  }
+  const domain = resolved.item.entityId.split(".")[0];
+  const service = domain === "lock"
+    ? desiredActive ? "lock" : "unlock"
+    : desiredActive ? "turn_on" : "turn_off";
   const commandId = crypto.randomUUID();
   await getDb().insert(agentCommands).values({
     publicId: commandId,
     dossierId: selected.dossier.id,
     action: "ha.services.call",
     payloadJson: JSON.stringify({
-      domain: "input_boolean",
-      service: desiredActive ? "turn_on" : "turn_off",
-      data: { entity_id: binding.entityId },
+      domain,
+      service,
+      data: { entity_id: resolved.item.entityId },
     }),
   });
   return { accepted: true, commandId };
