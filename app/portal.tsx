@@ -31,6 +31,15 @@ type CoachMessage = {
   proposal?: CoachReply["automationProposal"];
 };
 type SolarForecastSlot = { startsAt: string; estimatedWh: number };
+type SolarForecastSummary = {
+  rawTodayWh: number;
+  prudentTodayWh: number;
+  rawRemainingWh: number;
+  prudentRemainingWh: number;
+  correctionPercent: number;
+  confidence: "low" | "medium" | "high";
+  explanation: string;
+};
 type PredictiveEnergyPlan = {
   loadId: string;
   loadLabel: string;
@@ -1235,6 +1244,7 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
   const [coachQuestion, setCoachQuestion] = useState("");
   const [coachInsights, setCoachInsights] = useState<EnergyCoachInsight[]>([]);
   const [solarForecast, setSolarForecast] = useState<SolarForecastSlot[]>([]);
+  const [solarForecastSummary, setSolarForecastSummary] = useState<SolarForecastSummary | null>(null);
   const [predictivePlan, setPredictivePlan] = useState<PredictiveEnergyPlan | null>(null);
   const [predictivePlans, setPredictivePlans] = useState<PredictiveEnergyPlan[]>([]);
   const [coachSuggestions, setCoachSuggestions] = useState([
@@ -1264,6 +1274,20 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
           setSolarForecast(Array.isArray(payload?.coach?.solarForecast?.slots)
             ? payload.coach.solarForecast.slots
             : []);
+          const summary = payload?.coach?.solarForecast;
+          setSolarForecastSummary(
+            summary && Number.isFinite(summary.rawTodayWh) && Number.isFinite(summary.prudentTodayWh)
+              ? {
+                rawTodayWh: summary.rawTodayWh,
+                prudentTodayWh: summary.prudentTodayWh,
+                rawRemainingWh: summary.rawRemainingWh,
+                prudentRemainingWh: summary.prudentRemainingWh,
+                correctionPercent: summary.correctionPercent,
+                confidence: summary.confidence,
+                explanation: summary.explanation,
+              }
+              : null,
+          );
           const plans = Array.isArray(payload?.coach?.predictivePlans)
             ? payload.coach.predictivePlans
             : payload?.coach?.predictivePlan ? [payload.coach.predictivePlan] : [];
@@ -1324,6 +1348,9 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
     : "—";
   const forecastKwh = (value: number) =>
     `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value / 1000)} kWh`;
+  const confidenceLabel = solarForecastSummary?.confidence === "high"
+    ? "Élevée"
+    : solarForecastSummary?.confidence === "medium" ? "Moyenne" : "Faible";
 
   return <div className="content">
     <div className="section-intro split"><div><span className="eyebrow">Simple et puissant</span><h2>Les habitudes qui travaillent pour vous</h2><p>Créez des règles faciles à comprendre, sans réglage technique.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
@@ -1356,6 +1383,12 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
         <div><small>Batterie minimale prévue</small><strong>{predictivePlan.projectedMinimumBatteryPercent} %</strong><span>Réserve toujours respectée</span></div>
         <div><small>Énergie du cycle</small><strong>{forecastKwh(predictivePlan.flexibleLoadEnergyWh)}</strong><span>{forecastKwh(predictivePlan.expectedAvoidedExportWh)} de surplus valorisable</span></div>
       </div>
+      {solarForecastSummary && <div className="solar-forecast-summary" aria-label="Correction adaptative de la prévision solaire">
+        <div><small>Prévision météo</small><strong>{forecastKwh(solarForecastSummary.rawTodayWh)}</strong><span>Estimation brute du jour</span></div>
+        <div className="prudent"><small>Prévision prudente</small><strong>{forecastKwh(solarForecastSummary.prudentTodayWh)}</strong><span>{solarForecastSummary.correctionPercent > 0 ? `Corrigée de −${solarForecastSummary.correctionPercent} %` : "Aucune correction nécessaire"}</span></div>
+        <div className={`confidence-${solarForecastSummary.confidence}`}><small>Niveau de confiance</small><strong>{confidenceLabel}</strong><span>Calculé avec la production réelle</span></div>
+        <p>{solarForecastSummary.explanation}</p>
+      </div>}
       {solarForecast.length > 0 && <div className="solar-forecast-chart" aria-label="Prévision solaire des prochaines heures">
         {solarForecast.slice(0, 12).map((slot) => <div key={slot.startsAt}>
           <i style={{ height: `${Math.max(4, Math.round(slot.estimatedWh / forecastMaximum * 100))}%` }} />

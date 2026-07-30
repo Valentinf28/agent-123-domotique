@@ -3,6 +3,7 @@ import { getDb } from "../db";
 import { assistantUsage, energySnapshots } from "../db/schema";
 import { selectAgentForDossier } from "./agent-home";
 import {
+  buildAdaptiveSolarForecast,
   buildPredictiveEnergyPlan,
   type SolarForecastSlot,
 } from "./predictive-energy";
@@ -64,6 +65,22 @@ const bindings = {
   ],
   dailyProductionWh: ["sensor.inverter_today_production", "sensor.onduleur_today_production"],
   dailyConsumptionWh: ["sensor.inverter_today_load_consumption", "sensor.onduleur_today_load_consumption"],
+  forecastTodayKwh: [
+    "sensor.maison_energy_production_today",
+    "sensor.energy_production_today",
+  ],
+  forecastRemainingKwh: [
+    "sensor.maison_energy_production_today_remaining",
+    "sensor.energy_production_today_remaining",
+  ],
+  forecastSolarWatts: [
+    "sensor.maison_power_production_now",
+    "sensor.power_production_now",
+  ],
+  cloudCoverPercent: [
+    "sensor.escorpain_cloud_cover",
+    "sensor.cloud_cover",
+  ],
   poolTemperature: ["input_number.demo_pool_temperature"],
   poolSetpoint: ["input_number.demo_pool_setpoint"],
   poolHeatPump: ["input_boolean.demo_pool_heat_pump"],
@@ -338,6 +355,16 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     .orderBy(desc(energySnapshots.capturedAt))
     .limit(700);
   const forecast = solarForecastFromInventory(inventory);
+  const adaptiveForecast = buildAdaptiveSolarForecast({
+    now: new Date(),
+    forecast,
+    actualSolarWatts: current.solarWatts,
+    forecastSolarWatts: numberFrom(inventory, bindings.forecastSolarWatts),
+    actualTodayWh: current.dailyProductionWh,
+    forecastTodayWh: numberFrom(inventory, bindings.forecastTodayKwh) * 1000,
+    forecastRemainingWh: numberFrom(inventory, bindings.forecastRemainingKwh) * 1000,
+    cloudCoverPercent: nullableNumberFrom(inventory, bindings.cloudCoverPercent),
+  });
   const baseSamples = history.map((sample) =>
     Math.max(
       0,
@@ -377,7 +404,8 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
       now: new Date(),
       batteryPercent: current.batteryPercent,
       baseLoadWatts,
-      forecast,
+      forecast: adaptiveForecast.prudentSlots,
+      forecastConfidence: adaptiveForecast.confidence,
       load: {
         id: load.id,
         label: load.name,
@@ -419,8 +447,16 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     week,
     solarForecast: {
       available: forecast.length > 0,
-      source: "Forecast.Solar via Home Assistant",
-      slots: forecast.slice(0, 24),
+      source: "Open-Meteo via Home Assistant",
+      slots: adaptiveForecast.prudentSlots.slice(0, 24),
+      rawSlots: adaptiveForecast.rawSlots.slice(0, 24),
+      rawTodayWh: adaptiveForecast.rawTodayWh,
+      prudentTodayWh: adaptiveForecast.prudentTodayWh,
+      rawRemainingWh: adaptiveForecast.rawRemainingWh,
+      prudentRemainingWh: adaptiveForecast.prudentRemainingWh,
+      correctionPercent: adaptiveForecast.correctionPercent,
+      confidence: adaptiveForecast.confidence,
+      explanation: adaptiveForecast.explanation,
     },
     predictivePlan,
     predictivePlans,

@@ -3,6 +3,31 @@ export type SolarForecastSlot = {
   estimatedWh: number;
 };
 
+export type SolarForecastConfidence = "low" | "medium" | "high";
+
+export type AdaptiveSolarForecastInput = {
+  now: Date;
+  forecast: SolarForecastSlot[];
+  actualSolarWatts: number;
+  forecastSolarWatts: number;
+  actualTodayWh: number;
+  forecastTodayWh: number;
+  forecastRemainingWh: number;
+  cloudCoverPercent?: number | null;
+};
+
+export type AdaptiveSolarForecast = {
+  rawSlots: SolarForecastSlot[];
+  prudentSlots: SolarForecastSlot[];
+  rawTodayWh: number;
+  prudentTodayWh: number;
+  rawRemainingWh: number;
+  prudentRemainingWh: number;
+  correctionPercent: number;
+  confidence: SolarForecastConfidence;
+  explanation: string;
+};
+
 export type PredictiveEnergySettings = {
   batteryCapacityWh: number;
   batteryReservePercent: number;
@@ -24,6 +49,7 @@ export type PredictiveEnergyInput = {
   batteryPercent: number;
   baseLoadWatts: number;
   forecast: SolarForecastSlot[];
+  forecastConfidence?: SolarForecastConfidence;
   settings: PredictiveEnergySettings;
   load: FlexibleLoadInput;
 };
@@ -50,7 +76,7 @@ export type PredictiveEnergyPlan = {
   expectedAvoidedExportWh: number;
   suggestedStartAt: string | null;
   peakAt: string | null;
-  confidence: "low" | "medium" | "high";
+  confidence: SolarForecastConfidence;
 };
 
 type SimulationResult = {
@@ -66,6 +92,121 @@ function clamp(value: number, minimum: number, maximum: number) {
 
 function finite(value: number, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
+}
+
+export function buildAdaptiveSolarForecast(
+  input: AdaptiveSolarForecastInput,
+): AdaptiveSolarForecast {
+  const now = input.now.getTime();
+  const rawSlots = input.forecast
+    .map((slot) => ({
+      startsAt: slot.startsAt,
+      estimatedWh: Math.max(0, finite(slot.estimatedWh)),
+    }))
+    .filter((slot) => {
+      const start = Date.parse(slot.startsAt);
+      return Number.isFinite(start) &&
+        start >= now - 90 * 60 * 1000 &&
+        start <= now + 24 * 60 * 60 * 1000;
+    })
+    .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
+
+  const baselineFactor = 0.88;
+  const actualSolarWatts = Math.max(0, finite(input.actualSolarWatts));
+  const forecastSolarWatts = Math.max(0, finite(input.forecastSolarWatts));
+  const actualTodayWh = Math.max(0, finite(input.actualTodayWh));
+  const forecastTodayWh = Math.max(0, finite(input.forecastTodayWh));
+  const forecastRemainingWh = Math.max(0, finite(input.forecastRemainingWh));
+  const expectedElapsedWh = Math.max(0, forecastTodayWh - forecastRemainingWh);
+  const cloudCover = input.cloudCoverPercent == null
+    ? null
+    : clamp(finite(input.cloudCoverPercent), 0, 100);
+  const liveRatio = forecastSolarWatts >= 150
+    ? clamp(actualSolarWatts / forecastSolarWatts, 0.08, 1.1)
+    : null;
+  const elapsedRatio = expectedElapsedWh >= 250
+    ? clamp(actualTodayWh / expectedElapsedWh, 0.08, 1.1)
+    : null;
+
+  let nearTermFactor = baselineFactor;
+  if (liveRatio !== null && elapsedRatio !== null) {
+    nearTermFactor = liveRatio * 0.65 + elapsedRatio * 0.35;
+  } else if (liveRatio !== null) {
+    nearTermFactor = liveRatio;
+  } else if (elapsedRatio !== null) {
+    nearTermFactor = elapsedRatio;
+  }
+  if (cloudCover !== null && cloudCover >= 85) {
+    nearTermFactor = Math.min(nearTermFactor, 0.65);
+  }
+  nearTermFactor = clamp(nearTermFactor, 0.08, 0.95);
+
+  const dayProgress = forecastTodayWh > 0
+    ? clamp(expectedElapsedWh / forecastTodayWh, 0, 1)
+    : 0;
+  const elapsedInfluence = elapsedRatio === null
+    ? 0
+    : clamp(dayProgress * 0.8, 0.15, 0.45);
+  const farTermFactor = elapsedRatio === null
+    ? baselineFactor
+    : clamp(
+      baselineFactor * (1 - elapsedInfluence) + elapsedRatio * elapsedInfluence,
+      0.35,
+      0.95,
+    );
+
+  const prudentSlots = rawSlots.map((slot) => {
+    const hoursAhead = Math.max(0, (Date.parse(slot.startsAt) - now) / 3_600_000);
+    const recovery = clamp(hoursAhead / 8, 0, 1);
+    const factor = nearTermFactor + (farTermFactor - nearTermFactor) * recovery;
+    return {
+      startsAt: slot.startsAt,
+      estimatedWh: Math.round(slot.estimatedWh * factor),
+    };
+  });
+
+  const rawPlanningWh = rawSlots.reduce((sum, slot) => sum + slot.estimatedWh, 0);
+  const prudentPlanningWh = prudentSlots.reduce((sum, slot) => sum + slot.estimatedWh, 0);
+  const rawTodayWh = forecastTodayWh || actualTodayWh + rawPlanningWh;
+  const rawRemainingWh = forecastRemainingWh || rawPlanningWh;
+  const todayRecoveryFactor = clamp(
+    nearTermFactor + (farTermFactor - nearTermFactor) * 0.55,
+    0.08,
+    0.95,
+  );
+  const prudentRemainingWh = Math.round(rawRemainingWh * todayRecoveryFactor);
+  const prudentTodayWh = Math.round(actualTodayWh + prudentRemainingWh);
+  const correctionPercent = rawRemainingWh > 0
+    ? Math.round((1 - prudentRemainingWh / rawRemainingWh) * 100)
+    : 0;
+
+  const hasTwoObservations = liveRatio !== null && elapsedRatio !== null;
+  let confidence: SolarForecastConfidence = "low";
+  if (rawSlots.length >= 12 && hasTwoObservations && dayProgress >= 0.15 && (cloudCover ?? 0) < 75) {
+    confidence = "high";
+  } else if (rawSlots.length >= 6 && (liveRatio !== null || elapsedRatio !== null) && (cloudCover ?? 0) < 85) {
+    confidence = "medium";
+  }
+
+  const observedRatio = liveRatio ?? elapsedRatio;
+  const observedGap = observedRatio === null
+    ? null
+    : Math.max(0, Math.round((1 - observedRatio) * 100));
+  const explanation = observedGap !== null
+    ? `${cloudCover !== null && cloudCover >= 85 ? "Le ciel est très couvert et " : ""}la production réelle est ${observedGap} % sous la puissance attendue. La prévision prudente est recalculée à chaque actualisation.`
+    : "La prévision prudente applique les pertes habituelles de l’installation jusqu’à disposer de suffisamment de mesures réelles.";
+
+  return {
+    rawSlots,
+    prudentSlots,
+    rawTodayWh: Math.round(rawTodayWh),
+    prudentTodayWh,
+    rawRemainingWh: Math.round(rawRemainingWh),
+    prudentRemainingWh,
+    correctionPercent,
+    confidence,
+    explanation,
+  };
 }
 
 function slotDurationHours(slots: SolarForecastSlot[], index: number) {
@@ -173,7 +314,8 @@ export function buildPredictiveEnergyPlan(input: PredictiveEnergyInput): Predict
   );
   const peak = slots.reduce((best, slot) =>
     slot.estimatedWh > best.estimatedWh ? slot : best, slots[0]);
-  const confidence = slots.length >= 12 ? "high" : slots.length >= 5 ? "medium" : "low";
+  const confidence = input.forecastConfidence ??
+    (slots.length >= 12 ? "high" : slots.length >= 5 ? "medium" : "low");
   const withoutFlexibleLoad = simulateBattery(input, slots, 0);
   const withFlexibleLoadNow = simulateBattery(input, slots, flexibleLoadEnergyWh);
   const common = {
@@ -216,7 +358,7 @@ export function buildPredictiveEnergyPlan(input: PredictiveEnergyInput): Predict
     energyAboveReserveWh >= flexibleLoadEnergyWh + reserveMarginWh &&
     withFlexibleLoadNow.minimumBatteryPercent >= settings.batteryReservePercent;
 
-  if (batteryCanFundEarlyStart && afternoonCanRefill) {
+  if (batteryCanFundEarlyStart && afternoonCanRefill && confidence !== "low") {
     const forecastKwh = (forecastNextSixHoursWh / 1000).toFixed(1).replace(".", ",");
     return plan(input, {
       ...common,
