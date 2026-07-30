@@ -201,13 +201,16 @@ export async function PUT(request: Request) {
         ? existingFlexibleLoads
         : sanitizeFlexibleLoads(requestedEnergy.flexibleLoads),
     };
-    await db.delete(plannedDevices).where(eq(plannedDevices.dossierId, dossier.id));
-    if (items.length) {
-      await db.insert(plannedDevices).values(items.map((item) => ({
-        ...item, publicId: publicId("planned"), dossierId: dossier.id,
-      })));
+    const persistedItems = items.map((item) => ({
+      ...item, publicId: publicId("planned"), dossierId: dossier.id,
+    }));
+    const insertStatements = [];
+    for (let index = 0; index < persistedItems.length; index += 4) {
+      insertStatements.push(
+        db.insert(plannedDevices).values(persistedItems.slice(index, index + 4)),
+      );
     }
-    await db.update(installationDossiers).set({
+    const dossierUpdate = db.update(installationDossiers).set({
       enabledModules: JSON.stringify(enabledModules),
       solarPeakWatts: energyConfiguration.solarPeakWatts,
       batteryCapacityWh: energyConfiguration.batteryCapacityWh,
@@ -216,6 +219,11 @@ export async function PUT(request: Request) {
       updatedAt: new Date().toISOString(),
     })
       .where(and(eq(installationDossiers.id, dossier.id), eq(installationDossiers.status, "preparation")));
+    await db.batch([
+      db.delete(plannedDevices).where(eq(plannedDevices.dossierId, dossier.id)),
+      ...insertStatements,
+      dossierUpdate,
+    ]);
     return Response.json({ saved: true, count: items.length, enabledModules, energyConfiguration });
   } catch (error) {
     const invalid = error instanceof Error &&

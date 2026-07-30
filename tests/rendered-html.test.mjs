@@ -53,6 +53,8 @@ test("sauvegarde la préparation dans une base rattachée au dossier", async () 
   assert.match(schema, /plannedDevices/);
   assert.match(schema, /agentBoxes/);
   assert.match(schema, /agentEnrollmentCodes/);
+  assert.match(route, /index \+= 4/);
+  assert.match(route, /await db\.batch/);
 });
 
 test("protège l’enrôlement et les remontées de la box", async () => {

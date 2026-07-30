@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
 type HomeTab = "Accueil" | "Énergie" | "Confort" | "Piscine" | "Sécurité" | "Véhicule";
@@ -548,6 +548,8 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
     flexibleLoads: [],
   });
   const [saveState, setSaveState] = useState<"saved" | "saving" | "offline">("saving");
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const saveRevision = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -578,11 +580,13 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
     modules = enabledModules,
     energy = energyConfiguration,
   ) {
+    const revision = ++saveRevision.current;
     setPlannedItems(items);
     setEnabledModules(modules);
     setEnergyConfiguration(energy);
     setSaveState("saving");
-    try {
+    const previousSave = saveQueue.current;
+    const currentSave = previousSave.catch(() => undefined).then(async () => {
       const response = await fetch("/api/preparation", {
         method: "PUT",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -594,9 +598,13 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
         }),
       });
       if (!response.ok) throw new Error("save");
-      setSaveState("saved");
+    });
+    saveQueue.current = currentSave;
+    try {
+      await currentSave;
+      if (revision === saveRevision.current) setSaveState("saved");
     } catch {
-      setSaveState("offline");
+      if (revision === saveRevision.current) setSaveState("offline");
       notify("La liste reste affichée, mais sa sauvegarde a échoué");
     }
   }
