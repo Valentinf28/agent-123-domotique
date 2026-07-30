@@ -40,6 +40,8 @@ test("propose les familles d’équipements du showroom sans associer les ancien
   assert.match(source, /\["Salon","Cuisine","Chambre","Entrée","Extérieur","Garage","Local technique"\]/);
   assert.match(source, /associableInventory/);
   assert.match(source, /!\["unknown", "unavailable"\]\.includes/);
+  assert.match(source, /domains\.includes\(entity\.domain\) && terms\.some/);
+  assert.match(source, /item\.status === "Détecté"/);
 });
 
 test("sauvegarde la préparation dans une base rattachée au dossier", async () => {

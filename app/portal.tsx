@@ -839,19 +839,27 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
       "Eau chaude": ["switch", "sensor", "water_heater"],
       "Véhicule": ["device_tracker", "sensor", "binary_sensor", "climate", "lock"],
     };
+    const genericTerms = new Set([
+      "plus", "gen", "pro", "smart", "bridge", "camera", "lock",
+      "vehicle", "vehicule", "sun", "1pm",
+    ]);
     let detected = 0;
     const next = items.map((item) => {
       if (["Associé", "Testé"].includes(item.status)) return item;
       const terms = [item.brand, item.model]
         .flatMap((value) => value.toLowerCase().split(/[\s/+-]+/))
-        .filter((value) => value.length >= 3 && !["plus", "gen"].includes(value));
+        .map((value) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
+        .filter((value) => value.length >= 3 && !genericTerms.has(value));
       const domains = domainByCategory[item.category] ?? [];
       const match = inventory.find((entity) => {
         const haystack = `${entity.entityId} ${entity.name} ${entity.deviceClass ?? ""} ${entity.state}`.toLowerCase();
-        return terms.some((term) => haystack.includes(term)) ||
-          (domains.includes(entity.domain) && haystack.includes(item.room.toLowerCase()));
+        return domains.includes(entity.domain) && terms.some((term) => haystack.includes(term));
       });
-      if (!match) return item;
+      if (!match) {
+        return item.status === "Détecté"
+          ? { ...item, status: "Prêt" as InstallationStatus, matchedEntityId: null, matchedEntityName: null }
+          : item;
+      }
       detected += item.quantity;
       return {
         ...item,
