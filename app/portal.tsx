@@ -63,6 +63,12 @@ type MobileOverview = {
     publicId: string; label: string; icon: string;
     active: boolean; available: boolean; controllable?: boolean;
   }[];
+  security?: {
+    publicId: string; label: string; room: string;
+    kind: "camera" | "doorbell"; available: boolean;
+    battery: number | null; motionDetectionEnabled: boolean;
+    lastActivity: string;
+  }[];
   comfort?: {
     indoorTemperature: string; heatingSetpoint: string;
     poolTemperature: string; poolSetpoint: string;
@@ -1081,6 +1087,21 @@ function Dashboard({ setView, setModal, notify, devices, liveStatus, overview, l
       {homeTab === "Confort" && <div className="home-tab-summary"><span className="module-symbol comfort">⌂</span><div><small>Température intérieure</small><strong>{overview?.comfort?.indoorTemperature ?? "—"}</strong><p>Consigne de chauffage · {overview?.comfort?.heatingSetpoint ?? "—"}</p></div><div><small>Eau chaude</small><strong>{overview?.comfort?.hotWaterTemperature ?? "—"}</strong><p>{overview?.comfort?.hotWaterAvailable ?? "—"} disponible · {overview?.comfort?.hotWaterPower ?? "0 W"}</p></div></div>}
       {homeTab === "Piscine" && <div className="home-tab-summary"><span className="module-symbol pool">≋</span><div><small>Température piscine</small><strong>{overview?.comfort?.poolTemperature ?? "—"}</strong><p>Consigne · {overview?.comfort?.poolSetpoint ?? "—"}</p></div><div><small>Filtration</small><strong>{overview?.energy.filtration ?? "0 W"}</strong><p>Installation simulée pour la démonstration</p></div></div>}
       {homeTab === "Sécurité" && <div className="home-tab-summary"><span className="module-symbol">▣</span><div><small>Protection de la maison</small><strong>Sécurité</strong><p>Serrure et caméras pilotées depuis le portail</p></div><div><small>État</small><strong>{visibleControls.every((control) => control.available) ? "Connecté" : "À vérifier"}</strong><p>{visibleControls.length} équipements supervisés</p></div></div>}
+      {homeTab === "Sécurité" && Boolean(overview?.security?.length) && <div className="security-device-grid">
+        {overview?.security?.map((device) => <article key={device.publicId}>
+          <div className="security-device-head">
+            <span>{device.kind === "doorbell" ? "▣" : "◉"}</span>
+            <em className={device.available ? "online" : ""}>{device.available ? "EN LIGNE" : "HORS LIGNE"}</em>
+          </div>
+          <small>{device.kind === "doorbell" ? "Sonnette Ring" : "Caméra Ring"} · {device.room}</small>
+          <strong>{device.label}</strong>
+          <p>{device.motionDetectionEnabled ? "Détection de mouvement active" : "Détection de mouvement désactivée"}</p>
+          <footer>
+            <span>Dernière activité · {device.lastActivity}</span>
+            {device.battery !== null && <b>{device.battery} %</b>}
+          </footer>
+        </article>)}
+      </div>}
       {homeTab === "Véhicule" && <div className="home-tab-summary"><span className="module-symbol vehicle">◇</span><div><small>Tesla</small><strong>{overview?.comfort?.teslaBattery ?? "—"}</strong><p>Niveau de batterie</p></div><div><small>Recharge</small><strong>{overview?.comfort?.teslaPower ?? "0 W"}</strong><p>Puissance instantanée</p></div></div>}
       {visibleControls.length > 0 && <div className="mobile-controls">
         {visibleControls.map((control) => <button key={control.publicId} disabled={!control.available || control.controllable === false} onClick={() => void onControl(control, !control.active)}>

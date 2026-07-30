@@ -19,6 +19,36 @@ type ControlBinding = {
   controllable?: boolean;
 };
 
+type RingSecurityBinding = {
+  cameraEntityId: string;
+  motionDetectionEntityId: string;
+  lastActivityEntityId: string;
+  batteryEntityId?: string;
+  label: string;
+  room: string;
+  kind: "camera" | "doorbell";
+};
+
+const ringSecurityBindings: RingSecurityBinding[] = [
+  {
+    cameraEntityId: "camera.batiment_live_view",
+    motionDetectionEntityId: "switch.batiment_motion_detection",
+    lastActivityEntityId: "sensor.batiment_derniere_activite",
+    batteryEntityId: "sensor.batiment_batterie",
+    label: "Sonnette bâtiment",
+    room: "Entrée",
+    kind: "doorbell",
+  },
+  {
+    cameraEntityId: "camera.preparation_1_live_view",
+    motionDetectionEntityId: "switch.preparation_1_motion_detection",
+    lastActivityEntityId: "sensor.preparation_1_derniere_activite",
+    label: "Caméra Préparation 1",
+    room: "Préparation",
+    kind: "camera",
+  },
+];
+
 const controlBindings: ControlBinding[] = [
   {
     entityIds: ["climate.152832117468341_climate_zone1", "input_boolean.demo_heating"],
@@ -38,6 +68,8 @@ const controlBindings: ControlBinding[] = [
   },
   {
     entityIds: [
+      "camera.batiment_live_view",
+      "camera.preparation_1_live_view",
       "camera.terrasse_maison_live_view",
       "camera.portail_maison_live_view",
       "input_boolean.demo_camera_surveillance",
@@ -182,6 +214,19 @@ function active(item: InventoryItem | null) {
   return Boolean(item && ["on", "open", "heat", "heating", "locked"].includes(item.state.toLowerCase()));
 }
 
+function recentActivity(item: InventoryItem | null) {
+  if (!item || ["unknown", "unavailable"].includes(item.state.toLowerCase())) {
+    return "Aucune activité récente";
+  }
+  const timestamp = Date.parse(item.state);
+  if (!Number.isFinite(timestamp)) return item.state;
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "Europe/Paris",
+  }).format(timestamp);
+}
+
 function scopedFind(
   inventory: InventoryItem[],
   ids: readonly string[],
@@ -245,6 +290,35 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     Date.now() - Date.parse(selected.agent.lastSeenAt) < 120_000
   );
 
+  const ringSecurity = ringSecurityBindings.flatMap((binding) => {
+    const camera = inventory.find((item) => item.entityId === binding.cameraEntityId);
+    if (!camera) return [];
+    const motionDetection = inventory.find(
+      (item) => item.entityId === binding.motionDetectionEntityId,
+    ) ?? null;
+    const lastActivity = inventory.find(
+      (item) => item.entityId === binding.lastActivityEntityId,
+    ) ?? null;
+    const battery = binding.batteryEntityId
+      ? inventory.find((item) => item.entityId === binding.batteryEntityId) ?? null
+      : null;
+    const batteryValue = battery && Number.isFinite(Number(battery.state))
+      ? Number(battery.state)
+      : null;
+    const available = online &&
+      !["unknown", "unavailable"].includes(camera.state.toLowerCase());
+    return [{
+      publicId: publicId(camera.entityId, "securite"),
+      label: binding.label,
+      room: binding.room,
+      kind: binding.kind,
+      available,
+      battery: batteryValue,
+      motionDetectionEnabled: motionDetection?.state.toLowerCase() === "on",
+      lastActivity: recentActivity(lastActivity),
+    }];
+  });
+
   const controls = controlBindings.map((binding) => {
     const item = resolvedControl(inventory, binding, allowShowroomEntities);
     const entityId = item?.entityId ?? binding.entityIds[0];
@@ -258,7 +332,9 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     };
   });
 
-  const devices = controlBindings.map((binding) => {
+  const devices = controlBindings
+    .filter((binding) => binding.label !== "Caméras" || ringSecurity.length === 0)
+    .map((binding) => {
     const item = resolvedControl(inventory, binding, allowShowroomEntities);
     const entityId = item?.entityId ?? binding.entityIds[0];
     const available = online && Boolean(item) && !["unknown", "unavailable"].includes(item.state);
@@ -275,6 +351,21 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
       lastChanged: selected.agent.lastSeenAt ?? new Date(0).toISOString(),
     };
   });
+
+  for (const ringDevice of ringSecurity) {
+    devices.push({
+      publicId: ringDevice.publicId,
+      name: ringDevice.label,
+      room: ringDevice.room,
+      areaPublicId: publicId(ringDevice.room, "piece"),
+      category: "Sécurité",
+      state: ringDevice.available ? "idle" : "unavailable",
+      available: ringDevice.available,
+      battery: ringDevice.battery,
+      visible: true,
+      lastChanged: selected.agent.lastSeenAt ?? new Date(0).toISOString(),
+    });
+  }
 
   const tesla = scopedFind(
     inventory,
@@ -334,6 +425,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
         dailyConsumption: formatted(scopedFind(inventory, valueBindings.dailyConsumption, allowShowroomEntities), "kWh"),
       },
       controls,
+      security: ringSecurity,
       comfort: {
         indoorTemperature: formatted(scopedFind(inventory, valueBindings.indoorTemperature, allowShowroomEntities), "°C"),
         heatingSetpoint: formatted(scopedFind(inventory, valueBindings.heatingSetpoint, allowShowroomEntities), "°C"),

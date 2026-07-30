@@ -102,6 +102,21 @@ test("sépare strictement les appareils client des entités du showroom", async 
   assert.match(source, /!showroomOnlyEntityIds\.has\(entityId\)/);
 });
 
+test("remonte la sonnette et la caméra Ring de la maison pilote dans l’application", async () => {
+  const [portal, agentHome] = await Promise.all([
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/agent-home.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(agentHome, /camera\.batiment_live_view/);
+  assert.match(agentHome, /camera\.preparation_1_live_view/);
+  assert.match(agentHome, /Sonnette bâtiment/);
+  assert.match(agentHome, /Caméra Préparation 1/);
+  assert.match(agentHome, /security: ringSecurity/);
+  assert.match(portal, /security-device-grid/);
+  assert.match(portal, /Détection de mouvement active/);
+  assert.match(portal, /Dernière activité/);
+});
+
 test("garde Home Assistant hors du parcours client", async () => {
   const [clientPage, portal, heartbeat, schema, worker, mobileProvision] = await Promise.all([
     readFile(new URL("../app/ma-maison/page.tsx", import.meta.url), "utf8"),
