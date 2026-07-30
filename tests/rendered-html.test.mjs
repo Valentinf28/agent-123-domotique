@@ -29,6 +29,18 @@ test("inclut le parcours de préparation réservé aux installateurs", async () 
   assert.match(source, /Signaler un blocage/);
 });
 
+test("propose les familles d’équipements du showroom sans associer les anciennes entités indisponibles", async () => {
+  const source = await readFile(new URL("../app/portal.tsx", import.meta.url), "utf8");
+  assert.match(source, /SUN-15K-SG01HP3-EU-AM2/);
+  assert.match(source, /Shelly.*Pro 1PM/s);
+  assert.match(source, /Philips Hue.*Bridge/s);
+  assert.match(source, /Nuki.*Smart Lock/s);
+  assert.match(source, /ONVIF.*Caméra IP/s);
+  assert.match(source, /Tesla.*Véhicule/s);
+  assert.match(source, /associableInventory/);
+  assert.match(source, /!\["unknown", "unavailable"\]\.includes/);
+});
+
 test("sauvegarde la préparation dans une base rattachée au dossier", async () => {
   const [route, schema] = await Promise.all([
     readFile(new URL("../app/api/preparation/route.ts", import.meta.url), "utf8"),

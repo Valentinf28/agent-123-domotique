@@ -146,6 +146,12 @@ const catalogItems: CatalogItem[] = [
   { id: "fronius-gen24", brand: "Fronius", model: "GEN24", category: "Solaire", protocol: "Réseau", level: "Automatique", method: "Découverte Modbus locale", prerequisites: "Solar API activée", estimatedMinutes: 5, icon: "☀" },
   { id: "sonoff-zbmini", brand: "Sonoff", model: "ZBMINI-L2", category: "Éclairage", protocol: "Zigbee", level: "Assistée", method: "Mise en association Zigbee", prerequisites: "Action sur interrupteur ou bouton", estimatedMinutes: 3, icon: "◉" },
   { id: "pool-relay", brand: "1.2.3 Domotique", model: "Coffret piscine", category: "Piscine", protocol: "Modbus", level: "Expert", method: "Adresse réseau et registre validé", prerequisites: "Schéma électrique et accès local", estimatedMinutes: 20, icon: "♒" },
+  { id: "deye-sun-15k-sg01hp3", brand: "Deye", model: "SUN-15K-SG01HP3-EU-AM2", category: "Solaire", protocol: "Réseau", level: "Expert", method: "Logger SolarMAN local", prerequisites: "IP du logger et profil hybride HP3", estimatedMinutes: 10, icon: "☀" },
+  { id: "shelly-pro-1pm", brand: "Shelly", model: "Pro 1PM", category: "Eau chaude", protocol: "Réseau", level: "Automatique", method: "Détection locale du contacteur", prerequisites: "Pose au tableau et connexion Ethernet ou Wi-Fi", estimatedMinutes: 5, icon: "♨" },
+  { id: "hue-bridge", brand: "Philips Hue", model: "Bridge", category: "Éclairage", protocol: "Réseau", level: "Assistée", method: "Découverte locale du pont", prerequisites: "Pont alimenté et bouton central accessible", estimatedMinutes: 4, icon: "◉" },
+  { id: "nuki-smart-lock", brand: "Nuki", model: "Smart Lock", category: "Sécurité", protocol: "Réseau", level: "Assistée", method: "Association locale Nuki ou Matter", prerequisites: "Modèle et code d’association", estimatedMinutes: 5, icon: "▣" },
+  { id: "onvif-camera", brand: "ONVIF", model: "Caméra IP", category: "Sécurité", protocol: "Réseau", level: "Expert", method: "Découverte ONVIF locale", prerequisites: "Identifiants locaux et accès au flux vidéo", estimatedMinutes: 8, icon: "◉" },
+  { id: "tesla-vehicle", brand: "Tesla", model: "Véhicule", category: "Véhicule", protocol: "Réseau", level: "Assistée", method: "Association sécurisée du compte Tesla", prerequisites: "Compte Tesla et véhicule autorisé", estimatedMinutes: 8, icon: "◇" },
 ];
 
 const demoDevices: Device[] = [
@@ -753,6 +759,9 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
   const [mobilePairing, setMobilePairing] = useState<{ code: string; expiresAt: string } | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionSummary | null>(null);
   const [subscriptionSaving, setSubscriptionSaving] = useState(false);
+  const associableInventory = (agent?.inventory ?? []).filter((entity) =>
+    !["unknown", "unavailable"].includes(String(entity.state).toLowerCase())
+  );
 
   useEffect(() => {
     let active = true;
@@ -806,7 +815,7 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
       notify("La box doit être connectée pour lancer la découverte");
       return;
     }
-    const inventory = agent.inventory ?? [];
+    const inventory = associableInventory;
     if (!inventory.length) {
       notify("L’inventaire est en cours de remontée par la box");
       return;
@@ -819,6 +828,8 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
       "Chauffage": ["climate", "water_heater", "sensor"],
       "Solaire": ["sensor"],
       "Piscine": ["switch", "sensor", "climate"],
+      "Eau chaude": ["switch", "sensor", "water_heater"],
+      "Véhicule": ["device_tracker", "sensor", "binary_sensor", "climate", "lock"],
     };
     let detected = 0;
     const next = items.map((item) => {
@@ -828,7 +839,7 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
         .filter((value) => value.length >= 3 && !["plus", "gen"].includes(value));
       const domains = domainByCategory[item.category] ?? [];
       const match = inventory.find((entity) => {
-        const haystack = `${entity.entityId} ${entity.name} ${entity.deviceClass ?? ""}`.toLowerCase();
+        const haystack = `${entity.entityId} ${entity.name} ${entity.deviceClass ?? ""} ${entity.state}`.toLowerCase();
         return terms.some((term) => haystack.includes(term)) ||
           (domains.includes(entity.domain) && haystack.includes(item.room.toLowerCase()));
       });
@@ -944,7 +955,7 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
           <div className="entity-association">
             <label><b>Entité Home Assistant</b><select value={item.matchedEntityId ?? ""} onChange={(event) => associateEntity(item, event.target.value)}>
               <option value="">Choisir une entité détectée…</option>
-              {(agent?.inventory ?? []).map((entity) => <option key={entity.entityId} value={entity.entityId}>{entity.name} · {entity.entityId}</option>)}
+              {associableInventory.map((entity) => <option key={entity.entityId} value={entity.entityId}>{entity.name} · {entity.entityId}</option>)}
             </select></label>
             <span className={item.matchedEntityId ? "matched" : ""}>{item.matchedEntityId ? `✓ ${item.matchedEntityName || item.matchedEntityId}` : "Association à valider"}</span>
           </div>
