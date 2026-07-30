@@ -103,17 +103,20 @@ test("sépare strictement les appareils client des entités du showroom", async 
 });
 
 test("remonte la sonnette et la caméra Ring de la maison pilote dans l’application", async () => {
-  const [portal, agentHome, cameraRoute, relay] = await Promise.all([
+  const [portal, agentHome, cameraRoute, relay, relayHouse] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/agent-home.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/home/cameras/[id]/frame/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../../domotique-relay/app.py", import.meta.url), "utf8"),
+    readFile(new URL("../lib/relay-house.ts", import.meta.url), "utf8"),
   ]);
   assert.match(agentHome, /camera\.batiment_live_view/);
   assert.match(agentHome, /camera\.preparation_1_live_view/);
   assert.match(agentHome, /Sonnette bâtiment/);
   assert.match(agentHome, /Caméra Préparation 1/);
   assert.match(agentHome, /security: ringSecurity/);
+  assert.match(agentHome, /relayHouseIdForDossier/);
+  assert.match(relayHouse, /RELAY_HOUSE_MAP_JSON/);
   assert.match(portal, /security-device-grid/);
   assert.match(portal, /Détection de mouvement active/);
   assert.match(portal, /Dernière activité/);

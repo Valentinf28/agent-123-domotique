@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { agentBoxes, agentCommands, installationDossiers } from "../db/schema";
+import { relayHouseIdForDossier } from "./relay-house";
 
 type InventoryItem = {
   entityId: string;
@@ -468,7 +469,7 @@ export async function resolveRingCameraForDossier(
   if (!online) throw new Error("CAMERA_UNAVAILABLE");
   return {
     entityId: binding.cameraEntityId,
-    relayHouseId: selected.dossier.relayHouseId || selected.dossier.publicId,
+    relayHouseId: relayHouseIdForDossier(selected.dossier),
   };
 }
 
