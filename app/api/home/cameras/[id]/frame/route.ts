@@ -12,7 +12,7 @@ export async function GET(
     });
   }
   const relayBaseUrl = process.env.RELAY_BASE_URL?.trim().replace(/\/+$/, "");
-  const relaySecret = process.env.RELAY_ENTITLEMENT_SECRET?.trim();
+  const relaySecret = process.env.RELAY_CAMERA_SECRET?.trim();
   if (!relayBaseUrl || !relaySecret) {
     return new Response("Flux vidéo indisponible", {
       status: 503,

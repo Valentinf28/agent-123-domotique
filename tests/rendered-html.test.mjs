@@ -120,6 +120,7 @@ test("remonte la sonnette et la caméra Ring de la maison pilote dans l’applic
   assert.match(portal, /Ouvrir le direct/);
   assert.match(portal, /actualisé toutes les 5 s/);
   assert.match(cameraRoute, /resolveRingCameraForDossier/);
+  assert.match(cameraRoute, /RELAY_CAMERA_SECRET/);
   assert.match(cameraRoute, /X-Relay-Authorization/);
   assert.match(relay, /internal_camera_frame/);
   assert.match(relay, /CAMERA_FRAME_MAX_BYTES/);
