@@ -151,6 +151,7 @@ const catalogItems: CatalogItem[] = [
   { id: "hue-bridge", brand: "Philips Hue", model: "Bridge", category: "Éclairage", protocol: "Réseau", level: "Assistée", method: "Découverte locale du pont", prerequisites: "Pont alimenté et bouton central accessible", estimatedMinutes: 4, icon: "◉" },
   { id: "nuki-smart-lock", brand: "Nuki", model: "Smart Lock", category: "Sécurité", protocol: "Réseau", level: "Assistée", method: "Association locale Nuki ou Matter", prerequisites: "Modèle et code d’association", estimatedMinutes: 5, icon: "▣" },
   { id: "onvif-camera", brand: "ONVIF", model: "Caméra IP", category: "Sécurité", protocol: "Réseau", level: "Expert", method: "Découverte ONVIF locale", prerequisites: "Identifiants locaux et accès au flux vidéo", estimatedMinutes: 8, icon: "◉" },
+  { id: "ring-cameras", brand: "Ring", model: "Caméras", category: "Sécurité", protocol: "Wi-Fi", level: "Assistée", method: "Association sécurisée du compte Ring", prerequisites: "Accès au compte Ring et code à deux facteurs", estimatedMinutes: 8, icon: "◉" },
   { id: "tesla-vehicle", brand: "Tesla", model: "Véhicule", category: "Véhicule", protocol: "Réseau", level: "Assistée", method: "Association sécurisée du compte Tesla", prerequisites: "Compte Tesla et véhicule autorisé", estimatedMinutes: 8, icon: "◇" },
 ];
 
@@ -840,7 +841,7 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
       "Véhicule": ["device_tracker", "sensor", "binary_sensor", "climate", "lock"],
     };
     const genericTerms = new Set([
-      "plus", "gen", "pro", "smart", "bridge", "camera", "lock",
+      "plus", "gen", "pro", "smart", "bridge", "camera", "cameras", "lock",
       "vehicle", "vehicule", "sun", "1pm",
     ]);
     let detected = 0;

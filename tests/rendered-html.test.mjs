@@ -36,6 +36,7 @@ test("propose les familles d’équipements du showroom sans associer les ancien
   assert.match(source, /Philips Hue.*Bridge/s);
   assert.match(source, /Nuki.*Smart Lock/s);
   assert.match(source, /ONVIF.*Caméra IP/s);
+  assert.match(source, /Ring.*Caméras/s);
   assert.match(source, /Tesla.*Véhicule/s);
   assert.match(source, /\["Salon","Cuisine","Chambre","Entrée","Extérieur","Garage","Local technique"\]/);
   assert.match(source, /associableInventory/);
