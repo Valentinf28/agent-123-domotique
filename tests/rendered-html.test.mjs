@@ -72,6 +72,17 @@ test("rafraîchit les mesures importantes toutes les cinq secondes sans renvoyer
   assert.match(agentHome, /matches\.find\(\(item\) => !\["unknown", "unavailable"\]\.includes\(item\.state\)\)/);
 });
 
+test("sépare strictement les appareils client des entités du showroom", async () => {
+  const source = await readFile(
+    new URL("../lib/agent-home.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /showroomOnlyEntityIds/);
+  assert.match(source, /allowShowroomEntities/);
+  assert.match(source, /reference\.toUpperCase\(\)\.includes\("SHOWROOM"\)/);
+  assert.match(source, /!showroomOnlyEntityIds\.has\(entityId\)/);
+});
+
 test("garde Home Assistant hors du parcours client", async () => {
   const [clientPage, portal, heartbeat, schema, worker, mobileProvision] = await Promise.all([
     readFile(new URL("../app/ma-maison/page.tsx", import.meta.url), "utf8"),

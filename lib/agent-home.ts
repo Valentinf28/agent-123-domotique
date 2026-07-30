@@ -123,6 +123,25 @@ const valueBindings = {
   demoMode: ["input_select.demo_mode"],
 } as const;
 
+const showroomOnlyEntityIds = new Set([
+  "input_boolean.demo_heating",
+  "input_boolean.demo_pool_filtration",
+  "input_boolean.demo_pool_heat_pump",
+  "input_boolean.demo_nuki_locked",
+  "input_boolean.demo_camera_surveillance",
+  "input_boolean.chauffe_eau_shelly",
+  "input_number.demo_solar_power",
+  "input_number.demo_house_power",
+  "input_number.demo_battery_soc",
+  "input_number.demo_indoor_temperature",
+  "input_number.demo_heating_setpoint",
+  "input_number.demo_pool_temperature",
+  "input_number.demo_pool_setpoint",
+  "input_number.demo_tesla_soc",
+  "input_number.demo_tesla_charge_power",
+  "input_select.demo_mode",
+]);
+
 function publicId(value: string, prefix = "appareil") {
   let hash = 2166136261;
   for (const char of value) {
@@ -163,8 +182,25 @@ function active(item: InventoryItem | null) {
   return Boolean(item && ["on", "open", "heat", "heating", "locked"].includes(item.state.toLowerCase()));
 }
 
-function resolvedControl(inventory: InventoryItem[], binding: ControlBinding) {
-  return find(inventory, binding.entityIds);
+function scopedFind(
+  inventory: InventoryItem[],
+  ids: readonly string[],
+  allowShowroomEntities: boolean,
+) {
+  return find(
+    inventory,
+    allowShowroomEntities
+      ? ids
+      : ids.filter((entityId) => !showroomOnlyEntityIds.has(entityId)),
+  );
+}
+
+function resolvedControl(
+  inventory: InventoryItem[],
+  binding: ControlBinding,
+  allowShowroomEntities: boolean,
+) {
+  return scopedFind(inventory, binding.entityIds, allowShowroomEntities);
 }
 
 export async function selectAgentForDossier(dossierPublicId?: string | null) {
@@ -202,13 +238,15 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
   const selected = await selectAgentForDossier(dossierPublicId);
   if (!selected) throw new Error("CONNECTOR_NOT_CONFIGURED");
   const inventory = parseInventory(selected.agent.inventoryJson);
+  const allowShowroomEntities =
+    selected.dossier.reference.toUpperCase().includes("SHOWROOM");
   const online = Boolean(
     selected.agent.lastSeenAt &&
     Date.now() - Date.parse(selected.agent.lastSeenAt) < 120_000
   );
 
   const controls = controlBindings.map((binding) => {
-    const item = resolvedControl(inventory, binding);
+    const item = resolvedControl(inventory, binding, allowShowroomEntities);
     const entityId = item?.entityId ?? binding.entityIds[0];
     return {
       publicId: publicId(entityId, "commande"),
@@ -221,7 +259,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
   });
 
   const devices = controlBindings.map((binding) => {
-    const item = resolvedControl(inventory, binding);
+    const item = resolvedControl(inventory, binding, allowShowroomEntities);
     const entityId = item?.entityId ?? binding.entityIds[0];
     const available = online && Boolean(item) && !["unknown", "unavailable"].includes(item.state);
     return {
@@ -238,7 +276,11 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     };
   });
 
-  const tesla = find(inventory, valueBindings.teslaBattery);
+  const tesla = scopedFind(
+    inventory,
+    valueBindings.teslaBattery,
+    allowShowroomEntities,
+  );
   if (tesla) {
     devices.push({
       publicId: publicId(tesla.entityId),
@@ -282,29 +324,29 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     automations,
     mobileOverview: {
       energy: {
-        solar: formatted(find(inventory, valueBindings.solar), "W", "0 W"),
-        home: formatted(find(inventory, valueBindings.home), "W", "0 W"),
-        grid: formatted(find(inventory, valueBindings.grid), "W", "0 W"),
-        battery: formatted(find(inventory, valueBindings.battery), "%", "0 %"),
-        batteryPower: formatted(find(inventory, valueBindings.batteryPower), "W", "0 W"),
-        filtration: formatted(find(inventory, valueBindings.filtration), "W", "0 W"),
-        dailyProduction: formatted(find(inventory, valueBindings.dailyProduction), "kWh"),
-        dailyConsumption: formatted(find(inventory, valueBindings.dailyConsumption), "kWh"),
+        solar: formatted(scopedFind(inventory, valueBindings.solar, allowShowroomEntities), "W", "0 W"),
+        home: formatted(scopedFind(inventory, valueBindings.home, allowShowroomEntities), "W", "0 W"),
+        grid: formatted(scopedFind(inventory, valueBindings.grid, allowShowroomEntities), "W", "0 W"),
+        battery: formatted(scopedFind(inventory, valueBindings.battery, allowShowroomEntities), "%", "0 %"),
+        batteryPower: formatted(scopedFind(inventory, valueBindings.batteryPower, allowShowroomEntities), "W", "0 W"),
+        filtration: formatted(scopedFind(inventory, valueBindings.filtration, allowShowroomEntities), "W", "0 W"),
+        dailyProduction: formatted(scopedFind(inventory, valueBindings.dailyProduction, allowShowroomEntities), "kWh"),
+        dailyConsumption: formatted(scopedFind(inventory, valueBindings.dailyConsumption, allowShowroomEntities), "kWh"),
       },
       controls,
       comfort: {
-        indoorTemperature: formatted(find(inventory, valueBindings.indoorTemperature), "°C"),
-        heatingSetpoint: formatted(find(inventory, valueBindings.heatingSetpoint), "°C"),
-        poolTemperature: formatted(find(inventory, valueBindings.poolTemperature), "°C"),
-        poolSetpoint: formatted(find(inventory, valueBindings.poolSetpoint), "°C"),
-        hotWaterTemperature: formatted(find(inventory, valueBindings.hotWaterTemperature), "°C"),
-        hotWaterAvailable: formatted(find(inventory, valueBindings.hotWaterAvailable), "%"),
-        hotWaterPower: formatted(find(inventory, valueBindings.hotWaterPower), "W", "0 W"),
-        hotWaterMode: formatted(find(inventory, valueBindings.hotWaterMode), ""),
-        teslaBattery: formatted(find(inventory, valueBindings.teslaBattery), "%"),
-        teslaPower: formatted(find(inventory, valueBindings.teslaPower), "W", "0 W"),
-        teslaPlugged: formatted(find(inventory, valueBindings.teslaPlugged), "", "off"),
-        demoMode: formatted(find(inventory, valueBindings.demoMode), ""),
+        indoorTemperature: formatted(scopedFind(inventory, valueBindings.indoorTemperature, allowShowroomEntities), "°C"),
+        heatingSetpoint: formatted(scopedFind(inventory, valueBindings.heatingSetpoint, allowShowroomEntities), "°C"),
+        poolTemperature: formatted(scopedFind(inventory, valueBindings.poolTemperature, allowShowroomEntities), "°C"),
+        poolSetpoint: formatted(scopedFind(inventory, valueBindings.poolSetpoint, allowShowroomEntities), "°C"),
+        hotWaterTemperature: formatted(scopedFind(inventory, valueBindings.hotWaterTemperature, allowShowroomEntities), "°C"),
+        hotWaterAvailable: formatted(scopedFind(inventory, valueBindings.hotWaterAvailable, allowShowroomEntities), "%"),
+        hotWaterPower: formatted(scopedFind(inventory, valueBindings.hotWaterPower, allowShowroomEntities), "W", "0 W"),
+        hotWaterMode: formatted(scopedFind(inventory, valueBindings.hotWaterMode, allowShowroomEntities), ""),
+        teslaBattery: formatted(scopedFind(inventory, valueBindings.teslaBattery, allowShowroomEntities), "%"),
+        teslaPower: formatted(scopedFind(inventory, valueBindings.teslaPower, allowShowroomEntities), "W", "0 W"),
+        teslaPlugged: formatted(scopedFind(inventory, valueBindings.teslaPlugged, allowShowroomEntities), "", "off"),
+        demoMode: formatted(scopedFind(inventory, valueBindings.demoMode, allowShowroomEntities), ""),
       },
     },
   };
@@ -318,8 +360,13 @@ export async function queueAgentControl(
   const selected = await selectAgentForDossier(dossierPublicId);
   if (!selected) throw new Error("CONNECTOR_NOT_CONFIGURED");
   const inventory = parseInventory(selected.agent.inventoryJson);
+  const allowShowroomEntities =
+    selected.dossier.reference.toUpperCase().includes("SHOWROOM");
   const resolved = controlBindings
-    .map((binding) => ({ binding, item: resolvedControl(inventory, binding) }))
+    .map((binding) => ({
+      binding,
+      item: resolvedControl(inventory, binding, allowShowroomEntities),
+    }))
     .find(({ item }) =>
       item && publicId(item.entityId, "commande") === publicControlId
     );
