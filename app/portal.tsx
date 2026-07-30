@@ -857,7 +857,7 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
       });
       if (!match) {
         return item.status === "Détecté"
-          ? { ...item, status: "Prêt" as InstallationStatus, matchedEntityId: null, matchedEntityName: null }
+          ? { ...item, status: "À préparer" as InstallationStatus, matchedEntityId: null, matchedEntityName: null }
           : item;
       }
       detected += item.quantity;
