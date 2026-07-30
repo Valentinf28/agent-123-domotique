@@ -114,7 +114,12 @@ function parseInventory(value: string): InventoryItem[] {
 }
 
 function find(inventory: InventoryItem[], ids: readonly string[]) {
-  return ids.map((id) => inventory.find((item) => item.entityId === id)).find(Boolean) ?? null;
+  const matches = ids
+    .map((id) => inventory.find((item) => item.entityId === id))
+    .filter((item): item is InventoryItem => Boolean(item));
+  return matches.find((item) => !["unknown", "unavailable"].includes(item.state))
+    ?? matches[0]
+    ?? null;
 }
 
 function formatted(item: InventoryItem | null, unit: string, fallback = "—") {
