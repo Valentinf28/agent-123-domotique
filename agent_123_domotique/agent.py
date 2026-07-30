@@ -33,6 +33,7 @@ SOLAR_FORECAST_FETCHED_AT = 0.0
 FAST_ENTITY_PREFIXES = (
     "sensor.inverter_",
     "sensor.onduleur_",
+    "sensor.shellyem3_",
     "sensor.1_2_3_home_",
     "sensor.filtration_piscine_",
     "input_boolean.demo_",
@@ -709,6 +710,7 @@ def main() -> None:
         while True:
             time.sleep(300)
     while True:
+        cycle_started_at = time.monotonic()
         try:
             if not state.get("token"):
                 state = enroll(portal_url, enrollment_code)
@@ -761,7 +763,8 @@ def main() -> None:
                 log(f"Portail indisponible (HTTP {error.code}), nouvelle tentative")
         except (urllib.error.URLError, TimeoutError, OSError, RuntimeError, ValueError) as error:
             log(f"Connexion impossible ({error}), nouvelle tentative")
-        time.sleep(interval)
+        cycle_duration = time.monotonic() - cycle_started_at
+        time.sleep(max(0.2, interval - cycle_duration))
 
 
 if __name__ == "__main__":

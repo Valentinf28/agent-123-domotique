@@ -1,5 +1,14 @@
 # Journal des versions
 
+## 0.5.14
+
+- Corrige la cadence de synchronisation pour démarrer un cycle toutes les cinq secondes, temps de lecture et de transmission compris.
+
+## 0.5.13
+
+- Aligne les flux du portail sur les compteurs Shelly utilisés par la vue énergie Home Assistant.
+- Rafraîchit la consommation maison et le réseau toutes les cinq secondes.
+
 ## 0.5.12
 
 - Prise en charge directe des capteurs Open-Meteo Solar Forecast.
