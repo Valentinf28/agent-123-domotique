@@ -86,7 +86,7 @@ test("rafraîchit les mesures importantes toutes les cinq secondes sans renvoyer
   assert.match(agent, /FULL_INVENTORY_SECONDS = 60/);
   assert.match(agent, /FAST_ENTITY_PREFIXES/);
   assert.match(agent, /interval - cycle_duration/);
-  assert.match(config, /version: "0\.5\.14"/);
+  assert.match(config, /version: "0\.5\.15"/);
   assert.match(config, /heartbeat_seconds: "int\(5,300\)"/);
   assert.match(agentHome, /matches\.find\(\(item\) => !\["unknown", "unavailable"\]\.includes\(item\.state\)\)/);
 });

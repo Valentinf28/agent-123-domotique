@@ -141,6 +141,7 @@ const valueBindings = {
     "sensor.onduleur_today_production",
   ],
   dailyConsumption: [
+    "sensor.1_2_3_home_today_consumption",
     "sensor.inverter_today_load_consumption",
     "sensor.onduleur_today_load_consumption",
   ],

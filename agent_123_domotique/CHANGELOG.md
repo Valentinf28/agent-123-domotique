@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.15
+
+- Calcule la consommation journalière directement depuis le compteur d’énergie Shelly.
+- Calcule également l’achat et l’injection réseau journaliers depuis le Shelly.
+- Conserve les compteurs Deye uniquement comme solution de repli.
+
 ## 0.5.14
 
 - Corrige la cadence de synchronisation pour démarrer un cycle toutes les cinq secondes, temps de lecture et de transmission compris.

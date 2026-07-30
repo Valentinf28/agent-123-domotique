@@ -74,7 +74,11 @@ const bindings = {
     "input_number.demo_tesla_charge_power",
   ],
   dailyProductionWh: ["sensor.inverter_today_production", "sensor.onduleur_today_production"],
-  dailyConsumptionWh: ["sensor.inverter_today_load_consumption", "sensor.onduleur_today_load_consumption"],
+  dailyConsumptionWh: [
+    "sensor.1_2_3_home_today_consumption",
+    "sensor.inverter_today_load_consumption",
+    "sensor.onduleur_today_load_consumption",
+  ],
   forecastTodayKwh: [
     "sensor.maison_energy_production_today",
     "sensor.energy_production_today",
