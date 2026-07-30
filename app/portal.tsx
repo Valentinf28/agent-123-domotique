@@ -494,7 +494,7 @@ export default function Portal({
           </div>
         </header>
 
-        {view === "Accueil" && <Dashboard setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} lastSyncedAt={lastSyncedAt} onControl={setHomeControl} />}
+        {view === "Accueil" && <Dashboard dossierId={selectedDossierId} setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} lastSyncedAt={lastSyncedAt} onControl={setHomeControl} />}
         {view === "Préparation" && <Preparation dossierId={selectedDossierId} plannedItems={plannedItems} setPlannedItems={setPlannedItems} notify={notify} setView={setView} />}
         {view === "Installation" && <Installation dossierId={selectedDossierId} notify={notify} />}
         {view === "Appareils" && <Devices filtered={filtered} areas={areas} search={search} setSearch={setSearch} room={room} setRoom={setRoom} notify={notify} manage={(device) => { setSelectedDevice(device); setModal("appareil"); }} updateDevice={updateDevice} />}
@@ -1048,7 +1048,40 @@ function friendlyState(state: string) {
   return states[state.toLowerCase()] ?? state;
 }
 
-function Dashboard({ setView, setModal, notify, devices, liveStatus, overview, lastSyncedAt, onControl }: {
+function SecurityCameraFrame({ publicId, dossierId, label }: {
+  publicId: string;
+  dossierId: string;
+  label: string;
+}) {
+  const [revision, setRevision] = useState(() => Date.now());
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setLoaded(false);
+      setFailed(false);
+      setRevision(Date.now());
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const query = new URLSearchParams();
+  if (dossierId) query.set("dossier", dossierId);
+  query.set("v", String(revision));
+  return <div className={`security-camera-frame ${loaded ? "loaded" : ""} ${failed ? "failed" : ""}`}>
+    {!loaded && !failed && <span>Connexion au direct…</span>}
+    {failed && <span>Image momentanément indisponible</span>}
+    <img
+      src={`/api/home/cameras/${encodeURIComponent(publicId)}/frame?${query.toString()}`}
+      alt={`Vue en direct · ${label}`}
+      onLoad={() => setLoaded(true)}
+      onError={() => { setLoaded(false); setFailed(true); }}
+    />
+    <em><i /> Direct sécurisé · actualisé toutes les 5 s</em>
+  </div>;
+}
+
+function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, overview, lastSyncedAt, onControl }: {
+  dossierId: string;
   setView: (v: View) => void; setModal: (v: string) => void;
   notify: (v: string) => void; devices: Device[];
   liveStatus: "loading" | "connected" | "demo";
@@ -1060,6 +1093,7 @@ function Dashboard({ setView, setModal, notify, devices, liveStatus, overview, l
   ) => Promise<void>;
 }) {
   const [homeTab, setHomeTab] = useState<HomeTab>("Accueil");
+  const [openCameraId, setOpenCameraId] = useState<string | null>(null);
   const available = devices.filter((device) => device.online).length;
   const lowBattery = devices.filter((device) => device.battery !== undefined && device.battery < 20).length;
   const controls = overview?.controls ?? [
@@ -1096,10 +1130,18 @@ function Dashboard({ setView, setModal, notify, devices, liveStatus, overview, l
           <small>{device.kind === "doorbell" ? "Sonnette Ring" : "Caméra Ring"} · {device.room}</small>
           <strong>{device.label}</strong>
           <p>{device.motionDetectionEnabled ? "Détection de mouvement active" : "Détection de mouvement désactivée"}</p>
+          {openCameraId === device.publicId && <SecurityCameraFrame publicId={device.publicId} dossierId={dossierId} label={device.label} />}
           <footer>
             <span>Dernière activité · {device.lastActivity}</span>
             {device.battery !== null && <b>{device.battery} %</b>}
           </footer>
+          <button
+            className="security-live-button"
+            disabled={!device.available}
+            onClick={() => setOpenCameraId((current) => current === device.publicId ? null : device.publicId)}
+          >
+            {openCameraId === device.publicId ? "Fermer le direct" : "Ouvrir le direct"}
+          </button>
         </article>)}
       </div>}
       {homeTab === "Véhicule" && <div className="home-tab-summary"><span className="module-symbol vehicle">◇</span><div><small>Tesla</small><strong>{overview?.comfort?.teslaBattery ?? "—"}</strong><p>Niveau de batterie</p></div><div><small>Recharge</small><strong>{overview?.comfort?.teslaPower ?? "0 W"}</strong><p>Puissance instantanée</p></div></div>}

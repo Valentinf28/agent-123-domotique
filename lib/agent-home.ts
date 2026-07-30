@@ -444,6 +444,34 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
   };
 }
 
+export async function resolveRingCameraForDossier(
+  publicCameraId: string,
+  dossierPublicId?: string | null,
+) {
+  const selected = await selectAgentForDossier(dossierPublicId);
+  if (!selected) throw new Error("CAMERA_NOT_FOUND");
+  const inventory = parseInventory(selected.agent.inventoryJson);
+  const binding = ringSecurityBindings.find((candidate) =>
+    publicId(candidate.cameraEntityId, "securite") === publicCameraId
+  );
+  if (!binding) throw new Error("CAMERA_NOT_FOUND");
+  const camera = inventory.find(
+    (item) => item.entityId === binding.cameraEntityId,
+  );
+  if (!camera || ["unknown", "unavailable"].includes(camera.state.toLowerCase())) {
+    throw new Error("CAMERA_UNAVAILABLE");
+  }
+  const online = Boolean(
+    selected.agent.lastSeenAt &&
+    Date.now() - Date.parse(selected.agent.lastSeenAt) < 120_000
+  );
+  if (!online) throw new Error("CAMERA_UNAVAILABLE");
+  return {
+    entityId: binding.cameraEntityId,
+    relayHouseId: selected.dossier.relayHouseId || selected.dossier.publicId,
+  };
+}
+
 export async function queueAgentControl(
   publicControlId: string,
   desiredActive: boolean,

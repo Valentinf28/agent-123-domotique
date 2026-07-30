@@ -103,9 +103,11 @@ test("sépare strictement les appareils client des entités du showroom", async 
 });
 
 test("remonte la sonnette et la caméra Ring de la maison pilote dans l’application", async () => {
-  const [portal, agentHome] = await Promise.all([
+  const [portal, agentHome, cameraRoute, relay] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/agent-home.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/home/cameras/[id]/frame/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../domotique-relay/app.py", import.meta.url), "utf8"),
   ]);
   assert.match(agentHome, /camera\.batiment_live_view/);
   assert.match(agentHome, /camera\.preparation_1_live_view/);
@@ -115,6 +117,13 @@ test("remonte la sonnette et la caméra Ring de la maison pilote dans l’applic
   assert.match(portal, /security-device-grid/);
   assert.match(portal, /Détection de mouvement active/);
   assert.match(portal, /Dernière activité/);
+  assert.match(portal, /Ouvrir le direct/);
+  assert.match(portal, /actualisé toutes les 5 s/);
+  assert.match(cameraRoute, /resolveRingCameraForDossier/);
+  assert.match(cameraRoute, /X-Relay-Authorization/);
+  assert.match(relay, /internal_camera_frame/);
+  assert.match(relay, /CAMERA_FRAME_MAX_BYTES/);
+  assert.match(relay, /valid_camera_entity_id/);
 });
 
 test("garde Home Assistant hors du parcours client", async () => {
