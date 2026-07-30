@@ -85,7 +85,7 @@ const controlBindings: ControlBinding[] = [
     label: "PAC piscine", icon: "♨", room: "Piscine", category: "Piscine",
   },
   {
-    entityIds: ["lock.nuki", "input_boolean.demo_nuki_locked"],
+    entityIds: ["lock.accueil", "lock.nuki", "input_boolean.demo_nuki_locked"],
     label: "Serrure Nuki", icon: "▣", room: "Entrée", category: "Sécurité",
   },
   {

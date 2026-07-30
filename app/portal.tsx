@@ -395,6 +395,13 @@ export default function Portal({
       notify(`${control.label} est momentanément indisponible`);
       return;
     }
+    if (
+      control.label === "Serrure Nuki" &&
+      !enabled &&
+      !window.confirm("Déverrouiller la serrure Nuki ?")
+    ) {
+      return;
+    }
     setMobileOverview((current) => current ? {
       ...current,
       controls: current.controls.map((item) =>
@@ -1267,7 +1274,15 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
       {homeTab === "Véhicule" && <div className="home-tab-summary"><span className="module-symbol vehicle">◇</span><div><small>Tesla</small><strong>{overview?.comfort?.teslaBattery ?? "—"}</strong><p>Niveau de batterie</p></div><div><small>Recharge</small><strong>{overview?.comfort?.teslaPower ?? "0 W"}</strong><p>Puissance instantanée</p></div></div>}
       {visibleControls.length > 0 && <div className="mobile-controls">
         {visibleControls.map((control) => <button key={control.publicId} disabled={!control.available || control.controllable === false} onClick={() => void onControl(control, !control.active)}>
-          <span className={control.active ? "control-state active" : "control-state"}>{!control.available ? "INDISPONIBLE" : control.controllable === false ? "EN LIGNE" : control.active ? "ACTIF" : "ARRÊT"}</span>
+          <span className={control.active ? "control-state active" : "control-state"}>{
+            !control.available
+              ? "INDISPONIBLE"
+              : control.controllable === false
+                ? "EN LIGNE"
+                : control.label === "Serrure Nuki"
+                  ? control.active ? "VERROUILLÉE" : "DÉVERROUILLÉE"
+                  : control.active ? "ACTIF" : "ARRÊT"
+          }</span>
           <i>{control.icon}</i><b>{control.label}</b>
         </button>)}
       </div>}

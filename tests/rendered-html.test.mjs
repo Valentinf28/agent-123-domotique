@@ -102,6 +102,17 @@ test("sépare strictement les appareils client des entités du showroom", async 
   assert.match(source, /!showroomOnlyEntityIds\.has\(entityId\)/);
 });
 
+test("raccorde la Nuki réelle du showroom et confirme tout déverrouillage", async () => {
+  const [agentHome, portal] = await Promise.all([
+    readFile(new URL("../lib/agent-home.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(agentHome, /\["lock\.accueil", "lock\.nuki", "input_boolean\.demo_nuki_locked"\]/);
+  assert.match(portal, /Déverrouiller la serrure Nuki/);
+  assert.match(portal, /VERROUILLÉE/);
+  assert.match(portal, /DÉVERROUILLÉE/);
+});
+
 test("affecte les deux Ring au showroom et relaie un vrai direct WebRTC", async () => {
   const [portal, agentHome, cameraRoute, relay, relayHouse] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
