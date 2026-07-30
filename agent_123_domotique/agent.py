@@ -33,6 +33,7 @@ SOLAR_FORECAST_FETCHED_AT = 0.0
 FAST_ENTITY_PREFIXES = (
     "sensor.inverter_",
     "sensor.onduleur_",
+    "sensor.shellyem3_",
     "sensor.1_2_3_home_",
     "sensor.filtration_piscine_",
     "input_boolean.demo_",

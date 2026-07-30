@@ -52,8 +52,18 @@ type FlexibleLoadConfiguration = {
 
 const bindings = {
   solarWatts: ["sensor.inverter_pv_power", "sensor.onduleur_pv_power", "input_number.demo_solar_power"],
-  homeWatts: ["sensor.inverter_load_power", "sensor.onduleur_load_power", "input_number.demo_house_power"],
-  gridWatts: ["sensor.inverter_grid_power", "sensor.onduleur_grid_power", "sensor.1_2_3_home_puissance_reseau"],
+  homeWatts: [
+    "sensor.shellyem3_483fdac38616_channel_b_power",
+    "sensor.inverter_load_power",
+    "sensor.onduleur_load_power",
+    "input_number.demo_house_power",
+  ],
+  gridWatts: [
+    "sensor.shellyem3_483fdac38616_channel_c_power",
+    "sensor.inverter_grid_power",
+    "sensor.onduleur_grid_power",
+    "sensor.1_2_3_home_puissance_reseau",
+  ],
   batteryPercent: ["sensor.inverter_battery", "sensor.onduleur_battery", "input_number.demo_battery_soc"],
   batteryWatts: ["sensor.inverter_battery_power", "sensor.onduleur_battery_power", "sensor.1_2_3_home_puissance_batterie"],
   filtrationWatts: ["sensor.filtration_piscine_puissance"],

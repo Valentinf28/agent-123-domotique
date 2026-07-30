@@ -34,11 +34,13 @@ const valueBindings = {
     "input_number.demo_solar_power",
   ],
   home: [
+    "sensor.shellyem3_483fdac38616_channel_b_power",
     "sensor.inverter_load_power",
     "sensor.onduleur_load_power",
     "input_number.demo_house_power",
   ],
   grid: [
+    "sensor.shellyem3_483fdac38616_channel_c_power",
     "sensor.inverter_grid_power",
     "sensor.onduleur_grid_power",
     "sensor.1_2_3_home_puissance_reseau",
