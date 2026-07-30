@@ -1048,35 +1048,155 @@ function friendlyState(state: string) {
   return states[state.toLowerCase()] ?? state;
 }
 
-function SecurityCameraFrame({ publicId, dossierId, label }: {
+function SecurityCameraStream({ publicId, dossierId, label }: {
   publicId: string;
   dossierId: string;
   label: string;
 }) {
-  const [revision, setRevision] = useState(() => Date.now());
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setLoaded(false);
-      setFailed(false);
-      setRevision(Date.now());
-    }, 5_000);
-    return () => window.clearInterval(timer);
-  }, []);
-  const query = new URLSearchParams();
-  if (dossierId) query.set("dossier", dossierId);
-  query.set("v", String(revision));
+    const video = videoRef.current;
+    if (!video) return;
+    let disposed = false;
+    let connection: RTCPeerConnection | null = null;
+    let scope = "";
+    let pollTimer: number | null = null;
+    const endpoint =
+      `/api/home/cameras/${encodeURIComponent(publicId)}/webrtc`;
+    const playing = () => {
+      if (!disposed) {
+        setLoaded(true);
+        setFailed(false);
+      }
+    };
+    const unavailable = () => {
+      if (!disposed) {
+        setLoaded(false);
+        setFailed(true);
+      }
+    };
+    video.addEventListener("playing", playing);
+    video.addEventListener("error", unavailable);
+    const post = async (payload: Record<string, unknown>) => {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, dossier: dossierId }),
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("WEBRTC_UNAVAILABLE");
+      return response.json();
+    };
+    const waitForIce = (peer: RTCPeerConnection) => new Promise<void>((resolve) => {
+      if (peer.iceGatheringState === "complete") {
+        resolve();
+        return;
+      }
+      const timeout = window.setTimeout(resolve, 8_000);
+      const changed = () => {
+        if (peer.iceGatheringState !== "complete") return;
+        window.clearTimeout(timeout);
+        peer.removeEventListener("icegatheringstatechange", changed);
+        resolve();
+      };
+      peer.addEventListener("icegatheringstatechange", changed);
+    });
+    const start = async () => {
+      const client = await post({ action: "config" }) as {
+        configuration?: RTCConfiguration;
+      };
+      if (disposed) return;
+      const peer = new RTCPeerConnection(client.configuration ?? {});
+      connection = peer;
+      const received = new MediaStream();
+      video.srcObject = received;
+      peer.ontrack = (event) => {
+        if (event.streams[0]) {
+          video.srcObject = event.streams[0];
+        } else {
+          received.addTrack(event.track);
+        }
+        void video.play().catch(unavailable);
+      };
+      peer.onconnectionstatechange = () => {
+        if (["failed", "disconnected", "closed"].includes(peer.connectionState)) {
+          unavailable();
+        }
+      };
+      peer.addTransceiver("video", { direction: "recvonly" });
+      peer.addTransceiver("audio", { direction: "recvonly" });
+      await peer.setLocalDescription(await peer.createOffer());
+      await waitForIce(peer);
+      if (disposed || !peer.localDescription?.sdp) return;
+      const negotiated = await post({
+        action: "offer",
+        offer: peer.localDescription.sdp,
+      }) as {
+        answer: string;
+        candidates?: RTCIceCandidateInit[];
+        scope: string;
+      };
+      if (disposed) return;
+      scope = negotiated.scope;
+      await peer.setRemoteDescription({
+        type: "answer",
+        sdp: negotiated.answer,
+      });
+      for (const candidate of negotiated.candidates ?? []) {
+        await peer.addIceCandidate(candidate);
+      }
+      pollTimer = window.setInterval(() => {
+        if (!scope || disposed) return;
+        void post({ action: "poll", scope }).then(async (payload: {
+          events?: { type?: string; candidate?: RTCIceCandidateInit }[];
+        }) => {
+          for (const event of payload.events ?? []) {
+            if (event.type === "candidate" && event.candidate) {
+              await peer.addIceCandidate(event.candidate);
+            } else if (event.type === "error") {
+              unavailable();
+            }
+          }
+        }).catch(unavailable);
+      }, 750);
+    };
+    void start().catch(unavailable);
+    return () => {
+      disposed = true;
+      if (pollTimer !== null) window.clearInterval(pollTimer);
+      if (scope) {
+        void fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "close",
+            dossier: dossierId,
+            scope,
+          }),
+          keepalive: true,
+        });
+      }
+      connection?.close();
+      video.pause();
+      video.srcObject = null;
+      video.removeEventListener("playing", playing);
+      video.removeEventListener("error", unavailable);
+    };
+  }, [dossierId, publicId]);
   return <div className={`security-camera-frame ${loaded ? "loaded" : ""} ${failed ? "failed" : ""}`}>
     {!loaded && !failed && <span>Connexion au direct…</span>}
-    {failed && <span>Image momentanément indisponible</span>}
-    <img
-      src={`/api/home/cameras/${encodeURIComponent(publicId)}/frame?${query.toString()}`}
-      alt={`Vue en direct · ${label}`}
-      onLoad={() => setLoaded(true)}
-      onError={() => { setLoaded(false); setFailed(true); }}
+    {failed && <span>Direct momentanément indisponible</span>}
+    <video
+      ref={videoRef}
+      aria-label={`Vue en direct · ${label}`}
+      autoPlay
+      controls
+      muted
+      playsInline
     />
-    <em><i /> Direct sécurisé · actualisé toutes les 5 s</em>
+    <em><i /> Direct vidéo sécurisé</em>
   </div>;
 }
 
@@ -1130,7 +1250,7 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
           <small>{device.kind === "doorbell" ? "Sonnette Ring" : "Caméra Ring"} · {device.room}</small>
           <strong>{device.label}</strong>
           <p>{device.motionDetectionEnabled ? "Détection de mouvement active" : "Détection de mouvement désactivée"}</p>
-          {openCameraId === device.publicId && <SecurityCameraFrame publicId={device.publicId} dossierId={dossierId} label={device.label} />}
+          {openCameraId === device.publicId && <SecurityCameraStream publicId={device.publicId} dossierId={dossierId} label={device.label} />}
           <footer>
             <span>Dernière activité · {device.lastActivity}</span>
             {device.battery !== null && <b>{device.battery} %</b>}

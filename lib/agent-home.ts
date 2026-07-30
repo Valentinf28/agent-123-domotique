@@ -50,6 +50,27 @@ const ringSecurityBindings: RingSecurityBinding[] = [
   },
 ];
 
+function ringCameraAssignments(): Record<string, string> {
+  try {
+    const parsed = JSON.parse(process.env.RING_CAMERA_ASSIGNMENTS_JSON ?? "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([displayReference, sourceReference]) =>
+          displayReference.length > 0 &&
+          typeof sourceReference === "string" &&
+          sourceReference.length > 0
+        )
+        .map(([displayReference, sourceReference]) => [
+          displayReference,
+          String(sourceReference),
+        ]),
+    );
+  } catch {
+    return {};
+  }
+}
+
 const controlBindings: ControlBinding[] = [
   {
     entityIds: ["climate.152832117468341_climate_zone1", "input_boolean.demo_heating"],
@@ -280,33 +301,63 @@ export async function selectAgentForDossier(dossierPublicId?: string | null) {
   return dossier ? { agent, dossier } : null;
 }
 
+async function selectRingSourceForDossier(
+  selected: NonNullable<Awaited<ReturnType<typeof selectAgentForDossier>>>,
+) {
+  const assignments = ringCameraAssignments();
+  const sourceReference = assignments[selected.dossier.reference];
+  if (!sourceReference) {
+    return Object.values(assignments).includes(selected.dossier.reference)
+      ? null
+      : selected;
+  }
+  if (sourceReference === selected.dossier.reference) return selected;
+  const [sourceDossier] = await getDb().select().from(installationDossiers)
+    .where(eq(installationDossiers.reference, sourceReference)).limit(1);
+  if (!sourceDossier) return null;
+  const [sourceAgent] = await getDb().select().from(agentBoxes)
+    .where(eq(agentBoxes.dossierId, sourceDossier.id)).limit(1);
+  return sourceAgent ? { agent: sourceAgent, dossier: sourceDossier } : null;
+}
+
 export async function getAgentPortalHome(dossierPublicId?: string | null) {
   const selected = await selectAgentForDossier(dossierPublicId);
   if (!selected) throw new Error("CONNECTOR_NOT_CONFIGURED");
   const inventory = parseInventory(selected.agent.inventoryJson);
+  const ringSource = await selectRingSourceForDossier(selected);
+  const ringInventory = ringSource
+    ? parseInventory(ringSource.agent.inventoryJson)
+    : [];
+  const cameraPlacementReassigned =
+    !ringSource &&
+    Object.values(ringCameraAssignments()).includes(selected.dossier.reference);
   const allowShowroomEntities =
     selected.dossier.reference.toUpperCase().includes("SHOWROOM");
   const online = Boolean(
     selected.agent.lastSeenAt &&
     Date.now() - Date.parse(selected.agent.lastSeenAt) < 120_000
   );
+  const ringOnline = Boolean(
+    ringSource?.agent.lastSeenAt &&
+    Date.now() - Date.parse(ringSource.agent.lastSeenAt) < 120_000
+  );
 
   const ringSecurity = ringSecurityBindings.flatMap((binding) => {
-    const camera = inventory.find((item) => item.entityId === binding.cameraEntityId);
+    const camera = ringInventory.find((item) => item.entityId === binding.cameraEntityId);
     if (!camera) return [];
-    const motionDetection = inventory.find(
+    const motionDetection = ringInventory.find(
       (item) => item.entityId === binding.motionDetectionEntityId,
     ) ?? null;
-    const lastActivity = inventory.find(
+    const lastActivity = ringInventory.find(
       (item) => item.entityId === binding.lastActivityEntityId,
     ) ?? null;
     const battery = binding.batteryEntityId
-      ? inventory.find((item) => item.entityId === binding.batteryEntityId) ?? null
+      ? ringInventory.find((item) => item.entityId === binding.batteryEntityId) ?? null
       : null;
     const batteryValue = battery && Number.isFinite(Number(battery.state))
       ? Number(battery.state)
       : null;
-    const available = online &&
+    const available = ringOnline &&
       !["unknown", "unavailable"].includes(camera.state.toLowerCase());
     return [{
       publicId: publicId(camera.entityId, "securite"),
@@ -320,7 +371,12 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     }];
   });
 
-  const controls = controlBindings.map((binding) => {
+  const controls = controlBindings
+    .filter((binding) =>
+      binding.label !== "Caméras" ||
+      (ringSecurity.length === 0 && !cameraPlacementReassigned)
+    )
+    .map((binding) => {
     const item = resolvedControl(inventory, binding, allowShowroomEntities);
     const entityId = item?.entityId ?? binding.entityIds[0];
     return {
@@ -334,7 +390,10 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
   });
 
   const devices = controlBindings
-    .filter((binding) => binding.label !== "Caméras" || ringSecurity.length === 0)
+    .filter((binding) =>
+      binding.label !== "Caméras" ||
+      (ringSecurity.length === 0 && !cameraPlacementReassigned)
+    )
     .map((binding) => {
     const item = resolvedControl(inventory, binding, allowShowroomEntities);
     const entityId = item?.entityId ?? binding.entityIds[0];
@@ -451,7 +510,9 @@ export async function resolveRingCameraForDossier(
 ) {
   const selected = await selectAgentForDossier(dossierPublicId);
   if (!selected) throw new Error("CAMERA_NOT_FOUND");
-  const inventory = parseInventory(selected.agent.inventoryJson);
+  const ringSource = await selectRingSourceForDossier(selected);
+  if (!ringSource) throw new Error("CAMERA_NOT_FOUND");
+  const inventory = parseInventory(ringSource.agent.inventoryJson);
   const binding = ringSecurityBindings.find((candidate) =>
     publicId(candidate.cameraEntityId, "securite") === publicCameraId
   );
@@ -463,13 +524,13 @@ export async function resolveRingCameraForDossier(
     throw new Error("CAMERA_UNAVAILABLE");
   }
   const online = Boolean(
-    selected.agent.lastSeenAt &&
-    Date.now() - Date.parse(selected.agent.lastSeenAt) < 120_000
+    ringSource.agent.lastSeenAt &&
+    Date.now() - Date.parse(ringSource.agent.lastSeenAt) < 120_000
   );
   if (!online) throw new Error("CAMERA_UNAVAILABLE");
   return {
     entityId: binding.cameraEntityId,
-    relayHouseId: relayHouseIdForDossier(selected.dossier),
+    relayHouseId: relayHouseIdForDossier(ringSource.dossier),
   };
 }
 

@@ -102,11 +102,11 @@ test("sépare strictement les appareils client des entités du showroom", async 
   assert.match(source, /!showroomOnlyEntityIds\.has\(entityId\)/);
 });
 
-test("remonte la sonnette et la caméra Ring de la maison pilote dans l’application", async () => {
+test("affecte les deux Ring au showroom et relaie un vrai direct WebRTC", async () => {
   const [portal, agentHome, cameraRoute, relay, relayHouse] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/agent-home.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/home/cameras/[id]/frame/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/home/cameras/[id]/webrtc/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../../domotique-relay/app.py", import.meta.url), "utf8"),
     readFile(new URL("../lib/relay-house.ts", import.meta.url), "utf8"),
   ]);
@@ -116,17 +116,23 @@ test("remonte la sonnette et la caméra Ring de la maison pilote dans l’applic
   assert.match(agentHome, /Caméra Préparation 1/);
   assert.match(agentHome, /security: ringSecurity/);
   assert.match(agentHome, /relayHouseIdForDossier/);
+  assert.match(agentHome, /RING_CAMERA_ASSIGNMENTS_JSON/);
+  assert.match(agentHome, /selectRingSourceForDossier/);
   assert.match(relayHouse, /RELAY_HOUSE_MAP_JSON/);
   assert.match(portal, /security-device-grid/);
   assert.match(portal, /Détection de mouvement active/);
   assert.match(portal, /Dernière activité/);
   assert.match(portal, /Ouvrir le direct/);
-  assert.match(portal, /actualisé toutes les 5 s/);
+  assert.match(portal, /Direct vidéo sécurisé/);
+  assert.match(portal, /RTCPeerConnection/);
+  assert.match(portal, /addTransceiver\("video"/);
   assert.match(cameraRoute, /resolveRingCameraForDossier/);
   assert.match(cameraRoute, /RELAY_CAMERA_SECRET/);
   assert.match(cameraRoute, /X-Relay-Authorization/);
-  assert.match(relay, /internal_camera_frame/);
-  assert.match(relay, /CAMERA_FRAME_MAX_BYTES/);
+  assert.match(relay, /internal_camera_webrtc_offer/);
+  assert.match(relay, /internal_camera_webrtc_events/);
+  assert.match(relay, /camera\/webrtc\/offer/);
+  assert.match(relay, /camera_webrtc_sessions/);
   assert.match(relay, /valid_camera_entity_id/);
 });
 
