@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function MaMaisonPage() {
-  return <Portal customerOnly />;
+  return <Portal customerOnly allowHouseSwitch={process.env.INTERNAL_HOUSE_SWITCH === "true"} />;
 }

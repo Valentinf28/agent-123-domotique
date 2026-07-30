@@ -170,7 +170,13 @@ const nav: { label: View; icon: string }[] = [
   { label: "Journal", icon: "≡" },
 ];
 
-export default function Portal({ customerOnly = false }: { customerOnly?: boolean }) {
+export default function Portal({
+  customerOnly = false,
+  allowHouseSwitch = false,
+}: {
+  customerOnly?: boolean;
+  allowHouseSwitch?: boolean;
+}) {
   const [view, setView] = useState<View>("Accueil");
   const [search, setSearch] = useState("");
   const [room, setRoom] = useState("Toutes");
@@ -201,7 +207,7 @@ export default function Portal({ customerOnly = false }: { customerOnly?: boolea
   const [creatingDossier, setCreatingDossier] = useState(false);
 
   useEffect(() => {
-    if (customerOnly) return;
+    if (customerOnly && !allowHouseSwitch) return;
     fetch("/api/dossiers", { headers: { Accept: "application/json" } })
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((payload) => {
@@ -210,7 +216,7 @@ export default function Portal({ customerOnly = false }: { customerOnly?: boolea
         setSelectedDossierId((current) => current || next[0]?.publicId || "");
       })
       .catch(() => undefined);
-  }, [customerOnly]);
+  }, [allowHouseSwitch, customerOnly]);
 
   useEffect(() => {
     let active = true;
@@ -444,6 +450,20 @@ export default function Portal({ customerOnly = false }: { customerOnly?: boolea
             <h1>{view === "Accueil" ? "Bonjour Valentin" : view}</h1>
           </div>
           <div className="top-actions">
+            {customerOnly && allowHouseSwitch && dossiers.length > 1 && <div className="house-source-switch" role="group" aria-label="Maison affichée">
+              {dossiers.map((dossier) => {
+                const showroom = dossier.reference.toUpperCase().includes("SHOWROOM");
+                return <button
+                  key={dossier.publicId}
+                  type="button"
+                  className={selectedDossierId === dossier.publicId ? "active" : ""}
+                  aria-pressed={selectedDossierId === dossier.publicId}
+                  onClick={() => setSelectedDossierId(dossier.publicId)}
+                >
+                  {showroom ? "Showroom" : "Ma maison"}
+                </button>;
+              })}
+            </div>}
             {role === "Installateur" && dossiers.length > 0 && <label className="tech-house-select">
               <span>Dossier</span>
               <select value={selectedDossierId} onChange={(event) => setSelectedDossierId(event.target.value)}>
