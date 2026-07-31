@@ -1,7 +1,7 @@
 import {
-  deletePortalAutomation,
-  setPortalAutomationEnabled,
-} from "../../../../lib/home-connector";
+  queueAgentAutomationDelete,
+  queueAgentAutomationState,
+} from "../../../../lib/agent-home";
 import {
   portalApiAuthorized,
   portalApiError,
@@ -18,7 +18,10 @@ export async function PATCH(
     );
   }
   try {
-    const input = await request.json() as { enabled?: unknown };
+    const input = await request.json() as {
+      enabled?: unknown;
+      dossierPublicId?: unknown;
+    };
     if (typeof input.enabled !== "boolean") {
       return Response.json(
         { error: "Informations invalides" },
@@ -26,8 +29,15 @@ export async function PATCH(
       );
     }
     const { publicId } = await context.params;
-    const result = await setPortalAutomationEnabled(publicId, input.enabled);
+    const result = await queueAgentAutomationState(
+      publicId,
+      input.enabled,
+      typeof input.dossierPublicId === "string"
+        ? input.dossierPublicId
+        : null,
+    );
     return Response.json(result, {
+      status: 202,
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
@@ -36,7 +46,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ publicId: string }> },
 ) {
   if (!await portalApiAuthorized()) {
@@ -47,8 +57,14 @@ export async function DELETE(
   }
   try {
     const { publicId } = await context.params;
-    const result = await deletePortalAutomation(publicId);
+    const dossierPublicId =
+      new URL(request.url).searchParams.get("dossier");
+    const result = await queueAgentAutomationDelete(
+      publicId,
+      dossierPublicId,
+    );
     return Response.json(result, {
+      status: 202,
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

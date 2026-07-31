@@ -7,6 +7,7 @@ import json
 import base64
 import math
 import os
+import secrets
 import ssl
 import threading
 import time
@@ -131,7 +132,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.12",
+        "User-Agent": "Agent-123-Domotique/0.5.16",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -601,6 +602,108 @@ def relay_command(
                 method="POST",
                 token=supervisor_token,
                 payload=service_data,
+                timeout=60,
+            )
+        elif action == "ha.automation.create":
+            name = str(payload.get("name", "")).strip()
+            trigger_time = str(payload.get("time", "")).strip()
+            entity_id = str(payload.get("entityId", "")).strip()
+            domain = str(payload.get("domain", "")).strip()
+            service = str(payload.get("service", "")).strip()
+            entity_parts = entity_id.split(".", 1)
+            allowed_services = {
+                "light": {"turn_on", "turn_off"},
+                "switch": {"turn_on", "turn_off"},
+                "fan": {"turn_on", "turn_off"},
+                "climate": {"turn_on", "turn_off"},
+                "lock": {"lock", "unlock"},
+                "cover": {"open_cover", "close_cover"},
+                "input_boolean": {"turn_on", "turn_off"},
+            }
+            if len(name) < 3 or len(name) > 80:
+                raise ValueError("Nom d’automatisation invalide")
+            try:
+                datetime.strptime(trigger_time, "%H:%M")
+            except ValueError as error:
+                raise ValueError("Horaire invalide") from error
+            if (
+                len(entity_parts) != 2
+                or entity_parts[0] != domain
+                or not all(part.replace("_", "").isalnum() for part in entity_parts)
+                or service not in allowed_services.get(domain, set())
+            ):
+                raise ValueError("Action d’automatisation refusée")
+            automation_id = (
+                f"ma_maison_{int(time.time())}_{secrets.token_hex(3)}"
+            )
+            result = request_json(
+                f"{SUPERVISOR_API}/config/automation/config/{automation_id}",
+                method="POST",
+                token=supervisor_token,
+                payload={
+                    "id": automation_id,
+                    "alias": f"1.2.3 Home · {name}",
+                    "description": "Créée depuis le portail Ma Maison",
+                    "trigger": [{
+                        "platform": "time",
+                        "at": f"{trigger_time}:00",
+                    }],
+                    "condition": [],
+                    "action": [{
+                        "service": f"{domain}.{service}",
+                        "target": {"entity_id": entity_id},
+                    }],
+                    "mode": "single",
+                },
+                timeout=60,
+            )
+            request_json(
+                f"{SUPERVISOR_API}/services/automation/reload",
+                method="POST",
+                token=supervisor_token,
+                payload={},
+                timeout=60,
+            )
+        elif action == "ha.automation.delete":
+            entity_id = str(payload.get("entityId", "")).strip()
+            parts = entity_id.split(".", 1)
+            if (
+                len(parts) != 2
+                or parts[0] != "automation"
+                or not all(part.replace("_", "").isalnum() for part in parts)
+            ):
+                raise ValueError("Automatisation invalide")
+            listed = home_assistant_ws_command(
+                supervisor_token,
+                {"type": "config/automation/list"},
+            ).get("result", [])
+            automation = next(
+                (
+                    item for item in listed
+                    if isinstance(item, dict)
+                    and item.get("entity_id") == entity_id
+                    and str(item.get("alias", "")).startswith("1.2.3 Home")
+                ),
+                None,
+            )
+            automation_id = str(automation.get("id", "")) if automation else ""
+            if not automation_id or not all(
+                char.isalnum() or char in {"_", "-"}
+                for char in automation_id
+            ):
+                raise ValueError("Automatisation introuvable")
+            result = request_json(
+                f"{SUPERVISOR_API}/config/automation/config/"
+                f"{urllib.parse.quote(automation_id, safe='_-')}",
+                method="DELETE",
+                token=supervisor_token,
+                timeout=60,
+            )
+            request_json(
+                f"{SUPERVISOR_API}/services/automation/reload",
+                method="POST",
+                token=supervisor_token,
+                payload={},
                 timeout=60,
             )
         elif action == "ha.history":

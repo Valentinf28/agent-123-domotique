@@ -407,6 +407,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
       category: binding.category,
       state: available ? active(item) ? "on" : "off" : "unavailable",
       available,
+      controllable: binding.controllable !== false,
       battery: null,
       visible: true,
       lastChanged: selected.agent.lastSeenAt ?? new Date(0).toISOString(),
@@ -422,6 +423,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
       category: "Sécurité",
       state: ringDevice.available ? "idle" : "unavailable",
       available: ringDevice.available,
+      controllable: false,
       battery: ringDevice.battery,
       visible: true,
       lastChanged: selected.agent.lastSeenAt ?? new Date(0).toISOString(),
@@ -442,6 +444,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
       category: "Véhicule",
       state: tesla.state,
       available: online,
+      controllable: false,
       battery: Number.isFinite(Number(tesla.state)) ? Number(tesla.state) : null,
       visible: true,
       lastChanged: selected.agent.lastSeenAt ?? new Date(0).toISOString(),
@@ -570,6 +573,126 @@ export async function queueAgentControl(
       service,
       data: { entity_id: resolved.item.entityId },
     }),
+  });
+  return { accepted: true, commandId };
+}
+
+async function automationTarget(
+  publicDeviceId: string,
+  dossierPublicId?: string | null,
+) {
+  const selected = await selectAgentForDossier(dossierPublicId);
+  if (!selected) throw new Error("CONNECTOR_NOT_CONFIGURED");
+  const inventory = parseInventory(selected.agent.inventoryJson);
+  const allowShowroomEntities =
+    selected.dossier.reference.toUpperCase().includes("SHOWROOM");
+  const resolved = controlBindings
+    .filter((binding) => binding.controllable !== false)
+    .map((binding) => ({
+      binding,
+      item: resolvedControl(inventory, binding, allowShowroomEntities),
+    }))
+    .find(({ item }) =>
+      item && publicId(item.entityId) === publicDeviceId
+    );
+  if (!resolved?.item) throw new Error("DEVICE_NOT_FOUND");
+  return { selected, item: resolved.item };
+}
+
+async function automationEntity(
+  publicAutomationId: string,
+  dossierPublicId?: string | null,
+) {
+  const selected = await selectAgentForDossier(dossierPublicId);
+  if (!selected) throw new Error("CONNECTOR_NOT_CONFIGURED");
+  const inventory = parseInventory(selected.agent.inventoryJson);
+  const item = inventory.find((candidate) =>
+    candidate.domain === "automation" &&
+    candidate.name.startsWith("1.2.3 Home") &&
+    publicId(candidate.entityId, "regle") === publicAutomationId
+  );
+  if (!item) throw new Error("AUTOMATION_NOT_FOUND");
+  return { selected, item };
+}
+
+function automationService(domain: string, desiredActive: boolean) {
+  if (domain === "lock") return desiredActive ? "lock" : "unlock";
+  if (domain === "cover") return desiredActive ? "open_cover" : "close_cover";
+  return desiredActive ? "turn_on" : "turn_off";
+}
+
+export async function queueAgentAutomationCreate(
+  input: {
+    name: string;
+    time: string;
+    publicDeviceId: string;
+    desiredActive: boolean;
+  },
+  dossierPublicId?: string | null,
+) {
+  const name = input.name.trim();
+  if (name.length < 3 || name.length > 80) throw new Error("INVALID_NAME");
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input.time)) {
+    throw new Error("INVALID_TIME");
+  }
+  const { selected, item } = await automationTarget(
+    input.publicDeviceId,
+    dossierPublicId,
+  );
+  const domain = item.entityId.split(".")[0];
+  const commandId = crypto.randomUUID();
+  await getDb().insert(agentCommands).values({
+    publicId: commandId,
+    dossierId: selected.dossier.id,
+    action: "ha.automation.create",
+    payloadJson: JSON.stringify({
+      name,
+      time: input.time,
+      entityId: item.entityId,
+      domain,
+      service: automationService(domain, input.desiredActive),
+    }),
+  });
+  return { accepted: true, commandId };
+}
+
+export async function queueAgentAutomationState(
+  publicAutomationId: string,
+  enabled: boolean,
+  dossierPublicId?: string | null,
+) {
+  const { selected, item } = await automationEntity(
+    publicAutomationId,
+    dossierPublicId,
+  );
+  const commandId = crypto.randomUUID();
+  await getDb().insert(agentCommands).values({
+    publicId: commandId,
+    dossierId: selected.dossier.id,
+    action: "ha.services.call",
+    payloadJson: JSON.stringify({
+      domain: "automation",
+      service: enabled ? "turn_on" : "turn_off",
+      data: { entity_id: item.entityId },
+    }),
+  });
+  return { accepted: true, commandId };
+}
+
+export async function queueAgentAutomationDelete(
+  publicAutomationId: string,
+  dossierPublicId?: string | null,
+) {
+  const { selected, item } = await automationEntity(
+    publicAutomationId,
+    dossierPublicId,
+  );
+  const commandId = crypto.randomUUID();
+  await getDb().insert(agentCommands).values({
+    publicId: commandId,
+    dossierId: selected.dossier.id,
+    action: "ha.automation.delete",
+    payloadJson: JSON.stringify({ entityId: item.entityId }),
   });
   return { accepted: true, commandId };
 }

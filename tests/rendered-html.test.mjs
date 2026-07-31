@@ -86,9 +86,29 @@ test("rafraîchit les mesures importantes toutes les cinq secondes sans renvoyer
   assert.match(agent, /FULL_INVENTORY_SECONDS = 60/);
   assert.match(agent, /FAST_ENTITY_PREFIXES/);
   assert.match(agent, /interval - cycle_duration/);
-  assert.match(config, /version: "0\.5\.15"/);
+  assert.match(config, /version: "0\.5\.16"/);
   assert.match(config, /heartbeat_seconds: "int\(5,300\)"/);
   assert.match(agentHome, /matches\.find\(\(item\) => !\["unknown", "unavailable"\]\.includes\(item\.state\)\)/);
+});
+
+test("crée et administre les automatisations via la Green Box", async () => {
+  const [portal, collectionRoute, itemRoute, agentHome, agent] = await Promise.all([
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/automations/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/automations/[publicId]/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/agent-home.ts", import.meta.url), "utf8"),
+    readFile(new URL("../agent_123_domotique/agent.py", import.meta.url), "utf8"),
+  ]);
+  assert.match(portal, /Confirmer et activer/);
+  assert.match(portal, /dossierPublicId/);
+  assert.match(collectionRoute, /queueAgentAutomationCreate/);
+  assert.match(itemRoute, /queueAgentAutomationState/);
+  assert.match(itemRoute, /queueAgentAutomationDelete/);
+  assert.match(agentHome, /ha\.automation\.create/);
+  assert.match(agentHome, /ha\.automation\.delete/);
+  assert.match(agent, /allowed_services/);
+  assert.match(agent, /config\/automation\/config/);
+  assert.match(agent, /services\/automation\/reload/);
 });
 
 test("sépare strictement les appareils client des entités du showroom", async () => {

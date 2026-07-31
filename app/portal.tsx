@@ -8,12 +8,19 @@ type HomeTab = "Accueil" | "Énergie" | "Confort" | "Piscine" | "Sécurité" | "
 type Device = {
   id: string; name: string; room: string; areaPublicId: string | null;
   category: string; state: string;
-  detail: string; battery?: number; online: boolean; visible: boolean; icon: string;
+  detail: string; battery?: number; online: boolean; visible: boolean;
+  controllable?: boolean; icon: string;
 };
 type Area = { publicId: string; name: string };
 type Automation = {
   id: string; name: string; trigger: string; action: string;
   active: boolean; icon: string; lastTriggered?: string | null;
+};
+type AutomationDraft = {
+  name: string;
+  time: string;
+  publicDeviceId: string;
+  desiredActive: boolean;
 };
 type EnergyCoachInsight = {
   id: string; icon: string; tone: "positive" | "attention" | "tip";
@@ -256,7 +263,7 @@ export default function Portal({
           const mapped: Device[] = payload.home.devices.map((device: {
             publicId: string; name: string; room: string; category: string;
             areaPublicId: string | null; state: string; available: boolean;
-            battery: number | null; visible: boolean;
+            battery: number | null; visible: boolean; controllable?: boolean;
           }) => ({
             id: device.publicId,
             name: device.name,
@@ -268,6 +275,7 @@ export default function Portal({
             battery: device.battery ?? undefined,
             online: device.available,
             visible: device.visible,
+            controllable: device.controllable !== false,
             icon: categoryIcons[device.category] ?? "◇",
           }));
           setDevices(mapped);
@@ -378,7 +386,10 @@ export default function Portal({
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify({
+          enabled,
+          dossierPublicId: selectedDossierId || undefined,
+        }),
       },
     );
     if (!response.ok) throw new Error("update");
@@ -435,11 +446,27 @@ export default function Portal({
 
   async function deleteAutomation(automation: Automation) {
     const response = await fetch(
-      `/api/automations/${encodeURIComponent(automation.id)}`,
+      `/api/automations/${encodeURIComponent(automation.id)}${
+        selectedDossierId
+          ? `?dossier=${encodeURIComponent(selectedDossierId)}`
+          : ""
+      }`,
       { method: "DELETE", headers: { Accept: "application/json" } },
     );
     if (!response.ok) throw new Error("delete");
     setAutomationItems((items) => items.filter((item) => item.id !== automation.id));
+  }
+
+  async function createAutomation(draft: AutomationDraft) {
+    const response = await fetch("/api/automations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        ...draft,
+        dossierPublicId: selectedDossierId || undefined,
+      }),
+    });
+    if (!response.ok) throw new Error("create");
   }
 
   return (
@@ -538,7 +565,7 @@ export default function Portal({
           </div>
         </section>
       </div>}
-      {modal && <Modal key={`${modal}:${selectedDevice?.id ?? selectedAutomation?.id ?? "none"}`} type={modal} close={() => setModal(null)} notify={notify} device={selectedDevice} areas={areas} saveDevice={updateDevice} automation={selectedAutomation} deleteAutomation={deleteAutomation} />}
+      {modal && <Modal key={`${modal}:${selectedDevice?.id ?? selectedAutomation?.id ?? "none"}`} type={modal} close={() => setModal(null)} notify={notify} device={selectedDevice} devices={devices} areas={areas} saveDevice={updateDevice} automation={selectedAutomation} createAutomation={createAutomation} deleteAutomation={deleteAutomation} />}
     </div>
   );
 }
@@ -1726,23 +1753,36 @@ function Journal({ role }: { role: string }) {
 }
 
 function Modal({
-  type, close, notify, device, areas, saveDevice, automation, deleteAutomation,
+  type, close, notify, device, devices, areas, saveDevice, automation,
+  createAutomation, deleteAutomation,
 }: {
   type: string;
   close: () => void;
   notify: (value: string) => void;
   device: Device | null;
+  devices: Device[];
   areas: Area[];
   saveDevice: (
     device: Device,
     update: { name?: string; areaPublicId?: string | null; visible?: boolean },
   ) => Promise<void>;
   automation: Automation | null;
+  createAutomation: (draft: AutomationDraft) => Promise<void>;
   deleteAutomation: (automation: Automation) => Promise<void>;
 }) {
   const [deviceName, setDeviceName] = useState(device?.name ?? "");
   const [deviceArea, setDeviceArea] = useState(device?.areaPublicId ?? "");
   const [deviceVisible, setDeviceVisible] = useState(device?.visible ?? true);
+  const actionableDevices = devices.filter((item) =>
+    item.controllable !== false && item.online
+  );
+  const [automationName, setAutomationName] = useState("");
+  const [automationTime, setAutomationTime] = useState("20:30");
+  const [automationDeviceId, setAutomationDeviceId] = useState(
+    actionableDevices[0]?.id ?? "",
+  );
+  const [automationDesiredActive, setAutomationDesiredActive] = useState(false);
+  const [automationConfirmation, setAutomationConfirmation] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function submitDevice() {
@@ -1780,8 +1820,40 @@ function Modal({
     }
   }
 
+  async function submitAutomation() {
+    if (
+      automationName.trim().length < 3 ||
+      !automationDeviceId ||
+      !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(automationTime)
+    ) {
+      notify("Complétez le nom, l’horaire et l’appareil");
+      return;
+    }
+    setBusy(true);
+    try {
+      await createAutomation({
+        name: automationName.trim(),
+        time: automationTime,
+        publicDeviceId: automationDeviceId,
+        desiredActive: automationDesiredActive,
+      });
+      notify("Automatisation envoyée à votre Green Box");
+      close();
+    } catch {
+      notify("L’automatisation n’a pas pu être créée");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (type === "alertes") return <div className="modal-backdrop" onMouseDown={close}><div className="modal" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><span className="modal-symbol">!</span><small>UNE ACTION RECOMMANDÉE</small><h3>Batterie bientôt épuisée</h3><p>Le détecteur de fenêtre du salon est à 14 %. Son fonctionnement peut devenir irrégulier.</p><div className="alert-detail"><b>Détecteur fenêtre</b><span>Salon · Batterie CR2032</span></div><button className="primary full" onClick={()=>{notify("Rappel programmé pour demain");close()}}>Me le rappeler demain</button></div></div>;
   if (type === "delete") return <div className="modal-backdrop" onMouseDown={close}><div className="modal" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><span className="modal-symbol danger">×</span><small>CONFIRMATION REQUISE</small><h3>Supprimer cette automatisation ?</h3><p>« {automation?.name ?? "Cette automatisation"} » ne s’exécutera plus. Cette action ne pourra pas être annulée.</p><div className="modal-actions"><button disabled={busy} onClick={close}>Annuler</button><button disabled={busy || !automation} className="danger-button" onClick={confirmDeletion}>{busy ? "Suppression…" : "Supprimer"}</button></div></div></div>;
   if (type === "appareil") return <div className="modal-backdrop" onMouseDown={close}><div className="modal wide" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><small>GÉRER L’APPAREIL</small><h3>{device?.name ?? "Appareil"}</h3><label className="field">Nom convivial<input value={deviceName} maxLength={80} onChange={event=>setDeviceName(event.target.value)} /></label><label className="field">Pièce<select value={deviceArea} onChange={event=>setDeviceArea(event.target.value)}><option value="">Maison · sans pièce</option>{areas.map((area)=><option key={area.publicId} value={area.publicId}>{area.name}</option>)}</select></label><label className="check-row"><input type="checkbox" checked={deviceVisible} onChange={event=>setDeviceVisible(event.target.checked)} /> Visible dans l’application Ma Maison</label><button disabled={busy || !device} className="primary full" onClick={submitDevice}>{busy ? "Enregistrement…" : "Enregistrer les modifications"}</button></div></div>;
-  return <div className="modal-backdrop" onMouseDown={close}><div className="modal automation-modal" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><small>RÈGLE SIMPLE</small><h3>Créer une automatisation</h3>{["QUAND","SI","ALORS"].map((x,i)=><div className="rule-row" key={x}><b>{x}</b><button>{i===0?"Un horaire est atteint":i===1?"La maison est occupée (facultatif)":"Éteindre les lumières"}<span>⌄</span></button></div>)}<button className="primary full" onClick={()=>notify("Choisissez d’abord les éléments de la règle")}>Continuer</button></div></div>;
+  const selectedTarget = actionableDevices.find(
+    (item) => item.id === automationDeviceId,
+  );
+  const actionLabel = selectedTarget?.category === "Sécurité"
+    ? automationDesiredActive ? "Verrouiller" : "Déverrouiller"
+    : automationDesiredActive ? "Allumer" : "Éteindre";
+  return <div className="modal-backdrop" onMouseDown={close}><div className="modal automation-modal wide" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><small>RÈGLE SIMPLE · GREEN BOX</small><h3>Créer une automatisation</h3><p>La règle est préparée ici puis exécutée localement dans votre maison, même si Internet est coupé.</p><label className="field">Nom de la règle<input value={automationName} maxLength={80} placeholder="Éclairage du soir" onChange={event=>{setAutomationName(event.target.value);setAutomationConfirmation(false)}} /></label><div className="rule-row"><b>QUAND</b><label><span>Chaque jour à</span><input type="time" value={automationTime} onChange={event=>{setAutomationTime(event.target.value);setAutomationConfirmation(false)}} /></label></div><div className="rule-row"><b>SI</b><div className="optional-condition">Toujours · aucune condition supplémentaire</div></div><div className="rule-row"><b>ALORS</b><div className="automation-action-fields"><select value={automationDeviceId} onChange={event=>{setAutomationDeviceId(event.target.value);setAutomationConfirmation(false)}}><option value="">Choisir un appareil</option>{actionableDevices.map((item)=><option key={item.id} value={item.id}>{item.name} · {item.room}</option>)}</select><select value={automationDesiredActive ? "on" : "off"} onChange={event=>{setAutomationDesiredActive(event.target.value==="on");setAutomationConfirmation(false)}}><option value="on">{selectedTarget?.category === "Sécurité" ? "Verrouiller" : "Allumer"}</option><option value="off">{selectedTarget?.category === "Sécurité" ? "Déverrouiller" : "Éteindre"}</option></select></div></div>{automationConfirmation && <div className="automation-confirmation"><b>Confirmez la règle</b><p>Tous les jours à {automationTime}, la Green Box va {actionLabel.toLowerCase()} « {selectedTarget?.name ?? "l’appareil sélectionné"} ».</p></div>}<button disabled={busy || !actionableDevices.length} className="primary full" onClick={()=>automationConfirmation ? void submitAutomation() : setAutomationConfirmation(true)}>{busy ? "Envoi à la maison…" : automationConfirmation ? "Confirmer et activer" : "Vérifier la règle"}</button>{!actionableDevices.length && <p className="automation-empty">Aucun appareil pilotable n’est actuellement disponible.</p>}</div></div>;
 }
