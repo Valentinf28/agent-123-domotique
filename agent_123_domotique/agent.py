@@ -7,6 +7,7 @@ import json
 import base64
 import math
 import os
+import secrets
 import ssl
 import threading
 import time
@@ -131,7 +132,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.12",
+        "User-Agent": "Agent-123-Domotique/0.5.16",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -601,6 +602,274 @@ def relay_command(
                 method="POST",
                 token=supervisor_token,
                 payload=service_data,
+                timeout=60,
+            )
+        elif action == "ha.automation.create":
+            name = str(payload.get("name", "")).strip()
+            trigger_time = str(payload.get("time", "")).strip()
+            entity_id = str(payload.get("entityId", "")).strip()
+            domain = str(payload.get("domain", "")).strip()
+            service = str(payload.get("service", "")).strip()
+            entity_parts = entity_id.split(".", 1)
+            allowed_services = {
+                "light": {"turn_on", "turn_off"},
+                "switch": {"turn_on", "turn_off"},
+                "fan": {"turn_on", "turn_off"},
+                "climate": {"turn_on", "turn_off"},
+                "lock": {"lock", "unlock"},
+                "cover": {"open_cover", "close_cover"},
+                "input_boolean": {"turn_on", "turn_off"},
+            }
+            if len(name) < 3 or len(name) > 80:
+                raise ValueError("Nom d’automatisation invalide")
+            try:
+                datetime.strptime(trigger_time, "%H:%M")
+            except ValueError as error:
+                raise ValueError("Horaire invalide") from error
+            if (
+                len(entity_parts) != 2
+                or entity_parts[0] != domain
+                or not all(part.replace("_", "").isalnum() for part in entity_parts)
+                or service not in allowed_services.get(domain, set())
+            ):
+                raise ValueError("Action d’automatisation refusée")
+            automation_id = (
+                f"ma_maison_{int(time.time())}_{secrets.token_hex(3)}"
+            )
+            result = request_json(
+                f"{SUPERVISOR_API}/config/automation/config/{automation_id}",
+                method="POST",
+                token=supervisor_token,
+                payload={
+                    "id": automation_id,
+                    "alias": f"1.2.3 Home · {name}",
+                    "description": "Créée depuis le portail Ma Maison",
+                    "trigger": [{
+                        "platform": "time",
+                        "at": f"{trigger_time}:00",
+                    }],
+                    "condition": [],
+                    "action": [{
+                        "service": f"{domain}.{service}",
+                        "target": {"entity_id": entity_id},
+                    }],
+                    "mode": "single",
+                },
+                timeout=60,
+            )
+            request_json(
+                f"{SUPERVISOR_API}/services/automation/reload",
+                method="POST",
+                token=supervisor_token,
+                payload={},
+                timeout=60,
+            )
+        elif action == "ha.water_heater.solar_plan":
+            automation_id = str(payload.get("automationId", "")).strip()
+            name = str(payload.get("name", "ECS solaire intelligent")).strip()
+            switch_entity_id = str(payload.get("switchEntityId", "")).strip()
+            grid_power_entity_id = str(payload.get("gridPowerEntityId", "")).strip()
+            fallback_start = str(payload.get("fallbackStart", "12:00")).strip()
+            fallback_end = str(payload.get("fallbackEnd", "16:00")).strip()
+            surplus_threshold = int(payload.get("surplusThresholdW", 2700))
+            import_threshold = int(payload.get("importThresholdW", 300))
+
+            if not automation_id or not all(
+                char.isalnum() or char in {"_", "-"}
+                for char in automation_id
+            ):
+                raise ValueError("Identifiant d’automatisation invalide")
+            if len(name) < 3 or len(name) > 80:
+                raise ValueError("Nom d’automatisation invalide")
+            for value in (fallback_start, fallback_end):
+                try:
+                    datetime.strptime(value, "%H:%M")
+                except ValueError as error:
+                    raise ValueError("Horaire de secours invalide") from error
+            if not 500 <= surplus_threshold <= 12000:
+                raise ValueError("Seuil de surplus invalide")
+            if not 0 <= import_threshold <= 3000:
+                raise ValueError("Seuil d’import invalide")
+
+            switch_parts = switch_entity_id.split(".", 1)
+            grid_parts = grid_power_entity_id.split(".", 1)
+            if (
+                len(switch_parts) != 2
+                or switch_parts[0] != "switch"
+                or len(grid_parts) != 2
+                or grid_parts[0] != "sensor"
+                or not all(
+                    part.replace("_", "").isalnum()
+                    for part in (*switch_parts, *grid_parts)
+                )
+            ):
+                raise ValueError("Capteur ou commande ECS invalide")
+
+            states = request_json(
+                f"{SUPERVISOR_API}/states",
+                token=supervisor_token,
+            )
+            available_entity_ids = {
+                str(state.get("entity_id", ""))
+                for state in states
+                if isinstance(state, dict)
+            }
+            if switch_entity_id not in available_entity_ids:
+                raise ValueError("Commande du ballon introuvable")
+            if grid_power_entity_id not in available_entity_ids:
+                raise ValueError("Capteur de puissance réseau introuvable")
+
+            fallback_start_at = f"{fallback_start}:00"
+            fallback_end_at = f"{fallback_end}:00"
+            result = request_json(
+                f"{SUPERVISOR_API}/config/automation/config/{automation_id}",
+                method="POST",
+                token=supervisor_token,
+                payload={
+                    "id": automation_id,
+                    "alias": name,
+                    "description": (
+                        "Priorité au surplus solaire. Secours de "
+                        f"{fallback_start} à {fallback_end} pour garantir l’eau chaude. "
+                        "Le thermostat interne du ballon reste prioritaire."
+                    ),
+                    "trigger": [
+                        {
+                            "platform": "numeric_state",
+                            "entity_id": [grid_power_entity_id],
+                            "below": -surplus_threshold,
+                            "for": {"hours": 0, "minutes": 5, "seconds": 0},
+                            "id": "solaire_disponible",
+                        },
+                        {
+                            "platform": "numeric_state",
+                            "entity_id": [grid_power_entity_id],
+                            "above": import_threshold,
+                            "for": {"hours": 0, "minutes": 3, "seconds": 0},
+                            "id": "reseau_sollicite",
+                        },
+                        {
+                            "platform": "time",
+                            "at": fallback_start_at,
+                            "id": "secours_jour",
+                        },
+                        {
+                            "platform": "time",
+                            "at": fallback_end_at,
+                            "id": "arret",
+                        },
+                    ],
+                    "condition": [],
+                    "action": [{
+                        "choose": [
+                            {
+                                "conditions": [{
+                                    "condition": "trigger",
+                                    "id": ["solaire_disponible"],
+                                }],
+                                "sequence": [{
+                                    "service": "switch.turn_on",
+                                    "target": {"entity_id": switch_entity_id},
+                                }],
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "condition": "trigger",
+                                        "id": ["reseau_sollicite"],
+                                    },
+                                    {
+                                        "condition": "or",
+                                        "conditions": [
+                                            {
+                                                "condition": "time",
+                                                "before": fallback_start_at,
+                                            },
+                                            {
+                                                "condition": "time",
+                                                "after": fallback_end_at,
+                                            },
+                                        ],
+                                    },
+                                ],
+                                "sequence": [{
+                                    "service": "switch.turn_off",
+                                    "target": {"entity_id": switch_entity_id},
+                                }],
+                            },
+                            {
+                                "conditions": [{
+                                    "condition": "trigger",
+                                    "id": ["secours_jour"],
+                                }],
+                                "sequence": [{
+                                    "service": "switch.turn_on",
+                                    "target": {"entity_id": switch_entity_id},
+                                }],
+                            },
+                            {
+                                "conditions": [{
+                                    "condition": "trigger",
+                                    "id": ["arret"],
+                                }],
+                                "sequence": [{
+                                    "service": "switch.turn_off",
+                                    "target": {"entity_id": switch_entity_id},
+                                }],
+                            },
+                        ],
+                    }],
+                    "mode": "restart",
+                },
+                timeout=60,
+            )
+            request_json(
+                f"{SUPERVISOR_API}/services/automation/reload",
+                method="POST",
+                token=supervisor_token,
+                payload={},
+                timeout=60,
+            )
+        elif action == "ha.automation.delete":
+            entity_id = str(payload.get("entityId", "")).strip()
+            parts = entity_id.split(".", 1)
+            if (
+                len(parts) != 2
+                or parts[0] != "automation"
+                or not all(part.replace("_", "").isalnum() for part in parts)
+            ):
+                raise ValueError("Automatisation invalide")
+            listed = home_assistant_ws_command(
+                supervisor_token,
+                {"type": "config/automation/list"},
+            ).get("result", [])
+            automation = next(
+                (
+                    item for item in listed
+                    if isinstance(item, dict)
+                    and item.get("entity_id") == entity_id
+                    and str(item.get("alias", "")).startswith("1.2.3 Home")
+                ),
+                None,
+            )
+            automation_id = str(automation.get("id", "")) if automation else ""
+            if not automation_id or not all(
+                char.isalnum() or char in {"_", "-"}
+                for char in automation_id
+            ):
+                raise ValueError("Automatisation introuvable")
+            result = request_json(
+                f"{SUPERVISOR_API}/config/automation/config/"
+                f"{urllib.parse.quote(automation_id, safe='_-')}",
+                method="DELETE",
+                token=supervisor_token,
+                timeout=60,
+            )
+            request_json(
+                f"{SUPERVISOR_API}/services/automation/reload",
+                method="POST",
+                token=supervisor_token,
+                payload={},
                 timeout=60,
             )
         elif action == "ha.history":
