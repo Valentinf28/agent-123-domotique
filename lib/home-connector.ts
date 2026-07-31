@@ -1,5 +1,11 @@
 import { ENERGY_PROFILE } from "./energy-profile.generated";
 import { HOUSE_BINDINGS } from "./house-bindings.generated";
+import {
+  allocateHomeAndVehiclePower,
+  entityIsAvailable,
+  formatWatts,
+  powerEntityWatts,
+} from "./energy-allocation.generated.js";
 
 type HaState = {
   entity_id: string;
@@ -120,6 +126,8 @@ const overviewBindings: Record<string, string[]> = {
   filtration: [...HOUSE_BINDINGS.filtration],
   spa: [...HOUSE_BINDINGS.spa],
   spaFiltration: [...HOUSE_BINDINGS.spaFiltration],
+  lektricoPower: [...HOUSE_BINDINGS.lektricoPower],
+  teslaPower: [...HOUSE_BINDINGS.teslaModelXChargerPower],
 };
 
 function normalize(value = "") {
@@ -366,6 +374,15 @@ export async function getPortalHome() {
 
   const value = (key: string, fallback: string) =>
     displayValue(resolve(states, overviewBindings[key]), fallback);
+  const homePowerEntity = resolve(states, overviewBindings.home);
+  const lektricoPowerEntity = resolve(states, overviewBindings.lektricoPower);
+  const teslaPowerEntity = resolve(states, overviewBindings.teslaPower);
+  const allocatedPower = allocateHomeAndVehiclePower({
+    totalHomeWatts: powerEntityWatts(homePowerEntity),
+    chargerWatts: powerEntityWatts(lektricoPowerEntity),
+    fallbackVehicleWatts: powerEntityWatts(teslaPowerEntity),
+    chargerAvailable: entityIsAvailable(lektricoPowerEntity),
+  });
   const control = (key: string, label: string) => {
     const entity = resolve(states, overviewBindings[key]);
     const state = entity?.state.toLowerCase() ?? "unavailable";
@@ -392,7 +409,7 @@ export async function getPortalHome() {
     mobileOverview: {
       energy: {
         solar: value("solar", "0 W"),
-        home: value("home", "0 W"),
+        home: formatWatts(allocatedPower.homeWatts),
         grid: value("grid", "0 W"),
         battery: value("battery", "0 %"),
         batteryPower: value("batteryPower", "0 W"),
@@ -409,6 +426,7 @@ export async function getPortalHome() {
         yearlyConsumption: value("yearlyConsumption", "—"),
         yearlyImport: value("yearlyImport", "—"),
         yearlyExport: value("yearlyExport", "—"),
+        vehiclePower: formatWatts(allocatedPower.vehicleWatts),
       },
       controls: [
         control("gate", "Portail"),

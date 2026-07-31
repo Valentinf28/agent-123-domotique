@@ -167,6 +167,22 @@ test("partage les correspondances Home Assistant avec l’application", async ()
   assert.match(mobileProfile, /\.\.\.HOUSE_BINDINGS/);
 });
 
+test("partage le calcul maison et borne avec l’application", async () => {
+  const [canonical, generatedPortal, generatedMobile, agentHome, portal] = await Promise.all([
+    readFile(new URL("../shared/energy-allocation.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/energy-allocation.generated.js", import.meta.url), "utf8"),
+    readFile(new URL("../../mobile/src/services/energyAllocation.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/agent-home.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(canonical, /measuredHome - \(chargerAvailable \? measuredCharger : 0\)/);
+  assert.equal(generatedPortal.replace(/^.*\n/, ""), canonical);
+  assert.equal(generatedMobile.replace(/^.*\n/, ""), canonical);
+  assert.match(agentHome, /allocateHomeAndVehiclePower/);
+  assert.match(agentHome, /vehiclePower: formatWatts/);
+  assert.match(portal, /energy\.vehiclePower/);
+});
+
 test("crée et administre les automatisations via la Green Box", async () => {
   const [portal, collectionRoute, itemRoute, agentHome, agent] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),

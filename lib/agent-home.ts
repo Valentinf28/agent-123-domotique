@@ -4,6 +4,11 @@ import { agentBoxes, agentCommands, installationDossiers } from "../db/schema";
 import { relayHouseIdForDossier } from "./relay-house";
 import { ENERGY_PROFILE } from "./energy-profile.generated";
 import { HOUSE_BINDINGS } from "./house-bindings.generated";
+import {
+  allocateHomeAndVehiclePower,
+  formatWatts,
+  powerValueWatts,
+} from "./energy-allocation.generated.js";
 
 type InventoryItem = {
   entityId: string;
@@ -138,6 +143,8 @@ const valueBindings = {
   teslaBattery: [...HOUSE_BINDINGS.teslaModelXBattery, "input_number.demo_tesla_soc"],
   teslaPower: [...HOUSE_BINDINGS.teslaModelXChargerPower, "input_number.demo_tesla_charge_power"],
   teslaPlugged: HOUSE_BINDINGS.teslaModelXPlugged,
+  lektricoPower: HOUSE_BINDINGS.lektricoPower,
+  lektricoState: HOUSE_BINDINGS.lektricoState,
   demoMode: ["input_select.demo_mode"],
 } as const;
 
@@ -492,6 +499,17 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     energyItems.dailyImport,
     energyItems.dailyExport,
   );
+  const lektricoPower = scopedFind(inventory, valueBindings.lektricoPower, allowShowroomEntities);
+  const lektricoState = scopedFind(inventory, valueBindings.lektricoState, allowShowroomEntities);
+  const teslaPower = scopedFind(inventory, valueBindings.teslaPower, allowShowroomEntities);
+  const lektricoAvailable = Boolean(lektricoPower)
+    && !["unknown", "unavailable"].includes(lektricoPower.state.toLowerCase());
+  const allocatedPower = allocateHomeAndVehiclePower({
+    totalHomeWatts: powerValueWatts(energyItems.home?.state),
+    chargerWatts: powerValueWatts(lektricoPower?.state),
+    fallbackVehicleWatts: powerValueWatts(teslaPower?.state, "kW"),
+    chargerAvailable: lektricoAvailable,
+  });
 
   return {
     connected: online,
@@ -511,7 +529,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     mobileOverview: {
       energy: {
         solar: formatted(energyItems.solar, "W", "0 W"),
-        home: formatted(energyItems.home, "W", "0 W"),
+        home: formatWatts(allocatedPower.homeWatts),
         grid: formatted(energyItems.grid, "W", "0 W"),
         battery: formatted(energyItems.battery, "%", "0 %"),
         batteryPower: formatted(energyItems.batteryPower, "W", "0 W"),
@@ -529,6 +547,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
         yearlyImport: formatted(energyItems.yearlyImport, "kWh"),
         yearlyExport: formatted(energyItems.yearlyExport, "kWh"),
         installedPower: formatted(energyItems.installedPower, "Wc", "9 635 Wc"),
+        vehiclePower: formatWatts(allocatedPower.vehicleWatts),
         ...dailyMetrics,
       },
       controls,
@@ -543,8 +562,10 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
         hotWaterPower: formatted(scopedFind(inventory, valueBindings.hotWaterPower, allowShowroomEntities), "W", "0 W"),
         hotWaterMode: formatted(scopedFind(inventory, valueBindings.hotWaterMode, allowShowroomEntities), ""),
         teslaBattery: formatted(scopedFind(inventory, valueBindings.teslaBattery, allowShowroomEntities), "%"),
-        teslaPower: formatted(scopedFind(inventory, valueBindings.teslaPower, allowShowroomEntities), "W", "0 W"),
-        teslaPlugged: formatted(scopedFind(inventory, valueBindings.teslaPlugged, allowShowroomEntities), "", "off"),
+        teslaPower: formatWatts(allocatedPower.vehicleWatts),
+        teslaPlugged: lektricoState
+          ? formatted(lektricoState, "", "off")
+          : formatted(scopedFind(inventory, valueBindings.teslaPlugged, allowShowroomEntities), "", "off"),
         demoMode: formatted(scopedFind(inventory, valueBindings.demoMode, allowShowroomEntities), ""),
       },
       strategy: {

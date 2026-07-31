@@ -37,6 +37,13 @@ for (const source of sources) {
   );
 }
 
+const energyAllocationSource = await readFile(resolve(root, "shared/energy-allocation.js"), "utf8");
+const energyAllocationBanner = "// Généré depuis ma-maison-portail-site/shared/energy-allocation.js. Ne pas modifier à la main.\n";
+outputs.push(
+  [resolve(root, "lib/energy-allocation.generated.js"), `${energyAllocationBanner}${energyAllocationSource}`],
+  [resolve(root, "../mobile/src/services/energyAllocation.js"), `${energyAllocationBanner}${energyAllocationSource}`],
+);
+
 if (process.argv.includes("--check")) {
   for (const [path, expected] of outputs) {
     assert.equal(await readFile(path, "utf8"), expected, `${path} n'est pas synchronisé`);

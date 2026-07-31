@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CLIENT_EXPERIENCE } from "../lib/client-experience.generated";
+import { flowDurationMs, formatWatts } from "../lib/energy-allocation.generated.js";
 
 type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
 type HomeTab = (typeof CLIENT_EXPERIENCE.tabs)[number]["label"];
@@ -1549,15 +1550,6 @@ function powerNumber(value?: string) {
   return /kw/i.test(normalized) ? numeric * 1000 : numeric;
 }
 
-function formatWatts(value: number) {
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(value))} W`;
-}
-
-function flowDuration(value: number) {
-  const pixelsPerSecond = 6 + Math.min(Math.abs(value), 10_000) * 0.009;
-  return Math.max(500, Math.round(32_000 / pixelsPerSecond));
-}
-
 function SceneFlow({ route, active, reverse, color, power }: {
   route: "solar" | "grid" | "home" | "battery" | "vehicle";
   active: boolean;
@@ -1567,7 +1559,7 @@ function SceneFlow({ route, active, reverse, color, power }: {
 }) {
   const style = {
     "--flow-color": color,
-    "--flow-duration": `${flowDuration(power)}ms`,
+    "--flow-duration": `${flowDurationMs(power)}ms`,
   } as CSSProperties;
   const segmentCount = route === "solar" || route === "battery" ? 1 : 3;
   return <div
@@ -1620,7 +1612,7 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
   const homeWatts = powerNumber(overview?.energy.home);
   const gridWatts = powerNumber(overview?.energy.grid);
   const batteryWatts = powerNumber(overview?.energy.batteryPower);
-  const vehicleWatts = Math.max(0, powerNumber(overview?.comfort?.teslaPower));
+  const vehicleWatts = Math.max(0, powerNumber(overview?.energy.vehiclePower ?? overview?.comfort?.teslaPower));
   const pluggedState = overview?.comfort?.teslaPlugged?.toLowerCase() ?? "";
   const vehiclePlugged = vehicleWatts > 5
     || ["on", "connected", "charging", "complete", "stopped", "no_power", "starting", "branchée"].some((state) => pluggedState.includes(state));
