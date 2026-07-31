@@ -143,6 +143,14 @@ type SubscriptionSummary = {
 
 const HOME_REFRESH_MS = 5_000;
 const homeTabs: HomeTab[] = ["Maison", "Solaire", "Chauffage", "Équipements", "Piscine", "Véhicule"];
+const homeTabMeta: Record<HomeTab, { icon: string; eyebrow: string }> = {
+  Maison: { icon: "⌂", eyebrow: "Vue d’ensemble" },
+  Solaire: { icon: "☀", eyebrow: "Énergie" },
+  Chauffage: { icon: "♨", eyebrow: "Confort" },
+  Équipements: { icon: "◉", eyebrow: "Maison" },
+  Piscine: { icon: "≋", eyebrow: "Extérieur" },
+  Véhicule: { icon: "◇", eyebrow: "Mobilité" },
+};
 
 const appModules: { key: AppModule; label: string; description: string; icon: string; required?: boolean }[] = [
   { key: "home", label: "Maison", description: "Résumé et raccourcis essentiels", icon: "⌂", required: true },
@@ -482,8 +490,8 @@ export default function Portal({
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell ${customerOnly ? "customer-shell" : ""}`}>
+      {!customerOnly && <aside className="sidebar">
         <button className="brand" onClick={() => setView("Accueil")} aria-label="Retour à l’accueil">
           <span className="brand-mark">M</span><span>Ma Maison</span>
         </button>
@@ -500,14 +508,17 @@ export default function Portal({
             <span>VF</span><b>Valentin Fettig<small>{customerOnly ? "Application client" : `${role} · Basculer`}</small></b>{!customerOnly && <em>⌄</em>}
           </button>
         </div>
-      </aside>
+      </aside>}
 
       <main>
-        <header className="topbar">
-          <div>
+        <header className={`topbar ${customerOnly ? "customer-topbar" : ""}`}>
+          {customerOnly ? <div className="customer-brand">
+            <img src="/brand/logo-123-home.png" alt="" />
+            <span><small>1.2.3. HOME</small><strong>Maison de Valentin</strong></span>
+          </div> : <div>
             <p>Jeudi 23 juillet</p>
             <h1>{view === "Accueil" ? "Bonjour Valentin" : view}</h1>
-          </div>
+          </div>}
           <div className="top-actions">
             {customerOnly && allowHouseSwitch && dossiers.length > 1 && <div className="house-source-switch" role="group" aria-label="Maison affichée">
               {dossiers.map((dossier) => {
@@ -535,8 +546,8 @@ export default function Portal({
               setHomeRefreshToken((value) => value + 1);
               notify("Actualisation demandée");
             }}>↻</button>
-            <button className="icon-button notification" aria-label="Notifications" onClick={() => setModal("alertes")}>♢<i /></button>
-            <button className="primary" onClick={() => setView("Ajouter")}><span>＋</span> Ajouter un appareil</button>
+            {!customerOnly && <button className="icon-button notification" aria-label="Notifications" onClick={() => setModal("alertes")}>♢<i /></button>}
+            {!customerOnly && <button className="primary" onClick={() => setView("Ajouter")}><span>＋</span> Ajouter un appareil</button>}
           </div>
         </header>
 
@@ -549,11 +560,11 @@ export default function Portal({
         {view === "Journal" && <Journal role={role} />}
       </main>
 
-      <nav className="mobile-nav" aria-label="Navigation mobile">
+      {!customerOnly && <nav className="mobile-nav" aria-label="Navigation mobile">
         {nav.filter((item) => !["Préparation", "Installation"].includes(item.label)).slice(0, 4).map((item) => <button key={item.label} className={view === item.label ? "active" : ""} onClick={() => setView(item.label)}>
           <span>{item.icon}</span><small>{item.label}</small>
         </button>)}
-      </nav>
+      </nav>}
 
       {toast && <div className="toast">✓ {toast}</div>}
       {newDossierOpen && <div className="modal-backdrop" role="presentation">
@@ -1363,22 +1374,18 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
     ? overview.strategy.offPeakPeriods.map((period) => `${period.start}–${period.end}`).join(" · ") || "Plages HC à renseigner"
     : "Option Base";
 
-  return <div className="content app-home">
+  return <div className="content app-home app-client-content">
     <section className="app-preview">
-      <div className="app-tabs">{homeTabs.map((tab) => <button key={tab} className={homeTab === tab ? "selected" : ""} onClick={() => setHomeTab(tab)}>{tab}</button>)}</div>
-      <div className="app-connection"><i />{liveStatus === "connected" ? `Maison connectée · mise à jour automatique toutes les 5 s${lastSyncedAt ? ` · ${lastSyncedAt.toLocaleTimeString("fr-FR")}` : ""}` : liveStatus === "loading" ? "Connexion en cours…" : "Mode démonstration"}</div>
-      {homeTab === "Maison" && <><EnergyScene overview={overview} /><div className="today-energy"><div><small>Aujourd’hui</small><strong>{overview?.energy.dailyProduction ?? "—"}</strong><span>Production solaire</span></div><div><small>Consommation</small><strong>{overview?.energy.dailyConsumption ?? "—"}</strong><span>Maison</span></div><button onClick={() => setHomeTab("Solaire")}>Voir le solaire →</button></div></>}
-      {homeTab === "Solaire" && <div className="premium-tab solar-premium">
-        <div className="premium-hero"><span>☀</span><div><small>PRODUCTION EN DIRECT</small><strong>{overview?.energy.solar ?? "0 W"}</strong><p>Production du jour · {overview?.energy.dailyProduction ?? "—"}</p></div></div>
-        <div className="premium-stats"><article><small>Maison</small><strong>{overview?.energy.home ?? "0 W"}</strong><span>Consommation instantanée</span></article><article><small>Réseau</small><strong>{overview?.energy.grid ?? "0 W"}</strong><span>Achat ou injection</span></article><article><small>Batterie</small><strong>{overview?.energy.battery ?? "0 %"}</strong><span>{overview?.energy.batteryPower ?? "0 W"}</span></article></div>
-        <div className="premium-advice"><span>✦</span><div><small>ASSISTANT ÉNERGIE</small><b>Le pilotage privilégie d’abord le surplus solaire.</b><p>Si la production est insuffisante, les appareils flexibles utilisent le meilleur créneau tarifaire configuré pour cette maison.</p></div><em>{offPeakCopy}</em></div>
+      <div className="app-tabs" role="tablist">{homeTabs.map((tab) => <button key={tab} role="tab" aria-selected={homeTab === tab} className={homeTab === tab ? "selected" : ""} onClick={() => setHomeTab(tab)}><span>{homeTabMeta[tab].icon}</span><b>{tab}</b></button>)}</div>
+      <div className="app-connection"><i className={liveStatus === "connected" ? "online" : ""} />{liveStatus === "connected" ? `Maison connectée en direct${lastSyncedAt ? ` · ${lastSyncedAt.toLocaleTimeString("fr-FR")}` : ""}` : liveStatus === "loading" ? "Connexion en cours…" : "Données momentanément indisponibles"}</div>
+      {homeTab === "Maison" && <EnergyScene overview={overview} />}
+      {homeTab === "Solaire" && <SolarPortalView overview={overview} tariffCopy={offPeakCopy} />}
+      {homeTab === "Chauffage" && <HeatingPortalView overview={overview} hotWaterStatus={hotWaterStatus} tariffCopy={offPeakCopy} />}
+      {homeTab === "Piscine" && <PoolPortalView overview={overview} controls={controls} onControl={onControl} />}
+      {homeTab === "Équipements" && <div className="equipment-premium">
+        <PortalCategoryHeader eyebrow="ÉQUIPEMENTS" title="Votre maison" subtitle="Lumières, volets, accès et surveillance." icon="◉" />
+        <div className="equipment-overview"><article><small>ÉQUIPEMENTS DISPONIBLES</small><strong>{available}<em> / {devices.length}</em></strong><span>Synchronisés avec Home Assistant</span></article><article><small>ÉTAT DE LA MAISON</small><strong>{lowBattery ? `${lowBattery} alerte${lowBattery > 1 ? "s" : ""}` : "Tout va bien"}</strong><span>{lowBattery ? "Batteries à vérifier" : "Aucune anomalie détectée"}</span></article></div>
       </div>}
-      {homeTab === "Chauffage" && <div className="premium-tab heating-premium">
-        <div className="premium-stats"><article><small>Température intérieure</small><strong>{overview?.comfort?.indoorTemperature ?? "—"}</strong><span>Consigne · {overview?.comfort?.heatingSetpoint ?? "—"}</span></article><article><small>Ballon d’eau chaude</small><strong>{overview?.comfort?.hotWaterPower ?? "0 W"}</strong><span>{hotWaterStatus}</span></article><article><small>Eau disponible</small><strong>{overview?.comfort?.hotWaterAvailable ?? "—"}</strong><span>Mode · {overview?.comfort?.hotWaterMode ?? "Automatique"}</span></article></div>
-        <div className="premium-advice"><span>♨</span><div><small>STRATÉGIE DU BALLON</small><b>Solaire en priorité, tarif client en secours.</b><p>Le thermostat reste maître de la chauffe. Le portail autorise uniquement le meilleur créneau.</p></div><em>{offPeakCopy}</em></div>
-      </div>}
-      {homeTab === "Piscine" && <div className="premium-tab pool-premium"><div className="premium-hero pool"><span>≋</span><div><small>PISCINE</small><strong>{overview?.comfort?.poolTemperature ?? "—"}</strong><p>Consigne · {overview?.comfort?.poolSetpoint ?? "—"}</p></div></div><div className="premium-stats"><article><small>Filtration</small><strong>{overview?.energy.filtration ?? "0 W"}</strong><span>Puissance instantanée</span></article><article><small>PAC piscine</small><strong>{controls.find((control) => control.label === "PAC piscine")?.active ? "En marche" : "Arrêtée"}</strong><span>Pilotage selon le surplus</span></article></div></div>}
-      {homeTab === "Équipements" && <div className="home-tab-summary"><span className="module-symbol">▣</span><div><small>Maison</small><strong>{available}/{devices.length}</strong><p>équipements disponibles</p></div><div><small>Sécurité</small><strong>{visibleControls.every((control) => control.available) ? "Connectée" : "À vérifier"}</strong><p>Serrure et caméras</p></div></div>}
       {homeTab === "Équipements" && Boolean(overview?.security?.length) && <div className="security-device-grid">
         {overview?.security?.map((device) => <article key={device.publicId}>
           <div className="security-device-head">
@@ -1402,7 +1409,7 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
           </button>
         </article>)}
       </div>}
-      {homeTab === "Véhicule" && <div className="premium-tab vehicle-premium"><div className="vehicle-stage"><span className="vehicle-silhouette">MODEL X</span><div><small>TESLA MODEL X</small><strong>{overview?.comfort?.teslaBattery ?? "—"}</strong><p>{overview?.comfort?.teslaPlugged?.toLowerCase().includes("on") ? "Branchée" : "En stationnement"}</p></div></div><div className="premium-stats"><article><small>Batterie</small><strong>{overview?.comfort?.teslaBattery ?? "—"}</strong><span>Niveau actuel</span></article><article><small>Recharge</small><strong>{overview?.comfort?.teslaPower ?? "0 W"}</strong><span>Puissance instantanée</span></article></div></div>}
+      {homeTab === "Véhicule" && <VehiclePortalView overview={overview} />}
       {visibleControls.length > 0 && <div className="mobile-controls">
         {visibleControls.map((control) => <button key={control.publicId} disabled={!control.available || control.controllable === false} onClick={() => void onControl(control, !control.active)}>
           <span className={control.active ? "control-state active" : "control-state"}>{
@@ -1418,12 +1425,114 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
         </button>)}
       </div>}
     </section>
-    <section className="portal-live-footer">
-      <div><i className={liveStatus === "connected" ? "online" : ""} /><span><small>Maison</small><b>{liveStatus === "connected" ? "Connectée en direct" : liveStatus === "loading" ? "Connexion en cours" : "Données indisponibles"}</b></span></div>
-      <div><small>Équipements</small><b>{available}/{devices.length} disponibles</b></div>
-      <div><small>Alertes batterie</small><b>{lowBattery}</b></div>
-      <button onClick={() => setView("Appareils")}>Gérer les appareils →</button>
+  </div>;
+}
+
+function PortalCategoryHeader({ eyebrow, title, subtitle, icon, color = "#f4c430" }: {
+  eyebrow: string; title: string; subtitle: string; icon: string; color?: string;
+}) {
+  return <header className="portal-category-header">
+    <span style={{ color }}>{icon}</span>
+    <div><small style={{ color }}>{eyebrow}</small><h2>{title}</h2><p>{subtitle}</p></div>
+  </header>;
+}
+
+function SolarPortalView({ overview, tariffCopy }: { overview: MobileOverview | null; tariffCopy: string }) {
+  const [period, setPeriod] = useState<"day" | "month" | "year">("day");
+  const energy = overview?.energy ?? {};
+  const periodValues = {
+    day: {
+      label: "Aujourd’hui",
+      production: energy.dailyProduction,
+      consumption: energy.dailyConsumption,
+      imported: energy.dailyImport,
+      exported: energy.dailyExport,
+    },
+    month: {
+      label: "Ce mois",
+      production: energy.monthlyProduction,
+      consumption: energy.monthlyConsumption,
+      imported: energy.monthlyImport,
+      exported: energy.monthlyExport,
+    },
+    year: {
+      label: "Cette année",
+      production: energy.yearlyProduction,
+      consumption: energy.yearlyConsumption,
+      imported: energy.yearlyImport,
+      exported: energy.yearlyExport,
+    },
+  }[period];
+  const livePower = Math.max(0, powerNumber(energy.solar));
+  const installedPower = Math.max(1, powerNumber(energy.installedPower) || 9635);
+  const liveRatio = Math.min(100, Math.max(1, livePower / installedPower * 100));
+
+  return <div className="mobile-section solar-mobile-section">
+    <PortalCategoryHeader eyebrow="PRODUCTION" title="Solaire premium" subtitle="Production, autonomie et économies en un coup d’œil." icon="☀" />
+    <section className="solar-live-card">
+      <div className="solar-live-heading"><span>☀</span><div><small>PRODUCTION EN DIRECT</small><strong>{energy.solar ?? "0 W"}</strong></div><em><i /> TEMPS RÉEL</em></div>
+      <div className="solar-capacity"><i style={{ width: `${liveRatio}%` }} /></div>
+      <footer><span><small>INSTALLATION</small><b>{energy.installedPower ?? "9 635 Wc"}</b></span><span><small>PRODUIT AUJOURD’HUI</small><b>{energy.dailyProduction ?? "—"}</b></span><span><small>BATTERIE</small><b>{energy.battery ?? "—"}</b></span></footer>
     </section>
+    <div className="period-tabs">{([['day', 'Jour'], ['month', 'Mois'], ['year', 'Année']] as const).map(([key, label]) => <button key={key} className={period === key ? "selected" : ""} onClick={() => setPeriod(key)}>{label}</button>)}</div>
+    <section className="solar-stat-grid">
+      <article><span className="solar-stat-icon">☀</span><small>Production</small><strong>{periodValues.production ?? "—"}</strong><p>{periodValues.label}</p></article>
+      <article><span className="solar-stat-icon teal">€</span><small>Économies</small><strong>{energy.savings ?? "—"}</strong><p>Valorisation de l’énergie locale</p></article>
+      <article><span className="solar-stat-icon blue">⌂</span><small>Autoconsommation</small><strong>{energy.selfConsumption ?? "—"}</strong><p>Production utilisée sur place</p></article>
+      <article><span className="solar-stat-icon pink">▰</span><small>Autonomie</small><strong>{energy.autonomy ?? "—"}</strong><p>Consommation couverte sans réseau</p></article>
+    </section>
+    <section className="energy-balance-card"><header><div><small>{periodValues.label.toUpperCase()}</small><h3>Bilan énergétique</h3></div><span>↔</span></header><div>
+      <article><i>⌂</i><strong>{periodValues.consumption ?? "—"}</strong><small>Consommée</small></article>
+      <article><i>↓</i><strong>{periodValues.imported ?? "—"}</strong><small>Achetée</small></article>
+      <article><i>↑</i><strong>{periodValues.exported ?? "—"}</strong><small>Injectée</small></article>
+      <article><i>♧</i><strong>{energy.co2Avoided ?? "—"}</strong><small>CO₂ évité</small></article>
+    </div></section>
+    {period === "day" && <section className="solar-advice-card"><header><span>✦</span><div><small>ASSISTANT ÉNERGIE</small><h3>Meilleurs créneaux</h3></div></header><article><b>Solaire en priorité</b><p>Les appareils flexibles sont proposés quand le surplus est suffisant. Le tarif du client sert de solution de secours.</p><em>{tariffCopy}</em></article></section>}
+  </div>;
+}
+
+function HeatingPortalView({ overview, hotWaterStatus, tariffCopy }: {
+  overview: MobileOverview | null; hotWaterStatus: string; tariffCopy: string;
+}) {
+  const current = overview?.comfort?.indoorTemperature ?? "—";
+  const target = overview?.comfort?.heatingSetpoint ?? "—";
+  return <div className="mobile-section heating-mobile-section">
+    <PortalCategoryHeader eyebrow="CONFORT" title="Chauffage" subtitle="La bonne température, pièce par pièce." icon="♨" color="#ff8169" />
+    <section className="heating-layout">
+      <article className="thermostat-card"><div className="thermostat-state"><i /> Température maintenue</div><div className="thermostat-dial"><div><span>♨</span><strong>{current}</strong><small>Température actuelle</small></div></div><small>TEMPÉRATURE SOUHAITÉE</small><div className="target-temperature"><button disabled>−</button><strong>{target}</strong><button disabled>＋</button></div></article>
+      <article className="hot-water-card"><header><span>♨</span><div><small>EAU CHAUDE</small><h3>Ballon intelligent</h3></div><em>{hotWaterStatus}</em></header><div className="hot-water-main"><strong>{overview?.comfort?.hotWaterPower ?? "0 W"}</strong><span>Puissance instantanée</span></div><div className="hot-water-data"><span><small>Eau disponible</small><b>{overview?.comfort?.hotWaterAvailable ?? "—"}</b></span><span><small>Mode</small><b>{overview?.comfort?.hotWaterMode ?? "Automatique"}</b></span></div><footer><b>Solaire prioritaire</b><span>{tariffCopy} en secours</span></footer></article>
+    </section>
+  </div>;
+}
+
+function PoolPortalView({ overview, controls, onControl }: {
+  overview: MobileOverview | null;
+  controls: MobileOverview["controls"];
+  onControl: (control: MobileOverview["controls"][number], enabled: boolean) => Promise<void>;
+}) {
+  const hour = new Date().getHours();
+  const isDay = hour >= 7 && hour < 20;
+  const filtration = controls.find((control) => control.label === "Filtration");
+  const heatPump = controls.find((control) => control.label === "PAC piscine");
+  const light = controls.find((control) => /éclairage piscine|lumière piscine/i.test(control.label));
+  const statusButton = (control: MobileOverview["controls"][number] | undefined, label: string, tone: string) => <button disabled={!control?.available || control.controllable === false} className={`pool-status ${control?.active ? "active" : ""}`} style={{ "--pool-tone": tone } as CSSProperties} onClick={() => control && void onControl(control, !control.active)}><i /><span><b>{label}</b><small>{!control?.available ? "Indisponible" : control.active ? "En marche" : "Arrêté"}</small></span></button>;
+  return <div className="mobile-section pool-mobile-section">
+    <div className="pool-visual"><img src={isDay ? "/pool/pool-day.png" : "/pool/pool-night-lit.png"} alt="Piscine et local technique" /><div className="pool-visual-shade" /><div className="pool-statuses">{statusButton(heatPump, "PAC", "#ff6f61")}{statusButton(filtration, "Filtration", "#f4c430")}{light && statusButton(light, "Éclairage", "#4ed6f5")}</div></div>
+    <section className="pool-metrics"><article><small>EAU</small><strong>{overview?.comfort?.poolTemperature ?? "—"}</strong></article><article><small>AIR</small><strong>{overview?.comfort?.indoorTemperature ?? "—"}</strong></article><article><small>PH</small><strong>{overview?.energy.poolPh ?? "—"}</strong></article><article><small>CHLORE</small><strong>{overview?.energy.poolChlorine ?? "—"}</strong></article></section>
+    <section className="pool-target"><button disabled>−</button><div><small>CONSIGNE PAC</small><strong>{overview?.comfort?.poolSetpoint ?? "—"}</strong><div><span><small>FILTRATION</small><b>{overview?.energy.filtration ?? "0 W"}</b><em>{overview?.energy.filtrationToday ?? "—"} aujourd’hui</em></span><span><small>PAC</small><b>{overview?.energy.poolHeatPump ?? "0 W"}</b><em>{overview?.energy.poolHeatPumpToday ?? "—"} aujourd’hui</em></span></div></div><button disabled>＋</button></section>
+  </div>;
+}
+
+function VehiclePortalView({ overview }: { overview: MobileOverview | null }) {
+  const battery = overview?.comfort?.teslaBattery ?? "—";
+  const plugged = overview?.comfort?.teslaPlugged?.toLowerCase() ?? "";
+  const connected = ["on", "connected", "charging", "complete", "stopped", "branchée"].some((state) => plugged.includes(state));
+  return <div className="mobile-section vehicle-mobile-section">
+    <PortalCategoryHeader eyebrow="MOBILITÉ" title="Véhicule" subtitle="Batterie, recharge et autonomie." icon="◇" color="#55c8bd" />
+    <section className="vehicle-premium-card"><header><div><h3>Model X</h3><span><i /> En ligne</span></div><em>✓ SÉCURISÉ</em></header><img src="/vehicles/tesla-model-x-grey.png" alt="Tesla Model X grise" /></section>
+    <section className="vehicle-metric-row"><article><span>▰</span><div><strong>{battery}</strong><small>Batterie</small></div></article><article><span>↗</span><div><strong>{overview?.energy.teslaRange ?? "—"}</strong><small>Autonomie</small></div></article><article><span>♨</span><div><strong>{overview?.energy.teslaCabinTemperature ?? "—"}</strong><small>Habitacle</small></div></article><article><i /><div><strong>En ligne</strong><small>Connexion</small></div></article></section>
+    <div className={`vehicle-charge-state ${connected ? "connected" : ""}`}><span>ϟ</span><b>{connected ? `Branchée · ${overview?.comfort?.teslaPower ?? "0 W"}` : "Prête à charger"}</b></div>
+    <section className="vehicle-actions-web"><header><h3>Commandes</h3><span>Actions sécurisées Tesla</span></header>{[["❄", "Climatisation", "Piloter depuis l’application"], ["ϟ", "Recharge", "Piloter depuis l’application"], ["▣", "Portières verrouillées", "État en direct"], ["◉", "Trappe de charge", "Piloter depuis l’application"], ["⬡", "Mode Sentinelle", "État en direct"], ["⌖", "Localiser", "Ouvrir dans Plans"]].map(([icon, label, detail]) => <button key={label} disabled><span>{icon}</span><div><b>{label}</b><small>{detail}</small></div><em>›</em></button>)}</section>
   </div>;
 }
 
@@ -1482,12 +1591,12 @@ function SceneLabel({ className, icon, title, value, sub, color }: {
 }
 
 function EnergyScene({ overview }: { overview: MobileOverview | null }) {
-  const [isDay, setIsDay] = useState(true);
+  const [scenePeriod, setScenePeriod] = useState<"dawn" | "day" | "dusk" | "night">("day");
 
   useEffect(() => {
     const updateDaylight = () => {
       const hour = new Date().getHours();
-      setIsDay(hour >= 7 && hour < 20);
+      setScenePeriod(hour >= 7 && hour < 19 ? "day" : hour >= 6 && hour < 7 ? "dawn" : hour >= 19 && hour < 21 ? "dusk" : "night");
     };
     updateDaylight();
     const timer = window.setInterval(updateDaylight, 60_000);
@@ -1502,8 +1611,15 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
   const pluggedState = overview?.comfort?.teslaPlugged?.toLowerCase() ?? "";
   const vehiclePlugged = vehicleWatts > 5
     || ["on", "connected", "charging", "complete", "stopped", "no_power", "starting", "branchée"].some((state) => pluggedState.includes(state));
+  const isDay = scenePeriod !== "night";
   const inverterY = isDay ? "52.22%" : "50.16%";
   const batteryEndY = isDay ? "58.41%" : "56.51%";
+  const sceneImage = {
+    dawn: "/energy/energy-home-dawn.png",
+    day: "/energy/energy-home-day-premium.png",
+    dusk: "/energy/energy-home-dusk.png",
+    night: "/energy/energy-home-night-premium.png",
+  }[scenePeriod];
 
   return <div className="energy-scene-wrap">
     <div
@@ -1514,7 +1630,7 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
       } as CSSProperties}
     >
       <img
-        src={isDay ? "/energy/energy-home-day.png" : "/energy/energy-home-night.png"}
+        src={sceneImage}
         alt=""
         className="energy-scene-house"
       />
