@@ -100,9 +100,32 @@ test("rafraîchit les mesures importantes toutes les cinq secondes sans renvoyer
   assert.match(agent, /FULL_INVENTORY_SECONDS = 60/);
   assert.match(agent, /FAST_ENTITY_PREFIXES/);
   assert.match(agent, /interval - cycle_duration/);
-  assert.match(config, /version: "0\.5\.16"/);
+  assert.match(config, /version: "0\.5\.17"/);
   assert.match(config, /heartbeat_seconds: "int\(5,300\)"/);
   assert.match(agentHome, /matches\.find\(\(item\) => !\["unknown", "unavailable"\]\.includes\(item\.state\)\)/);
+});
+
+test("partage le même profil de capteurs énergétiques avec l’application", async () => {
+  const [canonical, generatedPortal, generatedMobile, agentHome, connector, mobileProfile] = await Promise.all([
+    readFile(new URL("../shared/energy-profile.json", import.meta.url), "utf8"),
+    readFile(new URL("../lib/energy-profile.generated.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../mobile/src/config/energyProfile.generated.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/agent-home.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/home-connector.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../mobile/src/config/houseProfile.js", import.meta.url), "utf8"),
+  ]);
+  const profile = JSON.parse(canonical);
+  assert.deepEqual(profile.homePower.slice(0, 3), [
+    "sensor.shellyem3_483fdac38616_channel_b_power",
+    "sensor.onduleur_load_power",
+    "sensor.inverter_load_power",
+  ]);
+  assert.match(generatedPortal, /sensor\.onduleur_pv_power/);
+  assert.match(generatedMobile, /sensor\.onduleur_pv_power/);
+  assert.match(agentHome, /ENERGY_PROFILE\.dailyExport/);
+  assert.match(agentHome, /monthlyProduction/);
+  assert.match(connector, /ENERGY_PROFILE\.homePower/);
+  assert.match(mobileProfile, /\.\.\.ENERGY_PROFILE/);
 });
 
 test("crée et administre les automatisations via la Green Box", async () => {

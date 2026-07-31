@@ -726,10 +726,12 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
   function addOffPeakPeriod() {
     if (energyConfiguration.offPeakPeriods.length >= 4) return;
     const index = energyConfiguration.offPeakPeriods.length + 1;
+    let sequence = 1;
+    while (energyConfiguration.offPeakPeriods.some((period) => period.id === `hc-${sequence}`)) sequence += 1;
     const next = {
       ...energyConfiguration,
       offPeakPeriods: [...energyConfiguration.offPeakPeriods, {
-        id: `hc-${Date.now()}`,
+        id: `hc-${sequence}`,
         label: `Plage ${index}`,
         start: "12:00",
         end: "14:00",

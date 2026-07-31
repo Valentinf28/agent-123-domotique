@@ -1,3 +1,5 @@
+import { ENERGY_PROFILE } from "./energy-profile.generated";
+
 type HaState = {
   entity_id: string;
   state: string;
@@ -93,14 +95,24 @@ const clientDomains = new Set([
 ]);
 
 const overviewBindings: Record<string, string[]> = {
-  solar: ["sensor.onduleur_pv_power", "puissance solaire", "production solaire", "solar power", "pv power"],
-  home: ["sensor.shellyem3_483fdac38616_channel_b_power", "consommation maison", "puissance maison", "home power"],
-  grid: ["sensor.shellyem3_483fdac38616_channel_c_power", "puissance reseau", "grid power"],
-  battery: ["sensor.batterie_deye_soc", "sensor.onduleur_battery", "niveau batterie", "batterie soc"],
-  batteryPower: ["sensor.onduleur_battery_power", "puissance batterie", "battery power"],
+  solar: [...ENERGY_PROFILE.solarPower],
+  home: [...ENERGY_PROFILE.homePower],
+  grid: [...ENERGY_PROFILE.gridPower],
+  battery: [...ENERGY_PROFILE.batteryLevel],
+  batteryPower: [...ENERGY_PROFILE.batteryPower],
   filtrationPower: ["sensor.filtration_piscine_puissance", "puissance filtration"],
-  dailyProduction: ["sensor.onduleur_today_production", "production journaliere"],
-  dailyConsumption: ["sensor.onduleur_today_load_consumption", "consommation journaliere"],
+  dailyProduction: [...ENERGY_PROFILE.dailyProduction],
+  dailyConsumption: [...ENERGY_PROFILE.dailyConsumption],
+  dailyImport: [...ENERGY_PROFILE.dailyImport],
+  dailyExport: [...ENERGY_PROFILE.dailyExport],
+  monthlyProduction: [...ENERGY_PROFILE.monthlyProduction],
+  monthlyConsumption: [...ENERGY_PROFILE.monthlyConsumption],
+  monthlyImport: [...ENERGY_PROFILE.monthlyImport],
+  monthlyExport: [...ENERGY_PROFILE.monthlyExport],
+  yearlyProduction: [...ENERGY_PROFILE.yearlyProduction],
+  yearlyConsumption: [...ENERGY_PROFILE.yearlyConsumption],
+  yearlyImport: [...ENERGY_PROFILE.yearlyImport],
+  yearlyExport: [...ENERGY_PROFILE.yearlyExport],
   gate: ["switch.shellyplus1_78ee4cc38b48", "portail"],
   terrace: ["light.terrasse", "terrasse"],
   poolHeat: ["climate.pompe_a_chaleur_piscine", "pac piscine"],
@@ -386,6 +398,16 @@ export async function getPortalHome() {
         filtration: value("filtrationPower", "0 W"),
         dailyProduction: value("dailyProduction", "—"),
         dailyConsumption: value("dailyConsumption", "—"),
+        dailyImport: value("dailyImport", "—"),
+        dailyExport: value("dailyExport", "—"),
+        monthlyProduction: value("monthlyProduction", "—"),
+        monthlyConsumption: value("monthlyConsumption", "—"),
+        monthlyImport: value("monthlyImport", "—"),
+        monthlyExport: value("monthlyExport", "—"),
+        yearlyProduction: value("yearlyProduction", "—"),
+        yearlyConsumption: value("yearlyConsumption", "—"),
+        yearlyImport: value("yearlyImport", "—"),
+        yearlyExport: value("yearlyExport", "—"),
       },
       controls: [
         control("gate", "Portail"),

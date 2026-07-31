@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.5.17
+
+- Unifie les cumuls énergétiques jour, mois et année utilisés par l’application et le portail.
+- Conserve les capteurs natifs Deye et Shelly comme sources prioritaires, avec des cumuls normalisés en secours.
+
 ## 0.5.15
 
 - Calcule la consommation journalière directement depuis le compteur d’énergie Shelly.

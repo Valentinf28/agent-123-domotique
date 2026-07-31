@@ -62,6 +62,12 @@ SHELLY_DAILY_ENERGY_BINDINGS = (
         "Énergie injectée aujourd'hui",
     ),
 )
+PERIOD_ENERGY_BINDINGS = (
+    ("sensor.onduleur_total_production", "production", "Production"),
+    ("sensor.shellyem3_483fdac38616_channel_b_energy", "consumption", "Consommation"),
+    ("sensor.shellyem3_483fdac38616_channel_c_energy", "import", "Énergie achetée"),
+    ("sensor.shellyem3_483fdac38616_channel_c_energy_returned", "export", "Énergie injectée"),
+)
 
 
 def log(message: str) -> None:
@@ -132,7 +138,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.16",
+        "User-Agent": "Agent-123-Domotique/0.5.17",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -214,6 +220,66 @@ def shelly_daily_energy_inventory(
         return []
 
 
+def energy_period_starts(current_time: datetime) -> dict[str, datetime]:
+    return {
+        "daily": current_time.replace(hour=0, minute=0, second=0, microsecond=0),
+        "monthly": current_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
+        "yearly": current_time.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0),
+    }
+
+
+def period_energy_inventory(
+    supervisor_token: str,
+    config: dict[str, Any],
+    states: list[Any],
+    *,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Publie les mêmes cumuls jour/mois/année pour le portail et l'app."""
+    try:
+        timezone_name = str(config.get("time_zone", "Europe/Paris"))
+        try:
+            local_timezone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            local_timezone = timezone.utc
+        current_time = now.astimezone(local_timezone) if now else datetime.now(local_timezone)
+        starts = energy_period_starts(current_time)
+        by_entity_id = {
+            str(item.get("entity_id")): item
+            for item in states
+            if isinstance(item, dict) and item.get("entity_id")
+        }
+        entries: list[dict[str, Any]] = []
+        for source_entity_id, metric, label in PERIOD_ENERGY_BINDINGS:
+            current = by_entity_id.get(source_entity_id)
+            if not current:
+                continue
+            encoded_entity_id = urllib.parse.quote(source_entity_id, safe="._")
+            for period, period_start in starts.items():
+                # Les compteurs journaliers Deye/Shelly natifs restent prioritaires.
+                # Ce cumul est leur secours et la référence commune mois/année.
+                encoded_start = urllib.parse.quote(period_start.isoformat(), safe=":TZ+-")
+                history = request_json(
+                    f"{SUPERVISOR_API}/history/period/{encoded_start}"
+                    f"?filter_entity_id={encoded_entity_id}&minimal_response&no_attributes",
+                    token=supervisor_token,
+                )
+                delta = daily_energy_delta(str(current.get("state", "")), history)
+                if delta is None:
+                    continue
+                entries.append({
+                    "entityId": f"sensor.1_2_3_home_{period}_{metric}",
+                    "name": f"{label} {period}",
+                    "domain": "sensor",
+                    "state": str(delta),
+                    "deviceClass": "energy",
+                })
+        return entries
+    except Exception as error:
+        log(f"Cumuls énergétiques indisponibles ({error})")
+        return []
+
+
 def enroll(portal_url: str, code: str) -> dict[str, Any]:
     result = request_json(
         f"{portal_url}/agent/enroll",
@@ -260,6 +326,11 @@ def home_assistant_summary(
         })
     if full_inventory:
         inventory.extend(shelly_daily_energy_inventory(
+            supervisor_token,
+            config,
+            states,
+        ))
+        inventory.extend(period_energy_inventory(
             supervisor_token,
             config,
             states,

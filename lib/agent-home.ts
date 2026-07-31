@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { agentBoxes, agentCommands, installationDossiers } from "../db/schema";
 import { relayHouseIdForDossier } from "./relay-house";
+import { ENERGY_PROFILE } from "./energy-profile.generated";
 
 type InventoryItem = {
   entityId: string;
@@ -109,42 +110,24 @@ const controlBindings: ControlBinding[] = [
 ];
 
 const valueBindings = {
-  solar: [
-    "sensor.inverter_pv_power",
-    "sensor.onduleur_pv_power",
-    "input_number.demo_solar_power",
-  ],
-  home: [
-    "sensor.shellyem3_483fdac38616_channel_b_power",
-    "sensor.inverter_load_power",
-    "sensor.onduleur_load_power",
-    "input_number.demo_house_power",
-  ],
-  grid: [
-    "sensor.shellyem3_483fdac38616_channel_c_power",
-    "sensor.inverter_grid_power",
-    "sensor.onduleur_grid_power",
-    "sensor.1_2_3_home_puissance_reseau",
-  ],
-  battery: [
-    "sensor.inverter_battery",
-    "sensor.onduleur_battery",
-    "input_number.demo_battery_soc",
-  ],
-  batteryPower: [
-    "sensor.inverter_battery_power",
-    "sensor.onduleur_battery_power",
-    "sensor.1_2_3_home_puissance_batterie",
-  ],
-  dailyProduction: [
-    "sensor.inverter_today_production",
-    "sensor.onduleur_today_production",
-  ],
-  dailyConsumption: [
-    "sensor.1_2_3_home_today_consumption",
-    "sensor.inverter_today_load_consumption",
-    "sensor.onduleur_today_load_consumption",
-  ],
+  solar: [...ENERGY_PROFILE.solarPower, "input_number.demo_solar_power"],
+  home: [...ENERGY_PROFILE.homePower, "input_number.demo_house_power"],
+  grid: ENERGY_PROFILE.gridPower,
+  battery: [...ENERGY_PROFILE.batteryLevel, "input_number.demo_battery_soc"],
+  batteryPower: ENERGY_PROFILE.batteryPower,
+  dailyProduction: ENERGY_PROFILE.dailyProduction,
+  dailyConsumption: ENERGY_PROFILE.dailyConsumption,
+  dailyImport: ENERGY_PROFILE.dailyImport,
+  dailyExport: ENERGY_PROFILE.dailyExport,
+  monthlyProduction: ENERGY_PROFILE.monthlyProduction,
+  monthlyConsumption: ENERGY_PROFILE.monthlyConsumption,
+  monthlyImport: ENERGY_PROFILE.monthlyImport,
+  monthlyExport: ENERGY_PROFILE.monthlyExport,
+  yearlyProduction: ENERGY_PROFILE.yearlyProduction,
+  yearlyConsumption: ENERGY_PROFILE.yearlyConsumption,
+  yearlyImport: ENERGY_PROFILE.yearlyImport,
+  yearlyExport: ENERGY_PROFILE.yearlyExport,
+  installedPower: ENERGY_PROFILE.installedPower,
   filtration: ["sensor.filtration_piscine_puissance"],
   hotWaterPower: [
     "sensor.ce_wifi_commutateur_sur_rail_din_avec_mesure_2_puissance",
@@ -226,6 +209,39 @@ function formatted(item: InventoryItem | null, unit: string, fallback = "—") {
   const numeric = Number(item.state);
   if (!Number.isFinite(numeric)) return item.state;
   return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(numeric)}${unit ? ` ${unit}` : ""}`;
+}
+
+function numeric(item: InventoryItem | null) {
+  if (!item || ["unknown", "unavailable"].includes(item.state)) return null;
+  const value = Number(item.state);
+  return Number.isFinite(value) ? value : null;
+}
+
+function derivedEnergyMetrics(
+  production: InventoryItem | null,
+  consumption: InventoryItem | null,
+  imported: InventoryItem | null,
+  exported: InventoryItem | null,
+) {
+  const productionKwh = numeric(production);
+  const consumptionKwh = numeric(consumption);
+  const importedKwh = numeric(imported);
+  const exportedKwh = numeric(exported);
+  const selfConsumedKwh = productionKwh === null
+    ? null
+    : Math.max(0, productionKwh - (exportedKwh ?? 0));
+  const selfConsumption = productionKwh && selfConsumedKwh !== null
+    ? Math.min(100, selfConsumedKwh / productionKwh * 100)
+    : productionKwh === 0 ? 0 : null;
+  const autonomy = consumptionKwh && importedKwh !== null
+    ? Math.max(0, Math.min(100, (consumptionKwh - importedKwh) / consumptionKwh * 100))
+    : consumptionKwh === 0 ? 0 : null;
+  return {
+    selfConsumption: selfConsumption === null ? "—" : `${Math.round(selfConsumption)} %`,
+    autonomy: autonomy === null ? "—" : `${Math.round(autonomy)} %`,
+    savings: selfConsumedKwh === null ? "—" : `${(selfConsumedKwh * 0.194).toFixed(2).replace(".", ",")} €`,
+    co2Avoided: productionKwh === null ? "—" : `${(productionKwh * 0.055).toFixed(1).replace(".", ",")} kg`,
+  };
 }
 
 function active(item: InventoryItem | null) {
@@ -465,6 +481,33 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
       action: "Action gérée par la Green Box",
     }));
 
+  const energyItems = {
+    solar: scopedFind(inventory, valueBindings.solar, allowShowroomEntities),
+    home: scopedFind(inventory, valueBindings.home, allowShowroomEntities),
+    grid: scopedFind(inventory, valueBindings.grid, allowShowroomEntities),
+    battery: scopedFind(inventory, valueBindings.battery, allowShowroomEntities),
+    batteryPower: scopedFind(inventory, valueBindings.batteryPower, allowShowroomEntities),
+    dailyProduction: scopedFind(inventory, valueBindings.dailyProduction, allowShowroomEntities),
+    dailyConsumption: scopedFind(inventory, valueBindings.dailyConsumption, allowShowroomEntities),
+    dailyImport: scopedFind(inventory, valueBindings.dailyImport, allowShowroomEntities),
+    dailyExport: scopedFind(inventory, valueBindings.dailyExport, allowShowroomEntities),
+    monthlyProduction: scopedFind(inventory, valueBindings.monthlyProduction, allowShowroomEntities),
+    monthlyConsumption: scopedFind(inventory, valueBindings.monthlyConsumption, allowShowroomEntities),
+    monthlyImport: scopedFind(inventory, valueBindings.monthlyImport, allowShowroomEntities),
+    monthlyExport: scopedFind(inventory, valueBindings.monthlyExport, allowShowroomEntities),
+    yearlyProduction: scopedFind(inventory, valueBindings.yearlyProduction, allowShowroomEntities),
+    yearlyConsumption: scopedFind(inventory, valueBindings.yearlyConsumption, allowShowroomEntities),
+    yearlyImport: scopedFind(inventory, valueBindings.yearlyImport, allowShowroomEntities),
+    yearlyExport: scopedFind(inventory, valueBindings.yearlyExport, allowShowroomEntities),
+    installedPower: scopedFind(inventory, valueBindings.installedPower, allowShowroomEntities),
+  };
+  const dailyMetrics = derivedEnergyMetrics(
+    energyItems.dailyProduction,
+    energyItems.dailyConsumption,
+    energyItems.dailyImport,
+    energyItems.dailyExport,
+  );
+
   return {
     connected: online,
     source: "agent",
@@ -482,14 +525,26 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     automations,
     mobileOverview: {
       energy: {
-        solar: formatted(scopedFind(inventory, valueBindings.solar, allowShowroomEntities), "W", "0 W"),
-        home: formatted(scopedFind(inventory, valueBindings.home, allowShowroomEntities), "W", "0 W"),
-        grid: formatted(scopedFind(inventory, valueBindings.grid, allowShowroomEntities), "W", "0 W"),
-        battery: formatted(scopedFind(inventory, valueBindings.battery, allowShowroomEntities), "%", "0 %"),
-        batteryPower: formatted(scopedFind(inventory, valueBindings.batteryPower, allowShowroomEntities), "W", "0 W"),
+        solar: formatted(energyItems.solar, "W", "0 W"),
+        home: formatted(energyItems.home, "W", "0 W"),
+        grid: formatted(energyItems.grid, "W", "0 W"),
+        battery: formatted(energyItems.battery, "%", "0 %"),
+        batteryPower: formatted(energyItems.batteryPower, "W", "0 W"),
         filtration: formatted(scopedFind(inventory, valueBindings.filtration, allowShowroomEntities), "W", "0 W"),
-        dailyProduction: formatted(scopedFind(inventory, valueBindings.dailyProduction, allowShowroomEntities), "kWh"),
-        dailyConsumption: formatted(scopedFind(inventory, valueBindings.dailyConsumption, allowShowroomEntities), "kWh"),
+        dailyProduction: formatted(energyItems.dailyProduction, "kWh"),
+        dailyConsumption: formatted(energyItems.dailyConsumption, "kWh"),
+        dailyImport: formatted(energyItems.dailyImport, "kWh"),
+        dailyExport: formatted(energyItems.dailyExport, "kWh"),
+        monthlyProduction: formatted(energyItems.monthlyProduction, "kWh"),
+        monthlyConsumption: formatted(energyItems.monthlyConsumption, "kWh"),
+        monthlyImport: formatted(energyItems.monthlyImport, "kWh"),
+        monthlyExport: formatted(energyItems.monthlyExport, "kWh"),
+        yearlyProduction: formatted(energyItems.yearlyProduction, "kWh"),
+        yearlyConsumption: formatted(energyItems.yearlyConsumption, "kWh"),
+        yearlyImport: formatted(energyItems.yearlyImport, "kWh"),
+        yearlyExport: formatted(energyItems.yearlyExport, "kWh"),
+        installedPower: formatted(energyItems.installedPower, "Wc", "9 635 Wc"),
+        ...dailyMetrics,
       },
       controls,
       security: ringSecurity,

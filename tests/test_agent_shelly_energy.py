@@ -5,6 +5,8 @@ from pathlib import Path
 import sys
 import types
 import unittest
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 
 AGENT_PATH = Path(__file__).parents[1] / "agent_123_domotique" / "agent.py"
@@ -31,6 +33,13 @@ class ShellyDailyEnergyTests(unittest.TestCase):
         self.assertIsNone(agent.daily_energy_delta("unknown", [[{"state": "10"}]]))
         self.assertIsNone(agent.daily_energy_delta("5", [[{"state": "10"}]]))
         self.assertIsNone(agent.daily_energy_delta("12", []))
+
+    def test_period_starts_use_the_house_local_timezone(self):
+        current = datetime(2026, 7, 31, 14, 22, tzinfo=ZoneInfo("Europe/Paris"))
+        starts = agent.energy_period_starts(current)
+        self.assertEqual(starts["daily"].isoformat(), "2026-07-31T00:00:00+02:00")
+        self.assertEqual(starts["monthly"].isoformat(), "2026-07-01T00:00:00+02:00")
+        self.assertEqual(starts["yearly"].isoformat(), "2026-01-01T00:00:00+01:00")
 
 
 if __name__ == "__main__":
