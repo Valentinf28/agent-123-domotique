@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.21
+
+- Accélère la régulation locale Lektrico avec un contrôle toutes les 5 secondes.
+- Arrête réellement la borne lorsque le surplus devient insuffisant au lieu de demander une limite invalide de 0 A.
+- Évite que la recharge reste physiquement à 6 A alors que l’application affiche 0 A.
+
 ## 0.5.20
 
 - Ajoute la régulation locale de la borne Lektrico sur le surplus solaire.

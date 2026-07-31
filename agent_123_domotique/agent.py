@@ -1120,7 +1120,7 @@ def relay_command(
                 "trigger": [
                     {
                         "platform": "time_pattern",
-                        "seconds": "/15",
+                        "seconds": "/5",
                         "id": "ajustement",
                     },
                     {
@@ -1168,14 +1168,6 @@ def relay_command(
                                     "service": "button.press",
                                     "target": {"entity_id": stop_button_entity_id},
                                 },
-                                {
-                                    "delay": {"hours": 0, "minutes": 0, "seconds": 1},
-                                },
-                                {
-                                    "service": "number.set_value",
-                                    "target": {"entity_id": dynamic_limit_entity_id},
-                                    "data": {"value": 0},
-                                },
                             ],
                         },
                         {
@@ -1221,9 +1213,23 @@ def relay_command(
                                 },
                             ],
                             "sequence": [{
-                                "service": "number.set_value",
-                                "target": {"entity_id": dynamic_limit_entity_id},
-                                "data": {"value": target_current_template},
+                                "choose": [
+                                    {
+                                        "conditions": [{
+                                            "condition": "template",
+                                            "value_template": insufficient_surplus_template,
+                                        }],
+                                        "sequence": [{
+                                            "service": "button.press",
+                                            "target": {"entity_id": stop_button_entity_id},
+                                        }],
+                                    },
+                                ],
+                                "default": [{
+                                    "service": "number.set_value",
+                                    "target": {"entity_id": dynamic_limit_entity_id},
+                                    "data": {"value": target_current_template},
+                                }],
                             }],
                         },
                     ],
