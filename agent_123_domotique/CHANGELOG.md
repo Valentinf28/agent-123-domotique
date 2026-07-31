@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.17
+
+- Ajoute l’installation sécurisée d’une règle ECS pilotée par le surplus solaire.
+- Conserve une plage de secours configurable lorsque la production est insuffisante.
+- Laisse le thermostat interne du ballon interrompre naturellement la chauffe.
+
 ## 0.5.15
 
 - Calcule la consommation journalière directement depuis le compteur d’énergie Shelly.
