@@ -1089,7 +1089,7 @@ def relay_command(
             )
             available_template = (
                 "{{ states('" + charger_state_entity_id + "') "
-                "in ['connected', 'paused'] and not ("
+                "in ['connected', 'paused', 'paused_by_scheduler', 'need_auth'] and not ("
                 + fault_condition + ") }}"
             )
             target_current_template = (

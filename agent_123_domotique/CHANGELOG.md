@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.5.22
+
+- Autorise le redémarrage solaire quand une voiture branchée attend l'autorisation de la borne.
+- Prend aussi en charge une recharge mise en pause par le programmateur Lektrico.
+
 ## 0.5.21
 
 - Accélère la régulation locale Lektrico avec un contrôle toutes les 5 secondes.
