@@ -21,6 +21,8 @@ export const installationDossiers = sqliteTable("installation_dossiers", {
   batteryCapacityWh: integer("battery_capacity_wh").notNull().default(0),
   batteryReservePercent: integer("battery_reserve_percent").notNull().default(25),
   flexibleLoadsJson: text("flexible_loads_json").notNull().default("[]"),
+  tariffPlan: text("tariff_plan").notNull().default("base"),
+  offPeakPeriodsJson: text("off_peak_periods_json").notNull().default("[]"),
   predictiveControlEnabled: integer("predictive_control_enabled", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),

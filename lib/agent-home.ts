@@ -159,21 +159,16 @@ const valueBindings = {
   poolSetpoint: ["input_number.demo_pool_setpoint"],
   teslaBattery: [
     "sensor.tesla_model_x_battery",
-    "sensor.tesla_y_battery",
     "input_number.demo_tesla_soc",
   ],
   teslaPower: [
     "sensor.tesla_model_x_charger_power",
-    "sensor.tesla_y_charger_power",
     "input_number.demo_tesla_charge_power",
   ],
   teslaPlugged: [
     "binary_sensor.tesla_model_x_charger",
     "binary_sensor.tesla_model_x_charger_connected",
     "sensor.tesla_model_x_charging_state",
-    "binary_sensor.tesla_y_charger",
-    "binary_sensor.tesla_y_charger_connected",
-    "sensor.tesla_y_charging_state",
   ],
   demoMode: ["input_select.demo_mode"],
 } as const;
@@ -342,6 +337,14 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     ringSource?.agent.lastSeenAt &&
     Date.now() - Date.parse(ringSource.agent.lastSeenAt) < 120_000
   );
+  const offPeakPeriods = (() => {
+    try {
+      const parsed = JSON.parse(selected.dossier.offPeakPeriodsJson);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
 
   const ringSecurity = ringSecurityBindings.flatMap((binding) => {
     const camera = ringInventory.find((item) => item.entityId === binding.cameraEntityId);
@@ -503,6 +506,10 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
         teslaPower: formatted(scopedFind(inventory, valueBindings.teslaPower, allowShowroomEntities), "W", "0 W"),
         teslaPlugged: formatted(scopedFind(inventory, valueBindings.teslaPlugged, allowShowroomEntities), "", "off"),
         demoMode: formatted(scopedFind(inventory, valueBindings.demoMode, allowShowroomEntities), ""),
+      },
+      strategy: {
+        tariffPlan: selected.dossier.tariffPlan === "hp_hc" ? "hp_hc" : "base",
+        offPeakPeriods,
       },
     },
   };

@@ -11,7 +11,7 @@ test("affiche le portail Ma Maison en français", async () => {
   assert.match(layout, /<html lang="fr">/i);
   assert.match(page, /Ma Maison/);
   assert.match(portal, /Bonjour Valentin/);
-  assert.match(portal, /Votre maison est calme/);
+  assert.match(portal, /Maison connectée/);
   assert.doesNotMatch(`${layout}${page}${portal}`, /codex-preview|react-loading-skeleton/i);
 });
 
@@ -59,6 +59,20 @@ test("sauvegarde la préparation dans une base rattachée au dossier", async () 
   assert.match(schema, /agentEnrollmentCodes/);
   assert.match(route, /index \+= 4/);
   assert.match(route, /await db\.batch/);
+});
+
+test("enregistre le tarif et les heures creuses séparément pour chaque maison", async () => {
+  const [portal, route, schema, migration] = await Promise.all([
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/preparation/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0010_tariff_schedule.sql", import.meta.url), "utf8"),
+  ]);
+  assert.match(portal, /Tarif et heures creuses du client/);
+  assert.match(portal, /Heures pleines \/ creuses/);
+  assert.match(route, /sanitizeOffPeakPeriods/);
+  assert.match(schema, /offPeakPeriodsJson/);
+  assert.match(migration, /off_peak_periods_json/);
 });
 
 test("protège l’enrôlement et les remontées de la box", async () => {

@@ -26,6 +26,15 @@ type EnergyConfigurationPayload = {
   batteryCapacityWh?: number;
   batteryReservePercent?: number;
   flexibleLoads?: FlexibleLoadPayload[];
+  tariffPlan?: string;
+  offPeakPeriods?: OffPeakPeriodPayload[];
+};
+
+type OffPeakPeriodPayload = {
+  id?: string;
+  label?: string;
+  start?: string;
+  end?: string;
 };
 
 type FlexibleLoadPayload = {
@@ -61,6 +70,34 @@ function flexibleLoadsFrom(value: string) {
   } catch {
     return [];
   }
+}
+
+function offPeakPeriodsFrom(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function sanitizeOffPeakPeriods(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+  return value.slice(0, 4).map((raw, index) => {
+    const item = raw && typeof raw === "object" ? raw as OffPeakPeriodPayload : {};
+    const start = String(item.start ?? "").trim();
+    const end = String(item.end ?? "").trim();
+    if (!timePattern.test(start) || !timePattern.test(end) || start === end) {
+      throw new Error("INVALID_OFF_PEAK_PERIOD");
+    }
+    return {
+      id: String(item.id ?? `hc-${index + 1}`).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 40),
+      label: String(item.label ?? `Plage ${index + 1}`).trim().slice(0, 40) || `Plage ${index + 1}`,
+      start,
+      end,
+    };
+  });
 }
 
 function sanitizeFlexibleLoads(value: unknown) {
@@ -126,6 +163,8 @@ export async function GET(request: Request) {
           batteryCapacityWh: dossier.batteryCapacityWh,
           batteryReservePercent: dossier.batteryReservePercent,
           flexibleLoads: flexibleLoadsFrom(dossier.flexibleLoadsJson),
+          tariffPlan: dossier.tariffPlan === "hp_hc" ? "hp_hc" : "base",
+          offPeakPeriods: offPeakPeriodsFrom(dossier.offPeakPeriodsJson),
         },
       },
       items: items.map((item) => ({
@@ -200,6 +239,12 @@ export async function PUT(request: Request) {
       flexibleLoads: requestedEnergy.flexibleLoads === undefined
         ? existingFlexibleLoads
         : sanitizeFlexibleLoads(requestedEnergy.flexibleLoads),
+      tariffPlan: requestedEnergy.tariffPlan === undefined
+        ? dossier.tariffPlan
+        : requestedEnergy.tariffPlan === "hp_hc" ? "hp_hc" : "base",
+      offPeakPeriods: requestedEnergy.offPeakPeriods === undefined
+        ? offPeakPeriodsFrom(dossier.offPeakPeriodsJson)
+        : sanitizeOffPeakPeriods(requestedEnergy.offPeakPeriods),
     };
     const persistedItems = items.map((item) => ({
       ...item, publicId: publicId("planned"), dossierId: dossier.id,
@@ -216,6 +261,8 @@ export async function PUT(request: Request) {
       batteryCapacityWh: energyConfiguration.batteryCapacityWh,
       batteryReservePercent: energyConfiguration.batteryReservePercent,
       flexibleLoadsJson: JSON.stringify(energyConfiguration.flexibleLoads),
+      tariffPlan: energyConfiguration.tariffPlan,
+      offPeakPeriodsJson: JSON.stringify(energyConfiguration.offPeakPeriods),
       updatedAt: new Date().toISOString(),
     })
       .where(and(eq(installationDossiers.id, dossier.id), eq(installationDossiers.status, "preparation")));
@@ -227,7 +274,7 @@ export async function PUT(request: Request) {
     return Response.json({ saved: true, count: items.length, enabledModules, energyConfiguration });
   } catch (error) {
     const invalid = error instanceof Error &&
-      ["INVALID_ITEM", "INVALID_ENTITY", "INVALID_FLEXIBLE_LOAD"].includes(error.message);
+      ["INVALID_ITEM", "INVALID_ENTITY", "INVALID_FLEXIBLE_LOAD", "INVALID_OFF_PEAK_PERIOD"].includes(error.message);
     return Response.json(
       { error: invalid ? "Un équipement ou son association est invalide" : "Enregistrement impossible" },
       { status: invalid ? 400 : 503 },
