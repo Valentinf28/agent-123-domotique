@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.18
+
+- Fiabilise `sensor.pic_pv_jour` directement depuis la puissance photovoltaïque.
+- Conserve le maximum atteint pendant la journée dans le fuseau horaire de la maison.
+- Réinitialise automatiquement le pic à minuit, même si les anciennes automatisations sont indisponibles.
+
 ## 0.5.17
 
 - Ajoute l’installation sécurisée d’une règle ECS pilotée par le surplus solaire.

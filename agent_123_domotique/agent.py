@@ -25,6 +25,7 @@ HA_TUNNELS: dict[str, websocket.WebSocket] = {}
 
 OPTIONS_PATH = Path("/data/options.json")
 STATE_PATH = Path("/data/agent-state.json")
+PV_PEAK_STATE_PATH = Path("/data/pv-peak-state.json")
 SUPERVISOR_API = "http://supervisor/core/api"
 HOME_ASSISTANT_FRONTEND = "http://homeassistant:8123"
 FULL_INVENTORY_SECONDS = 60
@@ -61,6 +62,11 @@ SHELLY_DAILY_ENERGY_BINDINGS = (
         "sensor.1_2_3_home_today_energy_export",
         "Énergie injectée aujourd'hui",
     ),
+)
+PV_POWER_ENTITY_IDS = (
+    "sensor.onduleur_pv_power",
+    "sensor.inverter_pv_power",
+    "sensor.deye_active_power_pv",
 )
 
 
@@ -132,7 +138,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.16",
+        "User-Agent": "Agent-123-Domotique/0.5.18",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -164,6 +170,99 @@ def daily_energy_delta(current_state: str, history: Any) -> float | None:
     if baseline is None or current < baseline:
         return None
     return round(current - baseline, 4)
+
+
+def daily_pv_peak(
+    states: list[Any],
+    previous: dict[str, Any],
+    *,
+    timezone_name: str = "Europe/Paris",
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    try:
+        local_timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        local_timezone = timezone.utc
+    current_time = now.astimezone(local_timezone) if now else datetime.now(local_timezone)
+    current_date = current_time.date().isoformat()
+    by_entity_id = {
+        str(item.get("entity_id")): item
+        for item in states
+        if isinstance(item, dict) and item.get("entity_id")
+    }
+    source = next(
+        (by_entity_id[entity_id] for entity_id in PV_POWER_ENTITY_IDS if entity_id in by_entity_id),
+        None,
+    )
+    try:
+        current_power = max(0.0, float(source.get("state", "0"))) if source else 0.0
+    except (TypeError, ValueError):
+        current_power = 0.0
+    attributes = source.get("attributes") if isinstance(source, dict) else {}
+    if not isinstance(attributes, dict):
+        attributes = {}
+    if str(attributes.get("unit_of_measurement", "W")).lower() == "kw":
+        current_power *= 1000
+
+    previous_peak = 0.0
+    if str(previous.get("date", "")) == current_date:
+        try:
+            previous_peak = max(0.0, float(previous.get("peak_w", 0)))
+        except (TypeError, ValueError):
+            previous_peak = 0.0
+    return {
+        "date": current_date,
+        "peak_w": round(max(previous_peak, current_power), 1),
+    }
+
+
+def maintain_daily_pv_peak(
+    supervisor_token: str,
+    config: dict[str, Any],
+    states: list[Any],
+) -> None:
+    previous = read_json(PV_PEAK_STATE_PATH, {})
+    peak = daily_pv_peak(
+        states,
+        previous,
+        timezone_name=str(config.get("time_zone", "Europe/Paris")),
+    )
+    if peak != previous:
+        write_state_to = PV_PEAK_STATE_PATH
+        temporary = write_state_to.with_suffix(".tmp")
+        temporary.write_text(json.dumps(peak), encoding="utf-8")
+        os.chmod(temporary, 0o600)
+        temporary.replace(write_state_to)
+
+    entity_state = {
+        "entity_id": "sensor.pic_pv_jour",
+        "state": str(peak["peak_w"]),
+        "attributes": {
+            "friendly_name": "Pic PV jour",
+            "device_class": "power",
+            "state_class": "measurement",
+            "unit_of_measurement": "W",
+            "icon": "mdi:solar-power",
+            "date": peak["date"],
+            "managed_by": "Agent 1.2.3 Domotique",
+        },
+    }
+    request_json(
+        f"{SUPERVISOR_API}/states/sensor.pic_pv_jour",
+        method="POST",
+        token=supervisor_token,
+        payload={
+            "state": entity_state["state"],
+            "attributes": entity_state["attributes"],
+        },
+    )
+
+    for index, item in enumerate(states):
+        if isinstance(item, dict) and item.get("entity_id") == "sensor.pic_pv_jour":
+            states[index] = entity_state
+            break
+    else:
+        states.append(entity_state)
 
 
 def shelly_daily_energy_inventory(
@@ -237,6 +336,7 @@ def home_assistant_summary(
     states = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
     if not isinstance(config, dict) or not isinstance(states, list):
         raise RuntimeError("Réponse Home Assistant invalide")
+    maintain_daily_pv_peak(supervisor_token, config, states)
     available = sum(
         1 for state in states
         if isinstance(state, dict) and state.get("state") not in {"unavailable", "unknown"}
