@@ -69,6 +69,8 @@ class LektricoSolarPlanTests(unittest.TestCase):
         self.assertIn("button.1p7k_501290_charge_stop", serialized)
         self.assertIn("-grid - 100", serialized)
         self.assertIn("default", serialized)
+        self.assertIn("'need_auth'", serialized)
+        self.assertIn("'paused_by_scheduler'", serialized)
         stop_choice = automation["action"][0]["choose"][0]
         self.assertEqual(
             stop_choice["sequence"],
