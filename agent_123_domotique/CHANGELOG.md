@@ -1,5 +1,16 @@
 # Journal des versions
 
+## 0.5.20
+
+- Ajoute la régulation locale de la borne Lektrico sur le surplus solaire.
+- Ajuste la limite dynamique toutes les 15 secondes avec une marge anti-import.
+- Arrête la recharge en cas d’import réseau persistant ou de défaut de la borne.
+
+## 0.5.19
+
+- Unifie les cumuls énergétiques jour, mois et année utilisés par l’application et le portail.
+- Conserve Deye pour la production et Shelly pour la consommation et les échanges réseau.
+
 ## 0.5.18
 
 - Fiabilise `sensor.pic_pv_jour` directement depuis la puissance photovoltaïque.

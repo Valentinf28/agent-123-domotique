@@ -45,6 +45,10 @@ FAST_ENTITY_PREFIXES = (
     "input_number.chauffe_eau_",
     "input_select.demo_",
     "input_select.chauffe_eau_",
+    "sensor.1p7k_",
+    "number.1p7k_",
+    "binary_sensor.1p7k_",
+    "switch.1p7k_",
 )
 SHELLY_DAILY_ENERGY_BINDINGS = (
     (
@@ -62,6 +66,12 @@ SHELLY_DAILY_ENERGY_BINDINGS = (
         "sensor.1_2_3_home_today_energy_export",
         "Énergie injectée aujourd'hui",
     ),
+)
+PERIOD_ENERGY_BINDINGS = (
+    ("sensor.onduleur_total_production", "production", "Production"),
+    ("sensor.shellyem3_483fdac38616_channel_b_energy", "consumption", "Consommation"),
+    ("sensor.shellyem3_483fdac38616_channel_c_energy", "import", "Énergie achetée"),
+    ("sensor.shellyem3_483fdac38616_channel_c_energy_returned", "export", "Énergie injectée"),
 )
 PV_POWER_ENTITY_IDS = (
     "sensor.onduleur_pv_power",
@@ -138,7 +148,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.18",
+        "User-Agent": "Agent-123-Domotique/0.5.20",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -313,6 +323,64 @@ def shelly_daily_energy_inventory(
         return []
 
 
+def energy_period_starts(current_time: datetime) -> dict[str, datetime]:
+    return {
+        "daily": current_time.replace(hour=0, minute=0, second=0, microsecond=0),
+        "monthly": current_time.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
+        "yearly": current_time.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0),
+    }
+
+
+def period_energy_inventory(
+    supervisor_token: str,
+    config: dict[str, Any],
+    states: list[Any],
+    *,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Publie un référentiel énergétique commun au portail et à l'app."""
+    try:
+        timezone_name = str(config.get("time_zone", "Europe/Paris"))
+        try:
+            local_timezone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            local_timezone = timezone.utc
+        current_time = now.astimezone(local_timezone) if now else datetime.now(local_timezone)
+        starts = energy_period_starts(current_time)
+        by_entity_id = {
+            str(item.get("entity_id")): item
+            for item in states
+            if isinstance(item, dict) and item.get("entity_id")
+        }
+        entries: list[dict[str, Any]] = []
+        for source_entity_id, metric, label in PERIOD_ENERGY_BINDINGS:
+            current = by_entity_id.get(source_entity_id)
+            if not current:
+                continue
+            encoded_entity_id = urllib.parse.quote(source_entity_id, safe="._")
+            for period, period_start in starts.items():
+                encoded_start = urllib.parse.quote(period_start.isoformat(), safe=":TZ+-")
+                history = request_json(
+                    f"{SUPERVISOR_API}/history/period/{encoded_start}"
+                    f"?filter_entity_id={encoded_entity_id}&minimal_response&no_attributes",
+                    token=supervisor_token,
+                )
+                delta = daily_energy_delta(str(current.get("state", "")), history)
+                if delta is None:
+                    continue
+                entries.append({
+                    "entityId": f"sensor.1_2_3_home_{period}_{metric}",
+                    "name": f"{label} {period}",
+                    "domain": "sensor",
+                    "state": str(delta),
+                    "deviceClass": "energy",
+                })
+        return entries
+    except Exception as error:
+        log(f"Cumuls énergétiques indisponibles ({error})")
+        return []
+
+
 def enroll(portal_url: str, code: str) -> dict[str, Any]:
     result = request_json(
         f"{portal_url}/agent/enroll",
@@ -360,6 +428,11 @@ def home_assistant_summary(
         })
     if full_inventory:
         inventory.extend(shelly_daily_energy_inventory(
+            supervisor_token,
+            config,
+            states,
+        ))
+        inventory.extend(period_energy_inventory(
             supervisor_token,
             config,
             states,
@@ -921,6 +994,249 @@ def relay_command(
                     }],
                     "mode": "restart",
                 },
+                timeout=60,
+            )
+            request_json(
+                f"{SUPERVISOR_API}/services/automation/reload",
+                method="POST",
+                token=supervisor_token,
+                payload={},
+                timeout=60,
+            )
+        elif action == "ha.ev_charger.solar_plan":
+            automation_id = str(payload.get(
+                "automationId",
+                "ma_maison_lektrico_solar_charging",
+            )).strip()
+            grid_power_entity_id = str(payload.get("gridPowerEntityId", "")).strip()
+            charger_state_entity_id = str(payload.get("chargerStateEntityId", "")).strip()
+            charger_current_entity_id = str(payload.get("chargerCurrentEntityId", "")).strip()
+            charger_voltage_entity_id = str(payload.get("chargerVoltageEntityId", "")).strip()
+            dynamic_limit_entity_id = str(payload.get("dynamicLimitEntityId", "")).strip()
+            start_button_entity_id = str(payload.get("startButtonEntityId", "")).strip()
+            stop_button_entity_id = str(payload.get("stopButtonEntityId", "")).strip()
+            fault_entity_ids = payload.get("faultEntityIds", [])
+            reserve_watts = int(payload.get("reserveWatts", 100))
+            minimum_amps = int(payload.get("minimumAmps", 6))
+            maximum_amps = int(payload.get("maximumAmps", 32))
+
+            if not automation_id or not all(
+                char.isalnum() or char in {"_", "-"}
+                for char in automation_id
+            ):
+                raise ValueError("Identifiant d’automatisation invalide")
+            if not 0 <= reserve_watts <= 1000:
+                raise ValueError("Marge réseau invalide")
+            if not 6 <= minimum_amps <= maximum_amps <= 80:
+                raise ValueError("Limites de courant invalides")
+            if not isinstance(fault_entity_ids, list):
+                raise ValueError("Liste des défauts invalide")
+
+            required_entities = {
+                grid_power_entity_id: "sensor",
+                charger_state_entity_id: "sensor",
+                charger_current_entity_id: "sensor",
+                charger_voltage_entity_id: "sensor",
+                dynamic_limit_entity_id: "number",
+                start_button_entity_id: "button",
+                stop_button_entity_id: "button",
+            }
+            for entity_id, expected_domain in required_entities.items():
+                parts = entity_id.split(".", 1)
+                if (
+                    len(parts) != 2
+                    or parts[0] != expected_domain
+                    or not all(part.replace("_", "").isalnum() for part in parts)
+                ):
+                    raise ValueError("Capteur ou commande Lektrico invalide")
+            for entity_id in fault_entity_ids:
+                parts = str(entity_id).split(".", 1)
+                if (
+                    len(parts) != 2
+                    or parts[0] != "binary_sensor"
+                    or not all(part.replace("_", "").isalnum() for part in parts)
+                ):
+                    raise ValueError("Capteur de défaut Lektrico invalide")
+
+            states = request_json(
+                f"{SUPERVISOR_API}/states",
+                token=supervisor_token,
+            )
+            available_entity_ids = {
+                str(state.get("entity_id", ""))
+                for state in states
+                if isinstance(state, dict)
+            }
+            missing_entities = [
+                entity_id
+                for entity_id in (*required_entities.keys(), *fault_entity_ids)
+                if entity_id not in available_entity_ids
+            ]
+            if missing_entities:
+                raise ValueError(
+                    "Entité Lektrico introuvable : " + ", ".join(missing_entities)
+                )
+
+            fault_condition = " or ".join(
+                f"is_state('{entity_id}', 'on')"
+                for entity_id in fault_entity_ids
+            ) or "false"
+            start_threshold_template = (
+                "{{ states('" + grid_power_entity_id + "') | float(0) < "
+                "-((" + str(minimum_amps) + " * "
+                "([states('" + charger_voltage_entity_id + "') | float(230), 210] | max))"
+                " + " + str(reserve_watts) + ") }}"
+            )
+            available_template = (
+                "{{ states('" + charger_state_entity_id + "') "
+                "in ['connected', 'paused'] and not ("
+                + fault_condition + ") }}"
+            )
+            target_current_template = (
+                "{% set grid = states('" + grid_power_entity_id + "') | float(0) %} "
+                "{% set current = states('" + charger_current_entity_id + "') | float(0) %} "
+                "{% set voltage = [states('" + charger_voltage_entity_id + "') | float(230), 210] | max %} "
+                "{% set desired = (current + ((-grid - " + str(reserve_watts) + ") / voltage)) "
+                "| round(0, 'floor') | int %} "
+                "{{ [[desired, " + str(minimum_amps) + "] | max, "
+                + str(maximum_amps) + "] | min }}"
+            )
+            insufficient_surplus_template = (
+                "{{ is_state('" + charger_state_entity_id + "', 'charging') and "
+                "(states('" + charger_current_entity_id + "') | float(0) + "
+                "((0 - (states('" + grid_power_entity_id + "') | float(0)) - "
+                + str(reserve_watts) + ") / "
+                "([states('" + charger_voltage_entity_id + "') | float(230), 210] | max))) < "
+                + str(minimum_amps) + " }}"
+            )
+
+            automation_payload = {
+                "id": automation_id,
+                "alias": "1.2.3 Home · Recharge solaire Lektrico",
+                "description": (
+                    "Ajuste la limite dynamique de la borne Lektrico sur le surplus "
+                    f"solaire, avec une marge réseau de {reserve_watts} W."
+                ),
+                "trigger": [
+                    {
+                        "platform": "time_pattern",
+                        "seconds": "/15",
+                        "id": "ajustement",
+                    },
+                    {
+                        "platform": "template",
+                        "value_template": start_threshold_template,
+                        "for": {"hours": 0, "minutes": 0, "seconds": 30},
+                        "id": "demarrage",
+                    },
+                    {
+                        "platform": "template",
+                        "value_template": insufficient_surplus_template,
+                        "for": {"hours": 0, "minutes": 0, "seconds": 45},
+                        "id": "arret_surplus",
+                    },
+                    {
+                        "platform": "numeric_state",
+                        "entity_id": [grid_power_entity_id],
+                        "above": 700,
+                        "for": {"hours": 0, "minutes": 1, "seconds": 0},
+                        "id": "arret_import",
+                    },
+                    *([{
+                        "platform": "state",
+                        "entity_id": fault_entity_ids,
+                        "to": "on",
+                        "id": "arret_defaut",
+                    }] if fault_entity_ids else []),
+                    {
+                        "platform": "state",
+                        "entity_id": [charger_state_entity_id],
+                        "to": "error",
+                        "id": "arret_defaut",
+                    },
+                ],
+                "condition": [],
+                "action": [{
+                    "choose": [
+                        {
+                            "conditions": [{
+                                "condition": "trigger",
+                                "id": ["arret_surplus", "arret_import", "arret_defaut"],
+                            }],
+                            "sequence": [
+                                {
+                                    "service": "button.press",
+                                    "target": {"entity_id": stop_button_entity_id},
+                                },
+                                {
+                                    "delay": {"hours": 0, "minutes": 0, "seconds": 1},
+                                },
+                                {
+                                    "service": "number.set_value",
+                                    "target": {"entity_id": dynamic_limit_entity_id},
+                                    "data": {"value": 0},
+                                },
+                            ],
+                        },
+                        {
+                            "conditions": [
+                                {
+                                    "condition": "trigger",
+                                    "id": ["demarrage"],
+                                },
+                                {
+                                    "condition": "template",
+                                    "value_template": available_template,
+                                },
+                            ],
+                            "sequence": [
+                                {
+                                    "service": "number.set_value",
+                                    "target": {"entity_id": dynamic_limit_entity_id},
+                                    "data": {"value": minimum_amps},
+                                },
+                                {
+                                    "delay": {"hours": 0, "minutes": 0, "seconds": 1},
+                                },
+                                {
+                                    "service": "button.press",
+                                    "target": {"entity_id": start_button_entity_id},
+                                },
+                            ],
+                        },
+                        {
+                            "conditions": [
+                                {
+                                    "condition": "trigger",
+                                    "id": ["ajustement"],
+                                },
+                                {
+                                    "condition": "state",
+                                    "entity_id": charger_state_entity_id,
+                                    "state": "charging",
+                                },
+                                {
+                                    "condition": "template",
+                                    "value_template": "{{ not (" + fault_condition + ") }}",
+                                },
+                            ],
+                            "sequence": [{
+                                "service": "number.set_value",
+                                "target": {"entity_id": dynamic_limit_entity_id},
+                                "data": {"value": target_current_template},
+                            }],
+                        },
+                    ],
+                }],
+                "mode": "restart",
+                "max_exceeded": "silent",
+            }
+            result = request_json(
+                f"{SUPERVISOR_API}/config/automation/config/"
+                f"{urllib.parse.quote(automation_id, safe='_-')}",
+                method="POST",
+                token=supervisor_token,
+                payload=automation_payload,
                 timeout=60,
             )
             request_json(
