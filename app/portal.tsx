@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { CLIENT_EXPERIENCE } from "../lib/client-experience.generated";
 
 type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
-type HomeTab = "Maison" | "Solaire" | "Chauffage" | "Équipements" | "Piscine" | "Véhicule";
+type HomeTab = (typeof CLIENT_EXPERIENCE.tabs)[number]["label"];
 type Device = {
   id: string; name: string; room: string; areaPublicId: string | null;
   category: string; state: string;
@@ -142,15 +143,13 @@ type SubscriptionSummary = {
 };
 
 const HOME_REFRESH_MS = 5_000;
-const homeTabs: HomeTab[] = ["Maison", "Solaire", "Chauffage", "Équipements", "Piscine", "Véhicule"];
-const homeTabMeta: Record<HomeTab, { icon: string; eyebrow: string }> = {
-  Maison: { icon: "⌂", eyebrow: "Vue d’ensemble" },
-  Solaire: { icon: "☀", eyebrow: "Énergie" },
-  Chauffage: { icon: "♨", eyebrow: "Confort" },
-  Équipements: { icon: "◉", eyebrow: "Maison" },
-  Piscine: { icon: "≋", eyebrow: "Extérieur" },
-  Véhicule: { icon: "◇", eyebrow: "Mobilité" },
-};
+const homeTabs = CLIENT_EXPERIENCE.tabs.map((tab) => tab.label);
+const homeTabMeta = Object.fromEntries(
+  CLIENT_EXPERIENCE.tabs.map((tab) => [tab.label, { icon: tab.portalIcon, eyebrow: tab.eyebrow }]),
+) as Record<HomeTab, { icon: string; eyebrow: string }>;
+const homeTabKeys = Object.fromEntries(
+  CLIENT_EXPERIENCE.tabs.map((tab) => [tab.label, tab.key]),
+) as Record<HomeTab, (typeof CLIENT_EXPERIENCE.tabs)[number]["key"]>;
 
 const appModules: { key: AppModule; label: string; description: string; icon: string; required?: boolean }[] = [
   { key: "home", label: "Maison", description: "Résumé et raccourcis essentiels", icon: "⌂", required: true },
@@ -1359,11 +1358,14 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
     {publicId:"demo-camera",label:"Caméras",icon:"◉",active:false,available:false},
     {publicId:"demo-water",label:"Ballon d’eau chaude",icon:"♨",active:false,available:false},
   ];
-  const controlLabels: Partial<Record<HomeTab, string[]>> = {
-    Chauffage: ["Chauffage", "Ballon d’eau chaude"],
-    Piscine: ["Filtration", "PAC piscine"],
-    Équipements: ["Serrure Nuki", "Caméras"],
-  };
+  const controlLabels = Object.fromEntries(
+    homeTabs.map((tab) => [
+      tab,
+      CLIENT_EXPERIENCE.controlLabelsByTab[
+        homeTabKeys[tab] as keyof typeof CLIENT_EXPERIENCE.controlLabelsByTab
+      ] ?? [],
+    ]),
+  ) as Record<HomeTab, readonly string[]>;
   const visibleControls = homeTab === "Maison"
     ? controls
     : controls.filter((control) => controlLabels[homeTab]?.includes(control.label));
@@ -1598,7 +1600,16 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
   useEffect(() => {
     const updateDaylight = () => {
       const hour = new Date().getHours();
-      setScenePeriod(hour >= 7 && hour < 19 ? "day" : hour >= 6 && hour < 7 ? "dawn" : hour >= 19 && hour < 21 ? "dusk" : "night");
+      const hours = CLIENT_EXPERIENCE.energyScene.daylightHours;
+      setScenePeriod(
+        hour >= hours.dayStart && hour < hours.duskStart
+          ? "day"
+          : hour >= hours.dawnStart && hour < hours.dayStart
+            ? "dawn"
+            : hour >= hours.duskStart && hour < hours.nightStart
+              ? "dusk"
+              : "night",
+      );
     };
     updateDaylight();
     const timer = window.setInterval(updateDaylight, 60_000);
@@ -1616,12 +1627,8 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
   const isDay = scenePeriod !== "night";
   const inverterY = isDay ? "52.22%" : "50.16%";
   const batteryEndY = isDay ? "58.41%" : "56.51%";
-  const sceneImage = {
-    dawn: "/energy/energy-home-dawn.png",
-    day: "/energy/energy-home-day-premium.png",
-    dusk: "/energy/energy-home-dusk.png",
-    night: "/energy/energy-home-night-premium.png",
-  }[scenePeriod];
+  const sceneImage = CLIENT_EXPERIENCE.energyScene.portalImages[scenePeriod];
+  const activeFlowWatts = CLIENT_EXPERIENCE.energyScene.flowActivationWatts;
 
   return <div className="energy-scene-wrap">
     <div
@@ -1638,11 +1645,11 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
       />
       <div className="energy-scene-shade" />
 
-      <SceneFlow route="solar" active={solarWatts > 5} color="#ffe700" power={solarWatts} />
-      <SceneFlow route="grid" active={Math.abs(gridWatts) > 5} reverse={gridWatts > 0} color="#438ed0" power={gridWatts} />
-      <SceneFlow route="home" active={homeWatts > 5} color="#55c8bd" power={homeWatts} />
-      <SceneFlow route="battery" active={Math.abs(batteryWatts) > 5} reverse={batteryWatts > 0} color="#f05d9b" power={batteryWatts} />
-      <SceneFlow route="vehicle" active={vehiclePlugged && vehicleWatts > 5} color="#4ed6f5" power={vehicleWatts} />
+      <SceneFlow route="solar" active={solarWatts > activeFlowWatts} color="#ffe700" power={solarWatts} />
+      <SceneFlow route="grid" active={Math.abs(gridWatts) > activeFlowWatts} reverse={gridWatts > 0} color="#438ed0" power={gridWatts} />
+      <SceneFlow route="home" active={homeWatts > activeFlowWatts} color="#55c8bd" power={homeWatts} />
+      <SceneFlow route="battery" active={Math.abs(batteryWatts) > activeFlowWatts} reverse={batteryWatts > 0} color="#f05d9b" power={batteryWatts} />
+      <SceneFlow route="vehicle" active={vehiclePlugged && vehicleWatts > activeFlowWatts} color="#4ed6f5" power={vehicleWatts} />
       <span className="scene-inverter-hub" aria-hidden="true" />
 
       <SceneLabel className="scene-production" icon="☀" title="Production" value={formatWatts(solarWatts)} color="#ffe700" />

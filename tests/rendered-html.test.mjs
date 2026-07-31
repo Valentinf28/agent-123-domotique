@@ -128,6 +128,25 @@ test("partage le même profil de capteurs énergétiques avec l’application", 
   assert.match(mobileProfile, /\.\.\.ENERGY_PROFILE/);
 });
 
+test("partage les onglets et les règles visuelles avec l’application", async () => {
+  const [canonical, generatedPortal, generatedMobile, portal, mobile] = await Promise.all([
+    readFile(new URL("../shared/client-experience.json", import.meta.url), "utf8"),
+    readFile(new URL("../lib/client-experience.generated.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../mobile/src/config/clientExperience.generated.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../../mobile/App.js", import.meta.url), "utf8"),
+  ]);
+  const experience = JSON.parse(canonical);
+  assert.deepEqual(experience.tabs.map((tab) => tab.label), [
+    "Maison", "Solaire", "Chauffage", "Équipements", "Piscine", "Véhicule",
+  ]);
+  assert.match(generatedPortal, /CLIENT_EXPERIENCE/);
+  assert.match(generatedMobile, /CLIENT_EXPERIENCE/);
+  assert.match(portal, /CLIENT_EXPERIENCE\.tabs/);
+  assert.match(mobile, /CLIENT_EXPERIENCE\.tabs/);
+  assert.match(portal, /flowActivationWatts/);
+});
+
 test("crée et administre les automatisations via la Green Box", async () => {
   const [portal, collectionRoute, itemRoute, agentHome, agent] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
