@@ -147,6 +147,26 @@ test("partage les onglets et les règles visuelles avec l’application", async 
   assert.match(portal, /flowActivationWatts/);
 });
 
+test("partage les correspondances Home Assistant avec l’application", async () => {
+  const [canonical, generatedPortal, generatedMobile, agentHome, connector, mobileProfile] = await Promise.all([
+    readFile(new URL("../shared/house-bindings.json", import.meta.url), "utf8"),
+    readFile(new URL("../lib/house-bindings.generated.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../mobile/src/config/houseBindings.generated.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/agent-home.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/home-connector.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../mobile/src/config/houseProfile.js", import.meta.url), "utf8"),
+  ]);
+  const bindings = JSON.parse(canonical);
+  assert.equal(bindings.waterHeater[0], "switch.ce_wifi_commutateur_sur_rail_din_avec_mesure_2_switch");
+  assert.equal(bindings.lektricoPower[0], "sensor.1p7k_501290_puissance");
+  assert.equal(bindings.teslaModelXBattery[0], "sensor.tesla_model_x_battery");
+  assert.match(generatedPortal, /HOUSE_BINDINGS/);
+  assert.match(generatedMobile, /HOUSE_BINDINGS/);
+  assert.match(agentHome, /HOUSE_BINDINGS\.waterHeater/);
+  assert.match(connector, /HOUSE_BINDINGS\.poolHeatPump/);
+  assert.match(mobileProfile, /\.\.\.HOUSE_BINDINGS/);
+});
+
 test("crée et administre les automatisations via la Green Box", async () => {
   const [portal, collectionRoute, itemRoute, agentHome, agent] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),

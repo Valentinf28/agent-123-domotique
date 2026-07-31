@@ -17,6 +17,12 @@ const sources = [
     mobilePath: resolve(root, "../mobile/src/config/clientExperience.generated.js"),
     exportName: "CLIENT_EXPERIENCE",
   },
+  {
+    canonicalPath: resolve(root, "shared/house-bindings.json"),
+    portalPath: resolve(root, "lib/house-bindings.generated.ts"),
+    mobilePath: resolve(root, "../mobile/src/config/houseBindings.generated.js"),
+    exportName: "HOUSE_BINDINGS",
+  },
 ];
 
 const outputs = [];

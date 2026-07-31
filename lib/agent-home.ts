@@ -3,6 +3,7 @@ import { getDb } from "../db";
 import { agentBoxes, agentCommands, installationDossiers } from "../db/schema";
 import { relayHouseIdForDossier } from "./relay-house";
 import { ENERGY_PROFILE } from "./energy-profile.generated";
+import { HOUSE_BINDINGS } from "./house-bindings.generated";
 
 type InventoryItem = {
   entityId: string;
@@ -74,15 +75,15 @@ function ringCameraAssignments(): Record<string, string> {
 
 const controlBindings: ControlBinding[] = [
   {
-    entityIds: ["climate.152832117468341_climate_zone1", "input_boolean.demo_heating"],
+    entityIds: [...HOUSE_BINDINGS.heatingClimate, "input_boolean.demo_heating"],
     label: "Chauffage", icon: "♨", room: "Maison", category: "Confort",
   },
   {
-    entityIds: ["switch.filtration_piscine_switch", "input_boolean.demo_pool_filtration"],
+    entityIds: [...HOUSE_BINDINGS.filtration, "input_boolean.demo_pool_filtration"],
     label: "Filtration", icon: "≋", room: "Piscine", category: "Piscine",
   },
   {
-    entityIds: ["climate.pompe_a_chaleur_piscine", "input_boolean.demo_pool_heat_pump"],
+    entityIds: [...HOUSE_BINDINGS.poolHeatPump, "input_boolean.demo_pool_heat_pump"],
     label: "PAC piscine", icon: "♨", room: "Piscine", category: "Piscine",
   },
   {
@@ -101,10 +102,7 @@ const controlBindings: ControlBinding[] = [
     controllable: false,
   },
   {
-    entityIds: [
-      "switch.ce_wifi_commutateur_sur_rail_din_avec_mesure_2_switch",
-      "input_boolean.chauffe_eau_shelly",
-    ],
+    entityIds: [...HOUSE_BINDINGS.waterHeater, "input_boolean.chauffe_eau_shelly"],
     label: "Ballon d’eau chaude", icon: "♨", room: "Local technique", category: "Eau chaude",
   },
 ];
@@ -128,31 +126,18 @@ const valueBindings = {
   yearlyImport: ENERGY_PROFILE.yearlyImport,
   yearlyExport: ENERGY_PROFILE.yearlyExport,
   installedPower: ENERGY_PROFILE.installedPower,
-  filtration: ["sensor.filtration_piscine_puissance"],
-  hotWaterPower: [
-    "sensor.ce_wifi_commutateur_sur_rail_din_avec_mesure_2_puissance",
-    "sensor.1_2_3_home_puissance_chauffe_eau",
-  ],
+  filtration: HOUSE_BINDINGS.filtrationPower,
+  hotWaterPower: HOUSE_BINDINGS.waterHeaterPower,
   hotWaterAvailable: ["sensor.1_2_3_home_eau_chaude_disponible"],
   hotWaterTemperature: ["input_number.chauffe_eau_temperature"],
   hotWaterMode: ["input_select.chauffe_eau_mode"],
   indoorTemperature: ["input_number.demo_indoor_temperature"],
   heatingSetpoint: ["input_number.demo_heating_setpoint"],
-  poolTemperature: ["input_number.demo_pool_temperature"],
+  poolTemperature: [...HOUSE_BINDINGS.poolWaterTemperature, "input_number.demo_pool_temperature"],
   poolSetpoint: ["input_number.demo_pool_setpoint"],
-  teslaBattery: [
-    "sensor.tesla_model_x_battery",
-    "input_number.demo_tesla_soc",
-  ],
-  teslaPower: [
-    "sensor.tesla_model_x_charger_power",
-    "input_number.demo_tesla_charge_power",
-  ],
-  teslaPlugged: [
-    "binary_sensor.tesla_model_x_charger",
-    "binary_sensor.tesla_model_x_charger_connected",
-    "sensor.tesla_model_x_charging_state",
-  ],
+  teslaBattery: [...HOUSE_BINDINGS.teslaModelXBattery, "input_number.demo_tesla_soc"],
+  teslaPower: [...HOUSE_BINDINGS.teslaModelXChargerPower, "input_number.demo_tesla_charge_power"],
+  teslaPlugged: HOUSE_BINDINGS.teslaModelXPlugged,
   demoMode: ["input_select.demo_mode"],
 } as const;
 

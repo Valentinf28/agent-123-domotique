@@ -1,4 +1,5 @@
 import { ENERGY_PROFILE } from "./energy-profile.generated";
+import { HOUSE_BINDINGS } from "./house-bindings.generated";
 
 type HaState = {
   entity_id: string;
@@ -100,7 +101,7 @@ const overviewBindings: Record<string, string[]> = {
   grid: [...ENERGY_PROFILE.gridPower],
   battery: [...ENERGY_PROFILE.batteryLevel],
   batteryPower: [...ENERGY_PROFILE.batteryPower],
-  filtrationPower: ["sensor.filtration_piscine_puissance", "puissance filtration"],
+  filtrationPower: [...HOUSE_BINDINGS.filtrationPower],
   dailyProduction: [...ENERGY_PROFILE.dailyProduction],
   dailyConsumption: [...ENERGY_PROFILE.dailyConsumption],
   dailyImport: [...ENERGY_PROFILE.dailyImport],
@@ -113,12 +114,12 @@ const overviewBindings: Record<string, string[]> = {
   yearlyConsumption: [...ENERGY_PROFILE.yearlyConsumption],
   yearlyImport: [...ENERGY_PROFILE.yearlyImport],
   yearlyExport: [...ENERGY_PROFILE.yearlyExport],
-  gate: ["switch.shellyplus1_78ee4cc38b48", "portail"],
-  terrace: ["light.terrasse", "terrasse"],
-  poolHeat: ["climate.pompe_a_chaleur_piscine", "pac piscine"],
-  filtration: ["switch.filtration_piscine_switch", "filtration piscine"],
-  spa: ["switch.mspa_oslo_f_os063wp_heater", "spa heater"],
-  spaFiltration: ["switch.mspa_oslo_f_os063wp_filter", "filtration spa"],
+  gate: [...HOUSE_BINDINGS.gate],
+  terrace: [...HOUSE_BINDINGS.terrace],
+  poolHeat: [...HOUSE_BINDINGS.poolHeatPump],
+  filtration: [...HOUSE_BINDINGS.filtration],
+  spa: [...HOUSE_BINDINGS.spa],
+  spaFiltration: [...HOUSE_BINDINGS.spaFiltration],
 };
 
 function normalize(value = "") {
