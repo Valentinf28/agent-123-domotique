@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 0.5.23
+
+- Aligne les données du portail avec celles de l’application mobile.
+- Transmet les températures, consignes, états météo, piscine, Tesla et Lektrico utiles.
+- Ajoute les consommations journalières de la filtration, de la PAC piscine, du chauffe-eau et de la recharge véhicule.
+- Accélère la remontée des équipements importants toutes les cinq secondes.
+
 ## 0.5.22
 
 - Autorise le redémarrage solaire quand une voiture branchée attend l'autorisation de la borne.
