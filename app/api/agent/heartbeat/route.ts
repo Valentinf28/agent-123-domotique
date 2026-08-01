@@ -16,6 +16,7 @@ export async function POST(request: Request) {
       inventory?: Array<{
         entityId?: string; name?: string; domain?: string;
         state?: string; deviceClass?: string | null;
+        attributes?: Record<string, unknown>;
       }>;
       commandResults?: Array<{
         id?: string;
@@ -29,6 +30,9 @@ export async function POST(request: Request) {
       domain: String(item.domain ?? "").slice(0, 40),
       state: String(item.state ?? "").slice(0, 80),
       deviceClass: String(item.deviceClass ?? "").slice(0, 80) || null,
+      attributes: item.attributes && typeof item.attributes === "object"
+        ? Object.fromEntries(Object.entries(item.attributes).slice(0, 24))
+        : undefined,
     })).filter((item) => item.entityId.includes(".")) : [];
     let inventory = incomingInventory;
     if (body.inventoryMode === "delta") {

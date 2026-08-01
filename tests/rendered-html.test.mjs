@@ -86,6 +86,20 @@ test("protège l’enrôlement et les remontées de la box", async () => {
   assert.match(gateway, /X-Agent-Authorization/);
 });
 
+test("désactive le cache du document client et conserve les attributs utiles de Home Assistant", async () => {
+  const [worker, heartbeat, agent] = await Promise.all([
+    readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/agent/heartbeat/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../agent_123_domotique/agent.py", import.meta.url), "utf8"),
+  ]);
+  assert.match(worker, /Cache-Control", "no-store, max-age=0, must-revalidate/);
+  assert.match(worker, /Cloudflare-CDN-Cache-Control/);
+  assert.match(heartbeat, /attributes\?: Record<string, unknown>/);
+  assert.match(agent, /SAFE_ATTRIBUTE_KEYS/);
+  assert.match(agent, /"current_temperature"/);
+  assert.match(agent, /"cloud_coverage"/);
+});
+
 test("rafraîchit les mesures importantes toutes les cinq secondes sans renvoyer tout l’inventaire", async () => {
   const [portal, heartbeat, agent, config, agentHome] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
@@ -100,7 +114,7 @@ test("rafraîchit les mesures importantes toutes les cinq secondes sans renvoyer
   assert.match(agent, /FULL_INVENTORY_SECONDS = 60/);
   assert.match(agent, /FAST_ENTITY_PREFIXES/);
   assert.match(agent, /interval - cycle_duration/);
-  assert.match(config, /version: "0\.5\.17"/);
+  assert.match(config, /version: "0\.5\.18"/);
   assert.match(config, /heartbeat_seconds: "int\(5,300\)"/);
   assert.match(agentHome, /matches\.find\(\(item\) => !\["unknown", "unavailable"\]\.includes\(item\.state\)\)/);
 });

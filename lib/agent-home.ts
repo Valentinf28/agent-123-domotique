@@ -16,6 +16,7 @@ type InventoryItem = {
   domain: string;
   state: string;
   deviceClass?: string | null;
+  attributes?: Record<string, unknown>;
 };
 
 type ControlBinding = {
@@ -110,6 +111,38 @@ const controlBindings: ControlBinding[] = [
     entityIds: [...HOUSE_BINDINGS.waterHeater, "input_boolean.chauffe_eau_shelly"],
     label: "Ballon d’eau chaude", icon: "♨", room: "Local technique", category: "Eau chaude",
   },
+  {
+    entityIds: HOUSE_BINDINGS.gate,
+    label: "Portail", icon: "▣", room: "Extérieur", category: "Accès",
+  },
+  {
+    entityIds: HOUSE_BINDINGS.terrace,
+    label: "Terrasse", icon: "☀", room: "Extérieur", category: "Éclairage",
+  },
+  {
+    entityIds: HOUSE_BINDINGS.poolLight,
+    label: "Éclairage piscine", icon: "◉", room: "Piscine", category: "Piscine",
+  },
+  {
+    entityIds: HOUSE_BINDINGS.teslaModelXClimate,
+    label: "Climatisation Tesla", icon: "❄", room: "Garage", category: "Véhicule",
+  },
+  {
+    entityIds: HOUSE_BINDINGS.teslaModelXCharger,
+    label: "Recharge Tesla", icon: "ϟ", room: "Garage", category: "Véhicule",
+  },
+  {
+    entityIds: HOUSE_BINDINGS.teslaModelXDoors,
+    label: "Portières Tesla", icon: "▣", room: "Garage", category: "Véhicule",
+  },
+  {
+    entityIds: HOUSE_BINDINGS.teslaModelXChargerDoor,
+    label: "Trappe Tesla", icon: "◉", room: "Garage", category: "Véhicule",
+  },
+  {
+    entityIds: HOUSE_BINDINGS.teslaModelXSentry,
+    label: "Mode Sentinelle", icon: "⬡", room: "Garage", category: "Véhicule",
+  },
 ];
 
 const valueBindings = {
@@ -131,20 +164,50 @@ const valueBindings = {
   yearlyImport: ENERGY_PROFILE.yearlyImport,
   yearlyExport: ENERGY_PROFILE.yearlyExport,
   installedPower: ENERGY_PROFILE.installedPower,
+  pv1: ENERGY_PROFILE.pv1,
+  pv2: ENERGY_PROFILE.pv2,
+  pv3: ENERGY_PROFILE.pv3,
+  peakPower: ENERGY_PROFILE.peakPower,
+  forecastToday: ENERGY_PROFILE.forecastToday,
+  forecastRemaining: ENERGY_PROFILE.forecastRemaining,
+  forecastPowerNow: ENERGY_PROFILE.forecastPowerNow,
+  cloudCover: ENERGY_PROFILE.cloudCover,
+  moonPhase: ENERGY_PROFILE.moonPhase,
   filtration: HOUSE_BINDINGS.filtrationPower,
+  filtrationToday: ["sensor.1_2_3_home_filtration_energy_today"],
+  poolHeatPumpPower: HOUSE_BINDINGS.poolHeatPumpPower,
+  poolHeatPumpToday: ["sensor.1_2_3_home_pool_heat_pump_energy_today"],
+  poolAirTemperature: HOUSE_BINDINGS.poolAirTemperature,
+  poolPh: HOUSE_BINDINGS.poolPh,
+  poolChlorine: HOUSE_BINDINGS.poolChlorine,
   hotWaterPower: HOUSE_BINDINGS.waterHeaterPower,
+  hotWaterToday: ["sensor.1_2_3_home_water_heater_energy_today"],
   hotWaterAvailable: ["sensor.1_2_3_home_eau_chaude_disponible"],
   hotWaterTemperature: ["input_number.chauffe_eau_temperature"],
   hotWaterMode: ["input_select.chauffe_eau_mode"],
-  indoorTemperature: ["input_number.demo_indoor_temperature"],
-  heatingSetpoint: ["input_number.demo_heating_setpoint"],
+  indoorTemperature: [...HOUSE_BINDINGS.livingRoomTemperature, "input_number.demo_indoor_temperature"],
+  bedroomTemperature: HOUSE_BINDINGS.bedroomTemperature,
+  heatingSetpoint: [...HOUSE_BINDINGS.heatingClimate, "input_number.demo_heating_setpoint"],
   poolTemperature: [...HOUSE_BINDINGS.poolWaterTemperature, "input_number.demo_pool_temperature"],
   poolSetpoint: ["input_number.demo_pool_setpoint"],
   teslaBattery: [...HOUSE_BINDINGS.teslaModelXBattery, "input_number.demo_tesla_soc"],
   teslaPower: [...HOUSE_BINDINGS.teslaModelXChargerPower, "input_number.demo_tesla_charge_power"],
   teslaPlugged: HOUSE_BINDINGS.teslaModelXPlugged,
+  teslaRange: HOUSE_BINDINGS.teslaModelXRange,
+  teslaCabinTemperature: HOUSE_BINDINGS.teslaModelXCabinTemperature,
+  teslaOnline: HOUSE_BINDINGS.teslaModelXOnline,
+  teslaCharging: HOUSE_BINDINGS.teslaModelXCharging,
+  teslaDoors: HOUSE_BINDINGS.teslaModelXDoors,
+  teslaClimate: HOUSE_BINDINGS.teslaModelXClimate,
+  teslaSentry: HOUSE_BINDINGS.teslaModelXSentry,
   lektricoPower: HOUSE_BINDINGS.lektricoPower,
   lektricoState: HOUSE_BINDINGS.lektricoState,
+  lektricoEnergy: HOUSE_BINDINGS.lektricoEnergy,
+  lektricoCurrent: HOUSE_BINDINGS.lektricoCurrent,
+  lektricoVoltage: HOUSE_BINDINGS.lektricoVoltage,
+  lektricoTemperature: HOUSE_BINDINGS.lektricoTemperature,
+  lektricoDynamicLimit: HOUSE_BINDINGS.lektricoDynamicLimit,
+  lektricoLimitReason: HOUSE_BINDINGS.lektricoLimitReason,
   demoMode: ["input_select.demo_mode"],
 } as const;
 
@@ -187,13 +250,32 @@ function parseInventory(value: string): InventoryItem[] {
   }
 }
 
+function normalized(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 function find(inventory: InventoryItem[], ids: readonly string[]) {
   const matches = ids
-    .map((id) => inventory.find((item) => item.entityId === id))
+    .map((id) => inventory.find((item) =>
+      item.entityId === id ||
+      normalized(item.name) === normalized(id) ||
+      normalized(item.entityId.replace(/^[^.]+\./, "")) === normalized(id)
+    ))
     .filter((item): item is InventoryItem => Boolean(item));
   return matches.find((item) => !["unknown", "unavailable"].includes(item.state))
     ?? matches[0]
     ?? null;
+}
+
+function attributeNumber(item: InventoryItem | null, key: string) {
+  const value = item?.attributes?.[key];
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formattedAttribute(item: InventoryItem | null, key: string, unit: string) {
+  const value = attributeNumber(item, key);
+  return value === null ? "—" : `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value)} ${unit}`;
 }
 
 function formatted(item: InventoryItem | null, unit: string, fallback = "—") {
@@ -510,6 +592,13 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     fallbackVehicleWatts: powerValueWatts(teslaPower?.state, "kW"),
     chargerAvailable: lektricoAvailable,
   });
+  const heatingClimate = scopedFind(inventory, valueBindings.heatingSetpoint, allowShowroomEntities);
+  const poolClimate = scopedFind(inventory, HOUSE_BINDINGS.poolHeatPump, allowShowroomEntities);
+  const weather = inventory.find((item) => item.domain === "weather") ?? null;
+  const poolAir = scopedFind(inventory, valueBindings.poolAirTemperature, allowShowroomEntities);
+  const effectivePoolAir = poolAir
+    ? formatted(poolAir, "°C")
+    : formattedAttribute(weather, "temperature", "°C");
 
   return {
     connected: online,
@@ -548,15 +637,42 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
         yearlyExport: formatted(energyItems.yearlyExport, "kWh"),
         installedPower: formatted(energyItems.installedPower, "Wc", "9 635 Wc"),
         vehiclePower: formatWatts(allocatedPower.vehicleWatts),
+        pv1: formatted(scopedFind(inventory, valueBindings.pv1, allowShowroomEntities), "W", "0 W"),
+        pv2: formatted(scopedFind(inventory, valueBindings.pv2, allowShowroomEntities), "W", "0 W"),
+        pv3: formatted(scopedFind(inventory, valueBindings.pv3, allowShowroomEntities), "W", "0 W"),
+        peakPower: formatted(scopedFind(inventory, valueBindings.peakPower, allowShowroomEntities), "W", "0 W"),
+        forecastToday: formatted(scopedFind(inventory, valueBindings.forecastToday, allowShowroomEntities), "kWh"),
+        forecastRemaining: formatted(scopedFind(inventory, valueBindings.forecastRemaining, allowShowroomEntities), "kWh"),
+        forecastPowerNow: formatted(scopedFind(inventory, valueBindings.forecastPowerNow, allowShowroomEntities), "W"),
+        cloudCover: formatted(scopedFind(inventory, valueBindings.cloudCover, allowShowroomEntities), "%"),
+        moonPhase: formatted(scopedFind(inventory, valueBindings.moonPhase, allowShowroomEntities), ""),
+        filtrationToday: formatted(scopedFind(inventory, valueBindings.filtrationToday, allowShowroomEntities), "kWh"),
+        poolHeatPump: formatted(scopedFind(inventory, valueBindings.poolHeatPumpPower, allowShowroomEntities), "W", "0 W"),
+        poolHeatPumpToday: formatted(scopedFind(inventory, valueBindings.poolHeatPumpToday, allowShowroomEntities), "kWh"),
+        poolPh: formatted(scopedFind(inventory, valueBindings.poolPh, allowShowroomEntities), ""),
+        poolChlorine: formatted(scopedFind(inventory, valueBindings.poolChlorine, allowShowroomEntities), ""),
+        hotWaterToday: formatted(scopedFind(inventory, valueBindings.hotWaterToday, allowShowroomEntities), "kWh"),
+        teslaRange: formatted(scopedFind(inventory, valueBindings.teslaRange, allowShowroomEntities), "km"),
+        teslaCabinTemperature: formatted(scopedFind(inventory, valueBindings.teslaCabinTemperature, allowShowroomEntities), "°C"),
+        lektricoEnergy: formatted(scopedFind(inventory, valueBindings.lektricoEnergy, allowShowroomEntities), "kWh"),
+        lektricoCurrent: formatted(scopedFind(inventory, valueBindings.lektricoCurrent, allowShowroomEntities), "A"),
+        lektricoVoltage: formatted(scopedFind(inventory, valueBindings.lektricoVoltage, allowShowroomEntities), "V"),
+        lektricoTemperature: formatted(scopedFind(inventory, valueBindings.lektricoTemperature, allowShowroomEntities), "°C"),
+        lektricoDynamicLimit: formatted(scopedFind(inventory, valueBindings.lektricoDynamicLimit, allowShowroomEntities), "A"),
+        lektricoLimitReason: formatted(scopedFind(inventory, valueBindings.lektricoLimitReason, allowShowroomEntities), ""),
         ...dailyMetrics,
       },
       controls,
       security: ringSecurity,
       comfort: {
         indoorTemperature: formatted(scopedFind(inventory, valueBindings.indoorTemperature, allowShowroomEntities), "°C"),
-        heatingSetpoint: formatted(scopedFind(inventory, valueBindings.heatingSetpoint, allowShowroomEntities), "°C"),
+        bedroomTemperature: formatted(scopedFind(inventory, valueBindings.bedroomTemperature, allowShowroomEntities), "°C"),
+        heatingSetpoint: formattedAttribute(heatingClimate, "temperature", "°C"),
         poolTemperature: formatted(scopedFind(inventory, valueBindings.poolTemperature, allowShowroomEntities), "°C"),
-        poolSetpoint: formatted(scopedFind(inventory, valueBindings.poolSetpoint, allowShowroomEntities), "°C"),
+        poolAirTemperature: effectivePoolAir,
+        poolSetpoint: formattedAttribute(poolClimate, "temperature", "°C") === "—"
+          ? formatted(scopedFind(inventory, valueBindings.poolSetpoint, allowShowroomEntities), "°C")
+          : formattedAttribute(poolClimate, "temperature", "°C"),
         hotWaterTemperature: formatted(scopedFind(inventory, valueBindings.hotWaterTemperature, allowShowroomEntities), "°C"),
         hotWaterAvailable: formatted(scopedFind(inventory, valueBindings.hotWaterAvailable, allowShowroomEntities), "%"),
         hotWaterPower: formatted(scopedFind(inventory, valueBindings.hotWaterPower, allowShowroomEntities), "W", "0 W"),
@@ -566,6 +682,11 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
         teslaPlugged: lektricoState
           ? formatted(lektricoState, "", "off")
           : formatted(scopedFind(inventory, valueBindings.teslaPlugged, allowShowroomEntities), "", "off"),
+        teslaOnline: formatted(scopedFind(inventory, valueBindings.teslaOnline, allowShowroomEntities), "", "off"),
+        teslaCharging: formatted(scopedFind(inventory, valueBindings.teslaCharging, allowShowroomEntities), "", "off"),
+        teslaDoors: formatted(scopedFind(inventory, valueBindings.teslaDoors, allowShowroomEntities), "", "unknown"),
+        teslaClimate: formatted(scopedFind(inventory, valueBindings.teslaClimate, allowShowroomEntities), "", "off"),
+        teslaSentry: formatted(scopedFind(inventory, valueBindings.teslaSentry, allowShowroomEntities), "", "off"),
         demoMode: formatted(scopedFind(inventory, valueBindings.demoMode, allowShowroomEntities), ""),
       },
       strategy: {
@@ -630,7 +751,11 @@ export async function queueAgentControl(
   const domain = resolved.item.entityId.split(".")[0];
   const service = domain === "lock"
     ? desiredActive ? "lock" : "unlock"
-    : desiredActive ? "turn_on" : "turn_off";
+    : domain === "cover"
+      ? desiredActive ? "open_cover" : "close_cover"
+      : domain === "button"
+        ? "press"
+        : desiredActive ? "turn_on" : "turn_off";
   const commandId = crypto.randomUUID();
   await getDb().insert(agentCommands).values({
     publicId: commandId,

@@ -38,12 +38,48 @@ FAST_ENTITY_PREFIXES = (
     "sensor.shellyem3_",
     "sensor.1_2_3_home_",
     "sensor.filtration_piscine_",
+    "sensor.pac_",
+    "sensor.piscine_",
+    "sensor.pool_",
+    "sensor.tesla_",
+    "sensor.model_x_",
+    "sensor.lektrico_",
+    "binary_sensor.tesla_",
+    "binary_sensor.model_x_",
+    "switch.tesla_",
+    "switch.model_x_",
+    "switch.lektrico_",
+    "button.tesla_",
+    "button.model_x_",
+    "button.lektrico_",
+    "climate.",
+    "weather.",
+    "sun.sun",
+    "light.",
+    "switch.",
+    "lock.",
+    "cover.",
     "input_boolean.demo_",
     "input_boolean.chauffe_eau_",
     "input_number.demo_",
     "input_number.chauffe_eau_",
     "input_select.demo_",
     "input_select.chauffe_eau_",
+)
+
+SAFE_ATTRIBUTE_KEYS = (
+    "unit_of_measurement",
+    "current_temperature",
+    "temperature",
+    "hvac_action",
+    "hvac_modes",
+    "min_temp",
+    "max_temp",
+    "target_temp_step",
+    "cloud_coverage",
+    "battery_level",
+    "charging_state",
+    "door_lock",
 )
 SHELLY_DAILY_ENERGY_BINDINGS = (
     (
@@ -60,6 +96,31 @@ SHELLY_DAILY_ENERGY_BINDINGS = (
         "sensor.shellyem3_483fdac38616_channel_c_energy_returned",
         "sensor.1_2_3_home_today_energy_export",
         "Énergie injectée aujourd'hui",
+    ),
+)
+DEVICE_DAILY_ENERGY_BINDINGS = (
+    (
+        ("sensor.filtration_piscine_energie_totale",),
+        "sensor.1_2_3_home_filtration_energy_today",
+        "Énergie filtration aujourd'hui",
+    ),
+    (
+        (
+            "sensor.pompe_a_chaleur_piscine_energie_totale",
+            "sensor.pac_piscine_energie_totale",
+        ),
+        "sensor.1_2_3_home_pool_heat_pump_energy_today",
+        "Énergie PAC piscine aujourd'hui",
+    ),
+    (
+        ("sensor.ce_wifi_commutateur_sur_rail_din_avec_mesure_2_energie_totale",),
+        "sensor.1_2_3_home_water_heater_energy_today",
+        "Énergie chauffe-eau aujourd'hui",
+    ),
+    (
+        ("sensor.1p7k_501290_energie",),
+        "sensor.1_2_3_home_vehicle_charge_energy_today",
+        "Énergie recharge véhicule aujourd'hui",
     ),
 )
 PERIOD_ENERGY_BINDINGS = (
@@ -138,7 +199,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.17",
+        "User-Agent": "Agent-123-Domotique/0.5.18",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -217,6 +278,59 @@ def shelly_daily_energy_inventory(
         return entries
     except Exception as error:
         log(f"Compteurs journaliers Shelly indisponibles ({error})")
+        return []
+
+
+def device_daily_energy_inventory(
+    supervisor_token: str,
+    config: dict[str, Any],
+    states: list[Any],
+    *,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Publie les consommations du jour des appareils comme l'application."""
+    try:
+        timezone_name = str(config.get("time_zone", "Europe/Paris"))
+        try:
+            local_timezone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            local_timezone = timezone.utc
+        current_time = now.astimezone(local_timezone) if now else datetime.now(local_timezone)
+        day_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        encoded_start = urllib.parse.quote(day_start.isoformat(), safe=":TZ+-")
+        by_entity_id = {
+            str(item.get("entity_id")): item
+            for item in states
+            if isinstance(item, dict) and item.get("entity_id")
+        }
+        entries = []
+        for source_candidates, target_entity_id, name in DEVICE_DAILY_ENERGY_BINDINGS:
+            source_entity_id = next(
+                (candidate for candidate in source_candidates if candidate in by_entity_id),
+                None,
+            )
+            if not source_entity_id:
+                continue
+            current = by_entity_id[source_entity_id]
+            encoded_entity_id = urllib.parse.quote(source_entity_id, safe="._")
+            history = request_json(
+                f"{SUPERVISOR_API}/history/period/{encoded_start}"
+                f"?filter_entity_id={encoded_entity_id}&minimal_response",
+                token=supervisor_token,
+            )
+            delta = daily_energy_delta(str(current.get("state", "")), history)
+            if delta is None:
+                continue
+            entries.append({
+                "entityId": target_entity_id,
+                "name": name,
+                "domain": "sensor",
+                "state": str(delta),
+                "deviceClass": "energy",
+            })
+        return entries
+    except Exception as error:
+        log(f"Compteurs journaliers des appareils indisponibles ({error})")
         return []
 
 
@@ -323,9 +437,21 @@ def home_assistant_summary(
             "domain": entity_id.split(".", 1)[0] if "." in entity_id else "",
             "state": str(state.get("state", "")),
             "deviceClass": attributes.get("device_class"),
+            "attributes": {
+                key: attributes[key]
+                for key in SAFE_ATTRIBUTE_KEYS
+                if key in attributes and isinstance(
+                    attributes[key], (str, int, float, bool, list)
+                )
+            },
         })
     if full_inventory:
         inventory.extend(shelly_daily_energy_inventory(
+            supervisor_token,
+            config,
+            states,
+        ))
+        inventory.extend(device_daily_energy_inventory(
             supervisor_token,
             config,
             states,
