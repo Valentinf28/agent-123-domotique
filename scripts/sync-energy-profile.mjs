@@ -44,6 +44,13 @@ outputs.push(
   [resolve(root, "../mobile/src/services/energyAllocation.js"), `${energyAllocationBanner}${energyAllocationSource}`],
 );
 
+const energySceneSource = await readFile(resolve(root, "shared/energy-scene.js"), "utf8");
+const energySceneBanner = "// Généré depuis ma-maison-portail-site/shared/energy-scene.js. Ne pas modifier à la main.\n";
+outputs.push(
+  [resolve(root, "lib/energy-scene.generated.js"), `${energySceneBanner}${energySceneSource}`],
+  [resolve(root, "../mobile/src/services/energySceneGeometry.js"), `${energySceneBanner}${energySceneSource}`],
+);
+
 if (process.argv.includes("--check")) {
   for (const [path, expected] of outputs) {
     assert.equal(await readFile(path, "utf8"), expected, `${path} n'est pas synchronisé`);

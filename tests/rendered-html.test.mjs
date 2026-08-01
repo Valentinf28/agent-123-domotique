@@ -183,6 +183,21 @@ test("partage le calcul maison et borne avec l’application", async () => {
   assert.match(portal, /energy\.vehiclePower/);
 });
 
+test("partage la géométrie complète de la scène Maison avec l’application", async () => {
+  const [canonical, generatedPortal, generatedMobile, portal] = await Promise.all([
+    readFile(new URL("../shared/energy-scene.js", import.meta.url), "utf8"),
+    readFile(new URL("../lib/energy-scene.generated.js", import.meta.url), "utf8"),
+    readFile(new URL("../../mobile/src/services/energySceneGeometry.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.equal(generatedPortal.replace(/^.*\n/, ""), canonical);
+  assert.equal(generatedMobile.replace(/^.*\n/, ""), canonical);
+  assert.match(canonical, /createEnergySceneLayout/);
+  assert.match(canonical, /vehicleCable/);
+  assert.match(portal, /sceneLayout\.paths\.vehicle/);
+  assert.match(portal, /sceneLayout\.inverterHub/);
+});
+
 test("crée et administre les automatisations via la Green Box", async () => {
   const [portal, collectionRoute, itemRoute, agentHome, agent] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),

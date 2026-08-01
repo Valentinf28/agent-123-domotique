@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CLIENT_EXPERIENCE } from "../lib/client-experience.generated";
 import { flowDurationMs, formatWatts } from "../lib/energy-allocation.generated.js";
+import { createEnergySceneLayout } from "../lib/energy-scene.generated.js";
 
 type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
 type HomeTab = (typeof CLIENT_EXPERIENCE.tabs)[number]["label"];
@@ -1550,8 +1551,9 @@ function powerNumber(value?: string) {
   return /kw/i.test(normalized) ? numeric * 1000 : numeric;
 }
 
-function SceneFlow({ route, active, reverse, color, power }: {
+function SceneFlow({ route, d, active, reverse, color, power }: {
   route: "solar" | "grid" | "home" | "battery" | "vehicle";
+  d: string;
   active: boolean;
   reverse?: boolean;
   color: string;
@@ -1561,14 +1563,15 @@ function SceneFlow({ route, active, reverse, color, power }: {
     "--flow-color": color,
     "--flow-duration": `${flowDurationMs(power)}ms`,
   } as CSSProperties;
-  const segmentCount = route === "solar" || route === "battery" ? 1 : 3;
-  return <div
+  return <g
     className={`scene-flow route-${route}${active ? " is-active" : ""}${reverse ? " is-reverse" : ""}`}
     style={style}
     aria-hidden="true"
   >
-    {Array.from({ length: segmentCount }, (_, index) => <span key={index} />)}
-  </div>;
+    <path className="scene-flow-base" d={d} />
+    {active && <path className="scene-flow-glow" d={d} />}
+    {active && <path className="scene-flow-dashes" d={d} />}
+  </g>;
 }
 
 function SceneLabel({ className, icon, title, value, sub, color }: {
@@ -1617,18 +1620,14 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
   const vehiclePlugged = vehicleWatts > 5
     || ["on", "connected", "charging", "complete", "stopped", "no_power", "starting", "branchée"].some((state) => pluggedState.includes(state));
   const isDay = scenePeriod !== "night";
-  const inverterY = isDay ? "52.22%" : "50.16%";
-  const batteryEndY = isDay ? "58.41%" : "56.51%";
+  const sceneLayout = createEnergySceneLayout(scenePeriod, 370, 630);
+  const labelTop = (base: number) => `${((base + sceneLayout.verticalOffset) / 630) * 100}%`;
   const sceneImage = CLIENT_EXPERIENCE.energyScene.portalImages[scenePeriod];
   const activeFlowWatts = CLIENT_EXPERIENCE.energyScene.flowActivationWatts;
 
   return <div className="energy-scene-wrap">
     <div
       className={`energy-scene-card ${isDay ? "is-day" : "is-night"}`}
-      style={{
-        "--inverter-y": inverterY,
-        "--battery-end-y": batteryEndY,
-      } as CSSProperties}
     >
       <img
         src={sceneImage}
@@ -1637,31 +1636,33 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
       />
       <div className="energy-scene-shade" />
 
-      <SceneFlow route="solar" active={solarWatts > activeFlowWatts} color="#ffe700" power={solarWatts} />
-      <SceneFlow route="grid" active={Math.abs(gridWatts) > activeFlowWatts} reverse={gridWatts > 0} color="#438ed0" power={gridWatts} />
-      <SceneFlow route="home" active={homeWatts > activeFlowWatts} color="#55c8bd" power={homeWatts} />
-      <SceneFlow route="battery" active={Math.abs(batteryWatts) > activeFlowWatts} reverse={batteryWatts > 0} color="#f05d9b" power={batteryWatts} />
-      <SceneFlow route="vehicle" active={vehiclePlugged && vehicleWatts > activeFlowWatts} color="#4ed6f5" power={vehicleWatts} />
-      <span className="scene-inverter-hub" aria-hidden="true" />
+      <svg className="scene-flow-svg" viewBox="0 0 370 630" preserveAspectRatio="none" aria-hidden="true">
+        <SceneFlow route="solar" d={sceneLayout.paths.solar} active={solarWatts > activeFlowWatts} color="#ffe700" power={solarWatts} />
+        <SceneFlow route="grid" d={sceneLayout.paths.grid} active={Math.abs(gridWatts) > activeFlowWatts} reverse={gridWatts > 0} color="#438ed0" power={gridWatts} />
+        <SceneFlow route="home" d={sceneLayout.paths.home} active={homeWatts > activeFlowWatts} color="#55c8bd" power={homeWatts} />
+        <SceneFlow route="battery" d={sceneLayout.paths.battery} active={Math.abs(batteryWatts) > activeFlowWatts} reverse={batteryWatts > 0} color="#f05d9b" power={batteryWatts} />
+        <SceneFlow route="vehicle" d={sceneLayout.paths.vehicle} active={vehiclePlugged && vehicleWatts > activeFlowWatts} color="#4ed6f5" power={vehicleWatts} />
+        <circle className="scene-inverter-hub" cx={sceneLayout.inverterHub.x} cy={sceneLayout.inverterHub.y} r="6" />
+      </svg>
 
-      <SceneLabel className="scene-production" icon="☀" title="Production" value={formatWatts(solarWatts)} color="#ffe700" />
-      <SceneLabel
+      <div style={{ top: labelTop(58) }} className="scene-label-anchor"><SceneLabel className="scene-production" icon="☀" title="Production" value={formatWatts(solarWatts)} color="#ffe700" /></div>
+      <div style={{ top: labelTop(238) }} className="scene-label-anchor"><SceneLabel
         className="scene-grid"
         icon="♜"
         title="Réseau"
         value={Math.abs(gridWatts) < 5 ? "0 W" : `${gridWatts > 0 ? "→ " : "← "}${formatWatts(gridWatts)}`}
         color="#438ed0"
-      />
-      <SceneLabel className="scene-home" icon="⌂" title="Consommation" value={formatWatts(homeWatts)} color="#55c8bd" />
-      <SceneLabel
+      /></div>
+      <div style={{ top: labelTop(268) }} className="scene-label-anchor"><SceneLabel className="scene-home" icon="⌂" title="Consommation" value={formatWatts(homeWatts)} color="#55c8bd" /></div>
+      <div style={{ top: labelTop(424) }} className="scene-label-anchor"><SceneLabel
         className="scene-battery"
         icon="▰"
         title="Batterie"
         value={overview?.energy.battery ?? "0 %"}
         sub={Math.abs(batteryWatts) < 5 ? "0 W" : `${batteryWatts > 0 ? "↑ " : "↓ "}${formatWatts(batteryWatts)}`}
         color="#f05d9b"
-      />
-      {vehiclePlugged && <SceneLabel className="scene-vehicle" icon="◇" title="Voiture" value={formatWatts(vehicleWatts)} color="#4ed6f5" />}
+      /></div>
+      {vehiclePlugged && <div style={{ top: labelTop(448) }} className="scene-label-anchor"><SceneLabel className="scene-vehicle" icon="◇" title="Voiture" value={formatWatts(vehicleWatts)} color="#4ed6f5" /></div>}
     </div>
   </div>;
 }
