@@ -19,6 +19,8 @@ SPEC.loader.exec_module(agent)
 
 ENTITIES = {
     "gridPowerEntityId": "sensor.shellyem3_483fdac38616_channel_c_power",
+    "batteryPowerEntityId": "sensor.deye_battery_power",
+    "batteryLevelEntityId": "sensor.deye_battery_state_of_charge",
     "chargerStateEntityId": "sensor.1p7k_501290_state",
     "chargerCurrentEntityId": "sensor.1p7k_501290_courant",
     "chargerVoltageEntityId": "sensor.1p7k_501290_tension",
@@ -67,7 +69,11 @@ class LektricoSolarPlanTests(unittest.TestCase):
         self.assertIn("number.1p7k_501290_dynamic_limit", serialized)
         self.assertIn("button.1p7k_501290_charge_start", serialized)
         self.assertIn("button.1p7k_501290_charge_stop", serialized)
-        self.assertIn("-grid - 100", serialized)
+        self.assertIn("battery_discharge - 100", serialized)
+        self.assertIn("sensor.deye_battery_power", serialized)
+        self.assertIn("sensor.deye_battery_state_of_charge", serialized)
+        self.assertIn(">= 95", serialized)
+        self.assertIn("float(0), 0] | max", serialized)
         self.assertIn("default", serialized)
         self.assertIn("'need_auth'", serialized)
         self.assertIn("'paused_by_scheduler'", serialized)
@@ -95,6 +101,42 @@ class LektricoSolarPlanTests(unittest.TestCase):
         self.assertEqual(response["type"], "command.result")
         self.assertFalse(response["ok"])
         self.assertIn("introuvable", response["error"])
+
+    def test_accepts_a_house_without_battery(self):
+        entities_without_battery = {
+            key: value for key, value in ENTITIES.items()
+            if key not in {"batteryPowerEntityId", "batteryLevelEntityId"}
+        }
+        available = [
+            {"entity_id": entity_id, "state": "off", "attributes": {}}
+            for key, value in entities_without_battery.items()
+            for entity_id in (value if key == "faultEntityIds" else [value])
+        ]
+        calls = []
+
+        def fake_request(url, **kwargs):
+            calls.append((url, kwargs))
+            if url.endswith("/states"):
+                return available
+            return {}
+
+        with patch.object(agent, "request_json", side_effect=fake_request):
+            response = agent.relay_command(
+                "token",
+                {
+                    "id": "test",
+                    "action": "ha.ev_charger.solar_plan",
+                    "payload": entities_without_battery,
+                },
+            )
+
+        self.assertTrue(response["ok"])
+        automation_call = next(
+            kwargs for url, kwargs in calls
+            if "/config/automation/config/ma_maison_lektrico_solar_charging" in url
+        )
+        self.assertNotIn("sensor.deye_battery_power", str(automation_call["payload"]))
+        self.assertNotIn("sensor.deye_battery_state_of_charge", str(automation_call["payload"]))
 
 
 if __name__ == "__main__":

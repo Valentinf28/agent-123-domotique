@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 0.5.24
+
+- Empêche la recharge solaire Lektrico d'utiliser la batterie domestique.
+- Donne la priorité à la batterie de la maison jusqu'à 95 %, puis utilise le surplus exporté.
+- Réduit automatiquement l'intensité dès que la batterie commence à se décharger.
+- Arrête la recharge lorsque le surplus réel ne permet plus de maintenir 6 A.
+
 ## 0.5.23
 
 - Aligne les données du portail avec celles de l’application mobile.
