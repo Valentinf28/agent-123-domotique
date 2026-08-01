@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.25
+
+- Laisse à la borne le temps de stabiliser sa mesure après l'enclenchement du relais.
+- Utilise la limite demandée tant que le courant réel Lektrico n'est pas encore remonté.
+- Évite les démarrages suivis d'une coupure cinq secondes plus tard malgré un surplus suffisant.
+
 ## 0.5.24
 
 - Empêche la recharge solaire Lektrico d'utiliser la batterie domestique.

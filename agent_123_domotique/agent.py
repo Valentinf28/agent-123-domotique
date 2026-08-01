@@ -214,7 +214,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.24",
+        "User-Agent": "Agent-123-Domotique/0.5.25",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -1250,9 +1250,13 @@ def relay_command(
             target_current_template = (
                 "{% set grid = states('" + grid_power_entity_id + "') | float(0) %} "
                 "{% set current = states('" + charger_current_entity_id + "') | float(0) %} "
+                "{% set requested = states('" + dynamic_limit_entity_id + "') | float("
+                + str(minimum_amps) + ") %} "
+                "{% set effective_current = [current, requested] | max "
+                "if is_state('" + charger_state_entity_id + "', 'charging') else current %} "
                 "{% set voltage = [states('" + charger_voltage_entity_id + "') | float(230), 210] | max %} "
                 "{% set battery_discharge = " + battery_discharge_template + " %} "
-                "{% set desired = (current + ((-grid - battery_discharge - "
+                "{% set desired = (effective_current + ((-grid - battery_discharge - "
                 + str(reserve_watts) + ") / voltage)) "
                 "| round(0, 'floor') | int %} "
                 "{{ [[desired, " + str(minimum_amps) + "] | max, "
@@ -1260,8 +1264,12 @@ def relay_command(
             )
             insufficient_surplus_template = (
                 "{{ is_state('" + charger_state_entity_id + "', 'charging') and "
+                "(as_timestamp(now()) - as_timestamp(states['"
+                + charger_state_entity_id + "'].last_changed)) >= 20 and "
                 "(not " + battery_ready_template + " or "
-                "(states('" + charger_current_entity_id + "') | float(0) + "
+                "([states('" + charger_current_entity_id + "') | float(0), "
+                "states('" + dynamic_limit_entity_id + "') | float("
+                + str(minimum_amps) + ")] | max + "
                 "((0 - (states('" + grid_power_entity_id + "') | float(0)) - ("
                 + battery_discharge_template + ") - "
                 + str(reserve_watts) + ") / "

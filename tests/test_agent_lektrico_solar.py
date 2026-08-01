@@ -74,6 +74,8 @@ class LektricoSolarPlanTests(unittest.TestCase):
         self.assertIn("sensor.deye_battery_state_of_charge", serialized)
         self.assertIn(">= 95", serialized)
         self.assertIn("float(0), 0] | max", serialized)
+        self.assertIn("states('number.1p7k_501290_dynamic_limit')", serialized)
+        self.assertIn(">= 20", serialized)
         self.assertIn("default", serialized)
         self.assertIn("'need_auth'", serialized)
         self.assertIn("'paused_by_scheduler'", serialized)
