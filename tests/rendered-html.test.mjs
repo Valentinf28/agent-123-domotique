@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import {
+  allocateHomeAndVehiclePower,
+  powerEntityWatts,
+} from "../lib/energy-allocation.generated.js";
 
 test("affiche le portail Ma Maison en français", async () => {
   const [layout, page, portal] = await Promise.all([
@@ -193,8 +197,25 @@ test("partage le calcul maison et borne avec l’application", async () => {
   assert.equal(generatedPortal.replace(/^.*\n/, ""), canonical);
   assert.equal(generatedMobile.replace(/^.*\n/, ""), canonical);
   assert.match(agentHome, /allocateHomeAndVehiclePower/);
+  assert.match(agentHome, /chargerWatts: inventoryPowerWatts\(lektricoPower, "kW"\)/);
   assert.match(agentHome, /vehiclePower: formatWatts/);
   assert.match(portal, /energy\.vehiclePower/);
+});
+
+test("convertit la borne en watts et la retire entièrement de la maison", () => {
+  const chargerWatts = powerEntityWatts({
+    state: "2.38269",
+    attributes: { unit_of_measurement: "kW" },
+  });
+  assert.equal(chargerWatts, 2382.69);
+  assert.deepEqual(allocateHomeAndVehiclePower({
+    totalHomeWatts: 3382.69,
+    chargerWatts,
+    chargerAvailable: true,
+  }), {
+    homeWatts: 1000,
+    vehicleWatts: 2382.69,
+  });
 });
 
 test("partage la géométrie complète de la scène Maison avec l’application", async () => {

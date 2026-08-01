@@ -282,13 +282,41 @@ function formatted(item: InventoryItem | null, unit: string, fallback = "—") {
   if (!item || ["unknown", "unavailable"].includes(item.state)) return fallback;
   const numeric = Number(item.state);
   if (!Number.isFinite(numeric)) return item.state;
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(numeric)}${unit ? ` ${unit}` : ""}`;
+  const measuredUnit = typeof item.attributes?.unit_of_measurement === "string"
+    ? item.attributes.unit_of_measurement.trim()
+    : "";
+  const displayedUnit = measuredUnit || unit;
+  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(numeric)}${displayedUnit ? ` ${displayedUnit}` : ""}`;
 }
 
-function numeric(item: InventoryItem | null) {
-  if (!item || ["unknown", "unavailable"].includes(item.state)) return null;
+function inventoryPowerWatts(item: InventoryItem | null, fallbackUnit = "W") {
+  if (!item || ["unknown", "unavailable"].includes(item.state.toLowerCase())) return 0;
+  const measuredUnit = typeof item.attributes?.unit_of_measurement === "string"
+    ? item.attributes.unit_of_measurement
+    : fallbackUnit;
+  return powerValueWatts(item.state, measuredUnit);
+}
+
+function formattedPower(item: InventoryItem | null, fallback = "0 W", fallbackUnit = "W") {
+  if (!item || ["unknown", "unavailable"].includes(item.state.toLowerCase())) return fallback;
+  return formatWatts(inventoryPowerWatts(item, fallbackUnit));
+}
+
+function inventoryEnergyKwh(item: InventoryItem | null) {
+  if (!item || ["unknown", "unavailable"].includes(item.state.toLowerCase())) return null;
   const value = Number(item.state);
-  return Number.isFinite(value) ? value : null;
+  if (!Number.isFinite(value)) return null;
+  const unit = String(item.attributes?.unit_of_measurement || "kWh").trim().toLowerCase();
+  if (unit === "wh") return value / 1000;
+  if (unit === "mwh") return value * 1000;
+  return value;
+}
+
+function formattedEnergy(item: InventoryItem | null, fallback = "—") {
+  const value = inventoryEnergyKwh(item);
+  return value === null
+    ? fallback
+    : `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value)} kWh`;
 }
 
 function derivedEnergyMetrics(
@@ -297,10 +325,10 @@ function derivedEnergyMetrics(
   imported: InventoryItem | null,
   exported: InventoryItem | null,
 ) {
-  const productionKwh = numeric(production);
-  const consumptionKwh = numeric(consumption);
-  const importedKwh = numeric(imported);
-  const exportedKwh = numeric(exported);
+  const productionKwh = inventoryEnergyKwh(production);
+  const consumptionKwh = inventoryEnergyKwh(consumption);
+  const importedKwh = inventoryEnergyKwh(imported);
+  const exportedKwh = inventoryEnergyKwh(exported);
   const selfConsumedKwh = productionKwh === null
     ? null
     : Math.max(0, productionKwh - (exportedKwh ?? 0));
@@ -587,9 +615,12 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
   const lektricoAvailable = Boolean(lektricoPower)
     && !["unknown", "unavailable"].includes(lektricoPower.state.toLowerCase());
   const allocatedPower = allocateHomeAndVehiclePower({
-    totalHomeWatts: powerValueWatts(energyItems.home?.state),
-    chargerWatts: powerValueWatts(lektricoPower?.state),
-    fallbackVehicleWatts: powerValueWatts(teslaPower?.state, "kW"),
+    totalHomeWatts: inventoryPowerWatts(energyItems.home),
+    // La borne Lektrico remonte actuellement sa mesure en kW. L'attribut
+    // Home Assistant reste prioritaire, et ce repli protège aussi les anciens
+    // inventaires enregistrés avant la transmission des unités.
+    chargerWatts: inventoryPowerWatts(lektricoPower, "kW"),
+    fallbackVehicleWatts: inventoryPowerWatts(teslaPower, "kW"),
     chargerAvailable: lektricoAvailable,
   });
   const heatingClimate = scopedFind(inventory, valueBindings.heatingSetpoint, allowShowroomEntities);
@@ -617,44 +648,44 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     automations,
     mobileOverview: {
       energy: {
-        solar: formatted(energyItems.solar, "W", "0 W"),
+        solar: formattedPower(energyItems.solar),
         home: formatWatts(allocatedPower.homeWatts),
-        grid: formatted(energyItems.grid, "W", "0 W"),
+        grid: formattedPower(energyItems.grid),
         battery: formatted(energyItems.battery, "%", "0 %"),
-        batteryPower: formatted(energyItems.batteryPower, "W", "0 W"),
-        filtration: formatted(scopedFind(inventory, valueBindings.filtration, allowShowroomEntities), "W", "0 W"),
-        dailyProduction: formatted(energyItems.dailyProduction, "kWh"),
-        dailyConsumption: formatted(energyItems.dailyConsumption, "kWh"),
-        dailyImport: formatted(energyItems.dailyImport, "kWh"),
-        dailyExport: formatted(energyItems.dailyExport, "kWh"),
-        monthlyProduction: formatted(energyItems.monthlyProduction, "kWh"),
-        monthlyConsumption: formatted(energyItems.monthlyConsumption, "kWh"),
-        monthlyImport: formatted(energyItems.monthlyImport, "kWh"),
-        monthlyExport: formatted(energyItems.monthlyExport, "kWh"),
-        yearlyProduction: formatted(energyItems.yearlyProduction, "kWh"),
-        yearlyConsumption: formatted(energyItems.yearlyConsumption, "kWh"),
-        yearlyImport: formatted(energyItems.yearlyImport, "kWh"),
-        yearlyExport: formatted(energyItems.yearlyExport, "kWh"),
+        batteryPower: formattedPower(energyItems.batteryPower),
+        filtration: formattedPower(scopedFind(inventory, valueBindings.filtration, allowShowroomEntities)),
+        dailyProduction: formattedEnergy(energyItems.dailyProduction),
+        dailyConsumption: formattedEnergy(energyItems.dailyConsumption),
+        dailyImport: formattedEnergy(energyItems.dailyImport),
+        dailyExport: formattedEnergy(energyItems.dailyExport),
+        monthlyProduction: formattedEnergy(energyItems.monthlyProduction),
+        monthlyConsumption: formattedEnergy(energyItems.monthlyConsumption),
+        monthlyImport: formattedEnergy(energyItems.monthlyImport),
+        monthlyExport: formattedEnergy(energyItems.monthlyExport),
+        yearlyProduction: formattedEnergy(energyItems.yearlyProduction),
+        yearlyConsumption: formattedEnergy(energyItems.yearlyConsumption),
+        yearlyImport: formattedEnergy(energyItems.yearlyImport),
+        yearlyExport: formattedEnergy(energyItems.yearlyExport),
         installedPower: formatted(energyItems.installedPower, "Wc", "9 635 Wc"),
         vehiclePower: formatWatts(allocatedPower.vehicleWatts),
-        pv1: formatted(scopedFind(inventory, valueBindings.pv1, allowShowroomEntities), "W", "0 W"),
-        pv2: formatted(scopedFind(inventory, valueBindings.pv2, allowShowroomEntities), "W", "0 W"),
-        pv3: formatted(scopedFind(inventory, valueBindings.pv3, allowShowroomEntities), "W", "0 W"),
-        peakPower: formatted(scopedFind(inventory, valueBindings.peakPower, allowShowroomEntities), "W", "0 W"),
-        forecastToday: formatted(scopedFind(inventory, valueBindings.forecastToday, allowShowroomEntities), "kWh"),
-        forecastRemaining: formatted(scopedFind(inventory, valueBindings.forecastRemaining, allowShowroomEntities), "kWh"),
-        forecastPowerNow: formatted(scopedFind(inventory, valueBindings.forecastPowerNow, allowShowroomEntities), "W"),
+        pv1: formattedPower(scopedFind(inventory, valueBindings.pv1, allowShowroomEntities)),
+        pv2: formattedPower(scopedFind(inventory, valueBindings.pv2, allowShowroomEntities)),
+        pv3: formattedPower(scopedFind(inventory, valueBindings.pv3, allowShowroomEntities)),
+        peakPower: formattedPower(scopedFind(inventory, valueBindings.peakPower, allowShowroomEntities)),
+        forecastToday: formattedEnergy(scopedFind(inventory, valueBindings.forecastToday, allowShowroomEntities)),
+        forecastRemaining: formattedEnergy(scopedFind(inventory, valueBindings.forecastRemaining, allowShowroomEntities)),
+        forecastPowerNow: formattedPower(scopedFind(inventory, valueBindings.forecastPowerNow, allowShowroomEntities), "—"),
         cloudCover: formatted(scopedFind(inventory, valueBindings.cloudCover, allowShowroomEntities), "%"),
         moonPhase: formatted(scopedFind(inventory, valueBindings.moonPhase, allowShowroomEntities), ""),
-        filtrationToday: formatted(scopedFind(inventory, valueBindings.filtrationToday, allowShowroomEntities), "kWh"),
-        poolHeatPump: formatted(scopedFind(inventory, valueBindings.poolHeatPumpPower, allowShowroomEntities), "W", "0 W"),
-        poolHeatPumpToday: formatted(scopedFind(inventory, valueBindings.poolHeatPumpToday, allowShowroomEntities), "kWh"),
+        filtrationToday: formattedEnergy(scopedFind(inventory, valueBindings.filtrationToday, allowShowroomEntities)),
+        poolHeatPump: formattedPower(scopedFind(inventory, valueBindings.poolHeatPumpPower, allowShowroomEntities)),
+        poolHeatPumpToday: formattedEnergy(scopedFind(inventory, valueBindings.poolHeatPumpToday, allowShowroomEntities)),
         poolPh: formatted(scopedFind(inventory, valueBindings.poolPh, allowShowroomEntities), ""),
         poolChlorine: formatted(scopedFind(inventory, valueBindings.poolChlorine, allowShowroomEntities), ""),
-        hotWaterToday: formatted(scopedFind(inventory, valueBindings.hotWaterToday, allowShowroomEntities), "kWh"),
+        hotWaterToday: formattedEnergy(scopedFind(inventory, valueBindings.hotWaterToday, allowShowroomEntities)),
         teslaRange: formatted(scopedFind(inventory, valueBindings.teslaRange, allowShowroomEntities), "km"),
         teslaCabinTemperature: formatted(scopedFind(inventory, valueBindings.teslaCabinTemperature, allowShowroomEntities), "°C"),
-        lektricoEnergy: formatted(scopedFind(inventory, valueBindings.lektricoEnergy, allowShowroomEntities), "kWh"),
+        lektricoEnergy: formattedEnergy(scopedFind(inventory, valueBindings.lektricoEnergy, allowShowroomEntities)),
         lektricoCurrent: formatted(scopedFind(inventory, valueBindings.lektricoCurrent, allowShowroomEntities), "A"),
         lektricoVoltage: formatted(scopedFind(inventory, valueBindings.lektricoVoltage, allowShowroomEntities), "V"),
         lektricoTemperature: formatted(scopedFind(inventory, valueBindings.lektricoTemperature, allowShowroomEntities), "°C"),
@@ -675,7 +706,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
           : formattedAttribute(poolClimate, "temperature", "°C"),
         hotWaterTemperature: formatted(scopedFind(inventory, valueBindings.hotWaterTemperature, allowShowroomEntities), "°C"),
         hotWaterAvailable: formatted(scopedFind(inventory, valueBindings.hotWaterAvailable, allowShowroomEntities), "%"),
-        hotWaterPower: formatted(scopedFind(inventory, valueBindings.hotWaterPower, allowShowroomEntities), "W", "0 W"),
+        hotWaterPower: formattedPower(scopedFind(inventory, valueBindings.hotWaterPower, allowShowroomEntities)),
         hotWaterMode: formatted(scopedFind(inventory, valueBindings.hotWaterMode, allowShowroomEntities), ""),
         teslaBattery: formatted(scopedFind(inventory, valueBindings.teslaBattery, allowShowroomEntities), "%"),
         teslaPower: formatWatts(allocatedPower.vehicleWatts),
