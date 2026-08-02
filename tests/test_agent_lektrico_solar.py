@@ -70,7 +70,6 @@ class LektricoSolarPlanTests(unittest.TestCase):
         self.assertIn("button.1p7k_501290_charge_start", serialized)
         self.assertIn("button.1p7k_501290_charge_stop", serialized)
         self.assertIn("-grid - 100", serialized)
-        self.assertIn("default", serialized)
         self.assertIn("'need_auth'", serialized)
         self.assertIn("'paused_by_scheduler'", serialized)
         self.assertIn("sensor.batterie_deye_soc", serialized)
@@ -78,6 +77,7 @@ class LektricoSolarPlanTests(unittest.TestCase):
         self.assertIn("sensor.onduleur_battery_power", serialized)
         self.assertIn("battery_discharge", serialized)
         self.assertEqual(automation["trigger"][1]["for"]["seconds"], 15)
+        self.assertEqual(automation["trigger"][2]["for"]["seconds"], 45)
         stop_choice = automation["action"][0]["choose"][0]
         self.assertEqual(
             stop_choice["sequence"],
@@ -85,6 +85,19 @@ class LektricoSolarPlanTests(unittest.TestCase):
                 "service": "button.press",
                 "target": {"entity_id": "button.1p7k_501290_charge_stop"},
             }],
+        )
+        choices = automation["action"][0]["choose"]
+        stop_sequences = [
+            step for choice in choices for step in choice["sequence"]
+            if step.get("target", {}).get("entity_id")
+            == "button.1p7k_501290_charge_stop"
+        ]
+        self.assertEqual(len(stop_sequences), 1)
+        retry_choice = choices[-1]
+        self.assertIn("now().second", str(retry_choice["conditions"]))
+        self.assertEqual(
+            retry_choice["sequence"][-1]["target"]["entity_id"],
+            "button.1p7k_501290_charge_start",
         )
         self.assertNotIn("'value': 0", serialized)
 

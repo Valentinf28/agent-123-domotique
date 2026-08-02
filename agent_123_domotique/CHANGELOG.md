@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.24
+
+- Respecte les 45 secondes de tolérance avant d’arrêter une recharge dont le surplus devient insuffisant.
+- Ne coupe plus la borne pendant les quelques secondes nécessaires au démarrage de la voiture.
+- Relance automatiquement la recharge toutes les 15 secondes tant que la voiture est prête et que le surplus reste suffisant.
+
 ## 0.5.23
 
 - Donne la priorité à la batterie de la maison jusqu’à 95 % avant de lancer la recharge solaire.

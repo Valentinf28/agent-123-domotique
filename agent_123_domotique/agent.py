@@ -1150,6 +1150,14 @@ def relay_command(
                 "([states('" + charger_voltage_entity_id + "') | float(230), 210] | max))) < "
                 + str(minimum_amps) + " }}"
             )
+            sufficient_surplus_template = (
+                "{{ is_state('" + charger_state_entity_id + "', 'charging') and "
+                "(states('" + charger_current_entity_id + "') | float(0) + "
+                "((0 - (states('" + grid_power_entity_id + "') | float(0)) - "
+                + str(reserve_watts) + " - (" + battery_discharge_template + ")) / "
+                "([states('" + charger_voltage_entity_id + "') | float(230), 210] | max))) >= "
+                + str(minimum_amps) + " }}"
+            )
 
             automation_payload = {
                 "id": automation_id,
@@ -1230,9 +1238,6 @@ def relay_command(
                                     "data": {"value": minimum_amps},
                                 },
                                 {
-                                    "delay": {"hours": 0, "minutes": 0, "seconds": 1},
-                                },
-                                {
                                     "service": "button.press",
                                     "target": {"entity_id": start_button_entity_id},
                                 },
@@ -1253,26 +1258,43 @@ def relay_command(
                                     "condition": "template",
                                     "value_template": "{{ not (" + fault_condition + ") }}",
                                 },
+                                {
+                                    "condition": "template",
+                                    "value_template": sufficient_surplus_template,
+                                },
                             ],
                             "sequence": [{
-                                "choose": [
-                                    {
-                                        "conditions": [{
-                                            "condition": "template",
-                                            "value_template": insufficient_surplus_template,
-                                        }],
-                                        "sequence": [{
-                                            "service": "button.press",
-                                            "target": {"entity_id": stop_button_entity_id},
-                                        }],
-                                    },
-                                ],
-                                "default": [{
+                                "service": "number.set_value",
+                                "target": {"entity_id": dynamic_limit_entity_id},
+                                "data": {"value": target_current_template},
+                            }],
+                        },
+                        {
+                            "conditions": [
+                                {
+                                    "condition": "trigger",
+                                    "id": ["ajustement"],
+                                },
+                                {
+                                    "condition": "template",
+                                    "value_template": start_threshold_template,
+                                },
+                                {
+                                    "condition": "template",
+                                    "value_template": "{{ (now().second | int) % 15 == 0 }}",
+                                },
+                            ],
+                            "sequence": [
+                                {
                                     "service": "number.set_value",
                                     "target": {"entity_id": dynamic_limit_entity_id},
                                     "data": {"value": target_current_template},
-                                }],
-                            }],
+                                },
+                                {
+                                    "service": "button.press",
+                                    "target": {"entity_id": start_button_entity_id},
+                                },
+                            ],
                         },
                     ],
                 }],
