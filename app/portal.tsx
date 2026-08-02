@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CLIENT_EXPERIENCE } from "../lib/client-experience.generated";
-import { createEnergyFlowState, flowDurationMs, formatWatts } from "../lib/energy-allocation.generated.js";
+import { createEnergyFlowState, flowDurationMs, formatKilowatts, formatWatts } from "../lib/energy-allocation.generated.js";
 import { createEnergySceneLayout } from "../lib/energy-scene.generated.js";
 
 type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
@@ -1857,8 +1857,7 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
   const forecastTime = (value: string | null) => value
     ? new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
     : "—";
-  const forecastKwh = (value: number) =>
-    `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value / 1000)} kWh`;
+  const forecastKwh = (value: number) => formatKilowatts(value).replace(" kW", " kWh");
   const confidenceLabel = solarForecastSummary?.confidence === "high"
     ? "Élevée"
     : solarForecastSummary?.confidence === "medium" ? "Moyenne" : "Faible";

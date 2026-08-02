@@ -10,6 +10,8 @@ import {
 } from "./entity-resolution.generated.js";
 import {
   allocateHomeAndVehiclePower,
+  energyValueKwh,
+  formatKwh,
   formatWatts,
   powerValueWatts,
 } from "./energy-allocation.generated.js";
@@ -309,19 +311,14 @@ function formattedPower(item: InventoryItem | null, fallback = "0 W", fallbackUn
 
 function inventoryEnergyKwh(item: InventoryItem | null) {
   if (!item || ["unknown", "unavailable"].includes(item.state.toLowerCase())) return null;
-  const value = Number(item.state);
-  if (!Number.isFinite(value)) return null;
-  const unit = String(item.attributes?.unit_of_measurement || "kWh").trim().toLowerCase();
-  if (unit === "wh") return value / 1000;
-  if (unit === "mwh") return value * 1000;
-  return value;
+  return energyValueKwh(item.state, String(item.attributes?.unit_of_measurement || "kWh"));
 }
 
 function formattedEnergy(item: InventoryItem | null, fallback = "—") {
   const value = inventoryEnergyKwh(item);
   return value === null
     ? fallback
-    : `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value)} kWh`;
+    : formatKwh(value, fallback);
 }
 
 function derivedEnergyMetrics(
