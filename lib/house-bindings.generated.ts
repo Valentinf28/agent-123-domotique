@@ -8,6 +8,10 @@ export const HOUSE_BINDINGS = {
     "sensor.filtration_piscine_energie_totale",
     "filtration piscine energie totale"
   ],
+  "filtrationEnergyToday": [
+    "sensor.1_2_3_home_filtration_energy_today",
+    "energie filtration aujourd hui"
+  ],
   "heatingClimate": [
     "climate.152832117468341_climate_zone1",
     "chauffage central zone1 thermostat"
@@ -47,6 +51,10 @@ export const HOUSE_BINDINGS = {
     "sensor.pac_piscine_energie_totale",
     "energie pac piscine",
     "pool heat pump energy"
+  ],
+  "poolHeatPumpEnergyToday": [
+    "sensor.1_2_3_home_pool_heat_pump_energy_today",
+    "energie pac piscine aujourd hui"
   ],
   "filtration": [
     "switch.filtration_piscine_switch",
@@ -134,15 +142,25 @@ export const HOUSE_BINDINGS = {
     "sensor.ce_wifi_commutateur_sur_rail_din_avec_mesure_2_energie_totale",
     "chauffe eau energie totale"
   ],
+  "waterHeaterEnergyToday": [
+    "sensor.1_2_3_home_water_heater_energy_today",
+    "energie chauffe eau aujourd hui"
+  ],
   "lektricoState": [
     "sensor.1p7k_501290_state",
+    "sensor.1p7k_501290_charging_state",
+    "sensor.lektrico_state",
     "lektrico etat",
-    "lektrico state"
+    "lektrico state",
+    "evse state"
   ],
   "lektricoPower": [
     "sensor.1p7k_501290_puissance",
+    "sensor.1p7k_501290_active_power",
+    "sensor.lektrico_power",
     "lektrico puissance",
-    "lektrico power"
+    "lektrico power",
+    "evse power"
   ],
   "lektricoEnergy": [
     "sensor.1p7k_501290_energie",
@@ -151,13 +169,19 @@ export const HOUSE_BINDINGS = {
   ],
   "lektricoCurrent": [
     "sensor.1p7k_501290_courant",
+    "sensor.1p7k_501290_current",
+    "sensor.lektrico_current",
     "lektrico courant",
-    "lektrico current"
+    "lektrico current",
+    "evse current"
   ],
   "lektricoVoltage": [
     "sensor.1p7k_501290_tension",
+    "sensor.1p7k_501290_voltage",
+    "sensor.lektrico_voltage",
     "lektrico tension",
-    "lektrico voltage"
+    "lektrico voltage",
+    "evse voltage"
   ],
   "lektricoTemperature": [
     "sensor.1p7k_501290_temperature",
@@ -165,7 +189,9 @@ export const HOUSE_BINDINGS = {
   ],
   "lektricoDynamicLimit": [
     "number.1p7k_501290_dynamic_limit",
-    "lektrico dynamic limit"
+    "number.lektrico_dynamic_limit",
+    "lektrico dynamic limit",
+    "dynamic current limit"
   ],
   "lektricoInstallationCurrent": [
     "sensor.1p7k_501290_installation_current",
@@ -186,6 +212,10 @@ export const HOUSE_BINDINGS = {
   "lektricoSolarAutomation": [
     "automation.1_2_3_home_recharge_solaire_lektrico",
     "recharge solaire lektrico"
+  ],
+  "lektricoOffPeakAutomation": [
+    "automation.1_2_3_home_recharge_heures_creuses_lektrico",
+    "recharge heures creuses lektrico"
   ],
   "lektricoFaultEv": [
     "binary_sensor.1p7k_501290_ev_error"

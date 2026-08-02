@@ -2,20 +2,69 @@
 
 ## 0.5.27
 
-- Ajoute la consultation complète des journées précédentes depuis le calendrier de l'application et du portail.
-- Permet de demander une date de fin précise pour l'historique Home Assistant.
-- Enregistre les mesures énergétiques toutes les cinq minutes pour afficher des courbes plus détaillées.
+- Conserve la régulation solaire Lektrico fiabilisée et son redémarrage automatique.
+- Ajoute le mode de recharge Lektrico pendant une ou plusieurs plages d'heures creuses.
+- Enrichit l'inventaire transmis au portail avec les métadonnées sûres du registre Home Assistant pour faciliter la découverte et le préparamétrage des appareils.
+
+## 0.5.26
+
+- Respecte les 45 secondes de tolérance avant d’arrêter une recharge dont le surplus devient insuffisant.
+- Ne coupe plus la borne pendant les quelques secondes nécessaires au démarrage de la voiture.
+- Relance automatiquement la recharge toutes les 15 secondes tant que la voiture est prête et que le surplus reste suffisant.
+
+## 0.5.25
+
+- Laisse à la borne le temps de stabiliser sa mesure après l'enclenchement du relais.
+- Utilise la limite demandée tant que le courant réel Lektrico n'est pas encore remonté.
+- Évite les démarrages suivis d'une coupure cinq secondes plus tard malgré un surplus suffisant.
+
+## 0.5.24
+
+- Empêche la recharge solaire Lektrico d'utiliser la batterie domestique.
+- Donne la priorité à la batterie de la maison jusqu'à 95 %, puis utilise le surplus exporté.
+- Réduit automatiquement l'intensité dès que la batterie commence à se décharger.
+- Arrête la recharge lorsque le surplus réel ne permet plus de maintenir 6 A.
+
+## 0.5.23
+
+- Aligne les données du portail avec celles de l’application mobile.
+- Transmet les températures, consignes, états météo, piscine, Tesla et Lektrico utiles.
+- Ajoute les consommations journalières de la filtration, de la PAC piscine, du chauffe-eau et de la recharge véhicule.
+- Accélère la remontée des équipements importants toutes les cinq secondes.
+
+## 0.5.22
+
+- Autorise le redémarrage solaire quand une voiture branchée attend l'autorisation de la borne.
+- Prend aussi en charge une recharge mise en pause par le programmateur Lektrico.
+
+## 0.5.21
+
+- Accélère la régulation locale Lektrico avec un contrôle toutes les 5 secondes.
+- Arrête réellement la borne lorsque le surplus devient insuffisant au lieu de demander une limite invalide de 0 A.
+- Évite que la recharge reste physiquement à 6 A alors que l’application affiche 0 A.
+
+## 0.5.20
+
+- Ajoute la régulation locale de la borne Lektrico sur le surplus solaire.
+- Ajuste la limite dynamique toutes les 15 secondes avec une marge anti-import.
+- Arrête la recharge en cas d’import réseau persistant ou de défaut de la borne.
 
 ## 0.5.19
 
-- Permet de demander une date de fin précise pour l’historique Home Assistant.
-- Rend possible la consultation complète d’une journée passée dans l’application.
-- Enregistre les mesures énergétiques du portail toutes les cinq minutes pour un graphique plus précis.
+- Unifie les cumuls énergétiques jour, mois et année utilisés par l’application et le portail.
+- Conserve Deye pour la production et Shelly pour la consommation et les échanges réseau.
+
+## 0.5.18
+
+- Fiabilise `sensor.pic_pv_jour` directement depuis la puissance photovoltaïque.
+- Conserve le maximum atteint pendant la journée dans le fuseau horaire de la maison.
+- Réinitialise automatiquement le pic à minuit, même si les anciennes automatisations sont indisponibles.
 
 ## 0.5.17
 
-- Unifie les cumuls énergétiques jour, mois et année utilisés par l’application et le portail.
-- Conserve les capteurs natifs Deye et Shelly comme sources prioritaires, avec des cumuls normalisés en secours.
+- Ajoute l’installation sécurisée d’une règle ECS pilotée par le surplus solaire.
+- Conserve une plage de secours configurable lorsque la production est insuffisante.
+- Laisse le thermostat interne du ballon interrompre naturellement la chauffe.
 
 ## 0.5.15
 

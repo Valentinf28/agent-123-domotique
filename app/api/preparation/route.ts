@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { installationDossiers, plannedDevices } from "../../../db/schema";
-import { portalApiAuthorized } from "../../../lib/portal-api-auth";
+import { portalApiAdminAuthorized } from "../../../lib/portal-api-auth";
 
 type PlannedDevicePayload = {
   id?: string;
@@ -144,8 +144,8 @@ async function activeDossier(request?: Request, requestedPublicId?: string) {
 }
 
 export async function GET(request: Request) {
-  if (!await portalApiAuthorized()) {
-    return Response.json({ error: "Authentification requise" }, { status: 401 });
+  if (!await portalApiAdminAuthorized()) {
+    return Response.json({ error: "Accès installateur requis" }, { status: 403 });
   }
   try {
     const dossier = await activeDossier(request);
@@ -181,8 +181,8 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  if (!await portalApiAuthorized()) {
-    return Response.json({ error: "Authentification requise" }, { status: 401 });
+  if (!await portalApiAdminAuthorized()) {
+    return Response.json({ error: "Accès installateur requis" }, { status: 403 });
   }
   try {
     const body = await request.json() as {

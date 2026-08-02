@@ -1,5 +1,6 @@
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getAgentPortalHome } from "../../../lib/agent-home";
+import { portalAuthorizedHouseIds } from "../../../lib/portal-api-auth";
 
 /**
  * Façade serveur du portail.
@@ -18,7 +19,12 @@ export async function GET(request: Request) {
   }
 
   try {
-    const dossier = new URL(request.url).searchParams.get("dossier");
+    const requested = new URL(request.url).searchParams.get("dossier");
+    const allowed = await portalAuthorizedHouseIds();
+    const dossier = requested || (allowed?.size === 1 ? [...allowed][0] : null);
+    if (allowed && (!dossier || !allowed.has(dossier))) {
+      return Response.json({ error: "Accès refusé pour cette maison" }, { status: 403 });
+    }
     const home = await getAgentPortalHome(dossier);
     return Response.json({
       mode: "connected",

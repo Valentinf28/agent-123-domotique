@@ -41,6 +41,34 @@ type CoachMessage = {
   id: string; role: "client" | "coach"; text: string;
   proposal?: CoachReply["automationProposal"];
 };
+type AssistantAutomationRule = {
+  version: 1;
+  name: string;
+  time: string;
+  publicDeviceId: string;
+  deviceName: string;
+  desiredActive: boolean;
+  triggerLabel: string;
+  actionLabel: string;
+};
+type AssistantAutomationHelp = {
+  documentation?: { title: string; steps: string[] };
+  supportTicket?: { available: boolean; subject: string };
+};
+type AssistantAutomationPreview = {
+  result?: {
+    status: "ready" | "needs_clarification" | "unsupported" | "refused";
+    message?: string;
+    proposal?: AssistantAutomationRule;
+    summary?: string;
+  };
+  confirmationToken?: string;
+  requiresConfirmation?: boolean;
+  expiresInSeconds?: number;
+  help?: AssistantAutomationHelp;
+  error?: string;
+  code?: string;
+};
 type SolarForecastSlot = { startsAt: string; estimatedWh: number };
 type SolarForecastSummary = {
   rawTodayWh: number;
@@ -148,6 +176,20 @@ type EnergyConfiguration = {
 type AgentInventoryItem = {
   entityId: string; name: string; domain: string; state: string; deviceClass?: string | null;
 };
+type DiscoveryCandidate = {
+  entityId: string; name: string; domain: string; state: string; score: number;
+};
+type DiscoverySuggestion = {
+  key: string; label: string; room: string; category?: string;
+  entityId: string; entityName: string; candidates: DiscoveryCandidate[];
+};
+type DiscoveryReport = {
+  inventoryCount: number;
+  preserved: Array<{ key: string; label: string; room: string; entityId: string; entityName: string }>;
+  certain: DiscoverySuggestion[];
+  ambiguous: Array<DiscoverySuggestion & { requiresConfirmation: true }>;
+  missing: Array<{ key: string; label: string; room: string; category: string }>;
+};
 type InstallationDossier = {
   publicId: string; reference: string; customerName: string; status: string; updatedAt: string;
 };
@@ -252,6 +294,9 @@ export default function Portal({
   const [selectedAutomation, setSelectedAutomation] = useState<Automation | null>(null);
   const [liveStatus, setLiveStatus] = useState<"loading" | "connected" | "demo">("loading");
   const [mobileOverview, setMobileOverview] = useState<MobileOverview | null>(null);
+  const [enabledHomeModules, setEnabledHomeModules] = useState<AppModule[]>(["home"]);
+  const [subscription, setSubscription] = useState<SubscriptionSummary | null>(null);
+  const [premiumSaving, setPremiumSaving] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [homeRefreshToken, setHomeRefreshToken] = useState(0);
   const [plannedItems, setPlannedItems] = useState<PlannedItem[]>([
@@ -332,6 +377,13 @@ export default function Portal({
             icon: "⌁",
           })));
           setMobileOverview(payload.home.mobileOverview ?? null);
+          setSubscription(payload.home.subscription ?? null);
+          if (payload.home.dossier?.publicId) {
+            setSelectedDossierId((current) => current || payload.home.dossier.publicId);
+          }
+          setEnabledHomeModules(Array.isArray(payload.home.enabledModules)
+            ? payload.home.enabledModules
+            : ["home"]);
           setLastSyncedAt(new Date());
           setLiveStatus("connected");
         })
@@ -356,6 +408,40 @@ export default function Portal({
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
+  }
+
+  async function openPremiumCheckout(interval: "monthly" | "yearly") {
+    if (!selectedDossierId) return notify("Maison en cours d’association");
+    setPremiumSaving(true);
+    try {
+      const response = await fetch(`/api/subscriptions/${encodeURIComponent(selectedDossierId)}/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ interval }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.url) throw new Error(payload.error || "Paiement indisponible");
+      window.location.assign(payload.url);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Paiement indisponible");
+      setPremiumSaving(false);
+    }
+  }
+
+  async function openBillingPortal() {
+    if (!selectedDossierId) return notify("Maison en cours d’association");
+    setPremiumSaving(true);
+    try {
+      const response = await fetch(`/api/subscriptions/${encodeURIComponent(selectedDossierId)}/billing-portal`, {
+        method: "POST", headers: { Accept: "application/json" },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.url) throw new Error(payload.error || "Gestion indisponible");
+      window.location.assign(payload.url);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Gestion indisponible");
+      setPremiumSaving(false);
+    }
   }
 
   async function createDossier() {
@@ -398,7 +484,7 @@ export default function Portal({
     const response = await fetch(`/api/devices/${encodeURIComponent(device.id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(update),
+      body: JSON.stringify({ ...update, dossierPublicId: selectedDossierId }),
     });
     if (!response.ok) throw new Error("update");
     const area = update.areaPublicId === undefined
@@ -561,6 +647,7 @@ export default function Portal({
             </label>}
             {role === "Installateur" && <button className="icon-button" aria-label="Créer un dossier" title="Créer un dossier" onClick={() => setNewDossierOpen(true)}>＋</button>}
             {!customerOnly && <Link className="dashboard-link" href="/ma-maison">Vue client</Link>}
+            {customerOnly && <button className="premium-pill" onClick={() => setModal("premium")}><span>✦</span> Premium</button>}
             <button className="icon-button" aria-label="Actualiser" onClick={() => {
               setHomeRefreshToken((value) => value + 1);
               notify("Actualisation demandée");
@@ -570,7 +657,7 @@ export default function Portal({
           </div>
         </header>
 
-        {view === "Accueil" && <Dashboard dossierId={selectedDossierId} setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} lastSyncedAt={lastSyncedAt} onControl={setHomeControl} />}
+        {view === "Accueil" && <Dashboard dossierId={selectedDossierId} enabledModules={enabledHomeModules} setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} lastSyncedAt={lastSyncedAt} onControl={setHomeControl} />}
         {view === "Préparation" && <Preparation dossierId={selectedDossierId} plannedItems={plannedItems} setPlannedItems={setPlannedItems} notify={notify} setView={setView} />}
         {view === "Installation" && <Installation dossierId={selectedDossierId} notify={notify} />}
         {view === "Appareils" && <Devices filtered={filtered} areas={areas} search={search} setSearch={setSearch} room={room} setRoom={setRoom} notify={notify} manage={(device) => { setSelectedDevice(device); setModal("appareil"); }} updateDevice={updateDevice} />}
@@ -607,7 +694,14 @@ export default function Portal({
           </div>
         </section>
       </div>}
-      {modal && <Modal key={`${modal}:${selectedDevice?.id ?? selectedAutomation?.id ?? "none"}`} type={modal} close={() => setModal(null)} notify={notify} device={selectedDevice} devices={devices} areas={areas} saveDevice={updateDevice} automation={selectedAutomation} createAutomation={createAutomation} deleteAutomation={deleteAutomation} />}
+      {modal === "premium" && <PremiumModal
+        subscription={subscription}
+        saving={premiumSaving}
+        close={() => setModal(null)}
+        checkout={openPremiumCheckout}
+        manage={openBillingPortal}
+      />}
+      {modal && modal !== "premium" && <Modal key={`${modal}:${selectedDevice?.id ?? selectedAutomation?.id ?? "none"}`} type={modal} close={() => setModal(null)} notify={notify} device={selectedDevice} devices={devices} areas={areas} saveDevice={updateDevice} automation={selectedAutomation} createAutomation={createAutomation} deleteAutomation={deleteAutomation} />}
     </div>
   );
 }
@@ -928,6 +1022,7 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
   const [mobilePairing, setMobilePairing] = useState<{ code: string; expiresAt: string } | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionSummary | null>(null);
   const [subscriptionSaving, setSubscriptionSaving] = useState(false);
+  const [discoveryReport, setDiscoveryReport] = useState<DiscoveryReport | null>(null);
   const associableInventory = (agent?.inventory ?? []).filter((entity) =>
     !["unknown", "unavailable"].includes(String(entity.state).toLowerCase())
   );
@@ -979,7 +1074,7 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
     void save(items.map(current => current.id === item.id && current.room === item.room ? { ...current, status } : current), `${item.id}:${item.room}`);
   }
 
-  function discover() {
+  async function discover() {
     if (!agent || agent.status !== "online") {
       notify("La box doit être connectée pour lancer la découverte");
       return;
@@ -989,50 +1084,29 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
       notify("L’inventaire est en cours de remontée par la box");
       return;
     }
-    const domainByCategory: Record<string, string[]> = {
-      "Éclairage": ["light", "switch"],
-      "Capteur": ["sensor", "binary_sensor"],
-      "Sécurité": ["binary_sensor", "lock", "alarm_control_panel", "camera"],
-      "Recharge": ["sensor", "switch", "number"],
-      "Chauffage": ["climate", "water_heater", "sensor"],
-      "Solaire": ["sensor"],
-      "Piscine": ["switch", "sensor", "climate"],
-      "Eau chaude": ["switch", "sensor", "water_heater"],
-      "Véhicule": ["device_tracker", "sensor", "binary_sensor", "climate", "lock"],
-    };
-    const genericTerms = new Set([
-      "plus", "gen", "pro", "smart", "bridge", "camera", "cameras", "lock",
-      "vehicle", "vehicule", "sun", "1pm",
-    ]);
-    let detected = 0;
-    const next = items.map((item) => {
-      if (["Associé", "Testé"].includes(item.status)) return item;
-      const terms = [item.brand, item.model]
-        .flatMap((value) => value.toLowerCase().split(/[\s/+-]+/))
-        .map((value) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
-        .filter((value) => value.length >= 3 && !genericTerms.has(value));
-      const domains = domainByCategory[item.category] ?? [];
-      const match = inventory.find((entity) => {
-        const haystack = `${entity.entityId} ${entity.name} ${entity.deviceClass ?? ""} ${entity.state}`.toLowerCase();
-        return domains.includes(entity.domain) && terms.some((term) => haystack.includes(term));
+    setSavingId("discovery");
+    try {
+      const response = await fetch("/api/preparation/discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ dossierPublicId: dossierId, applyCertain: true }),
       });
-      if (!match) {
-        return item.status === "Détecté"
-          ? { ...item, status: "À préparer" as InstallationStatus, matchedEntityId: null, matchedEntityName: null }
-          : item;
-      }
-      detected += item.quantity;
-      return {
-        ...item,
-        status: "Détecté" as InstallationStatus,
-        matchedEntityId: match.entityId,
-        matchedEntityName: match.name,
-      };
-    });
-    void save(next, "discovery");
-    notify(detected
-      ? `${detected} équipement${detected > 1 ? "s" : ""} rapproché${detected > 1 ? "s" : ""} automatiquement`
-      : "Inventaire analysé : aucun rapprochement certain");
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Découverte impossible");
+      setDiscoveryReport(payload.report);
+      const refreshed = await fetch(`/api/preparation?dossier=${encodeURIComponent(dossierId)}`, {
+        headers: { Accept: "application/json" }, cache: "no-store",
+      });
+      if (refreshed.ok) setItems((await refreshed.json()).items);
+      const applied = Array.isArray(payload.applied) ? payload.applied.length : 0;
+      notify(applied
+        ? `${applied} association${applied > 1 ? "s" : ""} certaine${applied > 1 ? "s" : ""} enregistrée${applied > 1 ? "s" : ""}`
+        : "Inventaire analysé : consultez le rapport de découverte");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Découverte impossible");
+    } finally {
+      setSavingId("");
+    }
   }
 
   async function createEnrollment() {
@@ -1122,6 +1196,16 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
       <div><small>RECETTE DE LA MAISON</small><h3>{tested} objet{tested > 1 ? "s" : ""} testé{tested > 1 ? "s" : ""} sur {total}</h3><div className="progress-bar"><i style={{ width: `${progress}%` }} /></div><p>{blocked ? `${blocked} blocage${blocked > 1 ? "s" : ""} à résoudre avant la remise client.` : "Aucun blocage signalé."}</p></div>
       <div className={`box-state ${agent?.status === "online" ? "online" : ""}`}><i /><span>Agent de la box<strong>{agent?.status === "online" ? `Connecté · HA ${agent.haVersion || "détecté"} · ${agent.inventoryCount} entités` : enrollment ? `Code ${enrollment.code} · valable 30 min` : "En attente d’association"}</strong></span><button onClick={agent ? () => notify(`Dernier contact : ${agent.lastSeenAt ? new Date(agent.lastSeenAt).toLocaleString("fr-FR") : "inconnu"}`) : createEnrollment}>{agent ? "Voir l’état" : enrollment ? "Nouveau code" : "Associer la box"}</button></div>
     </section>
+    {discoveryReport && <section className="discovery-report">
+      <div className="panel-title"><div><small>Inventaire Home Assistant · {discoveryReport.inventoryCount} entités</small><h3>Rapport de découverte</h3></div><span>{discoveryReport.certain.length} sûre{discoveryReport.certain.length > 1 ? "s" : ""}</span></div>
+      <div className="discovery-report-grid">
+        <article className="discovery-safe"><b>Associations enregistrées</b><strong>{discoveryReport.certain.length}</strong><small>Les choix existants sont conservés.</small></article>
+        <article className="discovery-ambiguous"><b>À confirmer</b><strong>{discoveryReport.ambiguous.length}</strong><small>Aucune association ambiguë n’est appliquée seule.</small></article>
+        <article className="discovery-missing"><b>Éléments manquants</b><strong>{discoveryReport.missing.length}</strong><small>À connecter ou à rechercher sur place.</small></article>
+      </div>
+      {discoveryReport.ambiguous.length > 0 && <div className="discovery-list"><b>Suggestions à confirmer dans la checklist</b>{discoveryReport.ambiguous.map(item => <p key={item.key}><span>{item.label} · {item.room}</span><small>{item.candidates.slice(0, 3).map(candidate => candidate.name).join(" · ")}</small></p>)}</div>}
+      {discoveryReport.missing.length > 0 && <div className="discovery-list missing"><b>Non trouvés dans cette maison</b>{discoveryReport.missing.map(item => <p key={item.key}><span>{item.label} · {item.room}</span><small>{item.category}</small></p>)}</div>}
+    </section>}
     {loading ? <div className="checklist-empty">Chargement de la checklist…</div> : !items.length ? <div className="checklist-empty">Aucun équipement n’a encore été préparé pour ce dossier.</div> :
       <section className="installation-list">{items.map(item => {
         const activeIndex = installationStages.indexOf(item.status);
@@ -1190,6 +1274,37 @@ function SubscriptionCard({ subscription, saving, update }: {
       </>}
     </div>
   </section>;
+}
+
+function PremiumModal({ subscription, saving, close, checkout, manage }: {
+  subscription: SubscriptionSummary | null;
+  saving: boolean;
+  close: () => void;
+  checkout: (interval: "monthly" | "yearly") => Promise<void>;
+  manage: () => Promise<void>;
+}) {
+  const active = subscription?.status === "active";
+  const trialing = subscription?.status === "trialing";
+  return <div className="modal-backdrop premium-backdrop" onMouseDown={close}>
+    <section className="modal premium-modal" onMouseDown={(event) => event.stopPropagation()}>
+      <button className="modal-close" aria-label="Fermer" onClick={close}>×</button>
+      <span className="premium-symbol">✦</span>
+      <small>1.2.3 HOME PREMIUM</small>
+      <h3>{active ? "Votre forfait est actif" : trialing ? "Profitez pleinement de votre essai" : "Votre maison, partout avec vous"}</h3>
+      <p>Accès 4G/5G, assistant domotique, coach énergie et recommandations intelligentes. Le fonctionnement local reste toujours disponible.</p>
+      {trialing && <div className="premium-trial"><b>{subscription?.remainingDays ?? 0} jours offerts restants</b><span>Le prélèvement commencera seulement à la fin de l’essai.</span></div>}
+      <div className="premium-features">
+        <span><i>↗</i><b>Accès distant</b><small>Wi-Fi, 4G et 5G</small></span>
+        <span><i>✦</i><b>Assistant domotique</b><small>Règles en langage naturel</small></span>
+        <span><i>⌁</i><b>Coach énergie</b><small>Conseils personnalisés</small></span>
+      </div>
+      {active ? <button className="primary full" disabled={saving} onClick={() => void manage()}>{saving ? "Ouverture…" : "Gérer mon abonnement"}</button> : <div className="premium-offers">
+        <button disabled={saving} onClick={() => void checkout("monthly")}><b>9,90 €</b><span>par mois</span></button>
+        <button className="recommended" disabled={saving} onClick={() => void checkout("yearly")}><em>2 mois offerts</em><b>99 €</b><span>par an</span></button>
+      </div>}
+      <small className="premium-note">Paiement sécurisé · résiliable à tout moment</small>
+    </section>
+  </div>;
 }
 
 function friendlyState(state: string) {
@@ -1354,8 +1469,9 @@ function SecurityCameraStream({ publicId, dossierId, label }: {
   </div>;
 }
 
-function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, overview, lastSyncedAt, onControl }: {
+function Dashboard({ dossierId, enabledModules, setView, setModal, notify, devices, liveStatus, overview, lastSyncedAt, onControl }: {
   dossierId: string;
+  enabledModules: AppModule[];
   setView: (v: View) => void; setModal: (v: string) => void;
   notify: (v: string) => void; devices: Device[];
   liveStatus: "loading" | "connected" | "demo";
@@ -1367,25 +1483,27 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
   ) => Promise<void>;
 }) {
   const [homeTab, setHomeTab] = useState<HomeTab>("Maison");
+  const visibleHomeTabs = useMemo(() => homeTabs.filter((tab) => {
+    const module = homeTabKeys[tab];
+    return module === "home" || enabledModules.includes(module);
+  }), [enabledModules]);
+  useEffect(() => {
+    if (!visibleHomeTabs.includes(homeTab)) setHomeTab("Maison");
+  }, [homeTab, visibleHomeTabs]);
   const [openCameraId, setOpenCameraId] = useState<string | null>(null);
   const available = devices.filter((device) => device.online).length;
   const lowBattery = devices.filter((device) => device.battery !== undefined && device.battery < 20).length;
-  const controls = overview?.controls ?? [
-    {publicId:"demo-heat",label:"Chauffage",icon:"♨",active:false,available:false},
-    {publicId:"demo-filter",label:"Filtration",icon:"≋",active:false,available:false},
-    {publicId:"demo-pool",label:"PAC piscine",icon:"♨",active:false,available:false},
-    {publicId:"demo-lock",label:"Serrure Nuki",icon:"▣",active:false,available:false},
-    {publicId:"demo-camera",label:"Caméras",icon:"◉",active:false,available:false},
-    {publicId:"demo-water",label:"Ballon d’eau chaude",icon:"♨",active:false,available:false},
-  ];
+  // Une maison ne doit jamais afficher des équipements fictifs pendant une
+  // reconnexion : la liste reste vide jusqu'au retour des données de sa box.
+  const controls = overview?.controls ?? [];
   const controlLabels = Object.fromEntries(
-    homeTabs.map((tab) => [
+    visibleHomeTabs.map((tab) => [
       tab,
       CLIENT_EXPERIENCE.controlLabelsByTab[
         homeTabKeys[tab] as keyof typeof CLIENT_EXPERIENCE.controlLabelsByTab
       ] ?? [],
     ]),
-  ) as Record<HomeTab, readonly string[]>;
+  ) as Partial<Record<HomeTab, readonly string[]>>;
   const visibleControls = homeTab === "Maison"
     ? controls
     : controls.filter((control) => controlLabels[homeTab]?.includes(control.label));
@@ -1400,13 +1518,13 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
 
   return <div className="content app-home app-client-content">
     <section className="app-preview">
-      <div className="app-tabs" role="tablist">{homeTabs.map((tab) => <button key={tab} role="tab" aria-selected={homeTab === tab} className={homeTab === tab ? "selected" : ""} onClick={() => setHomeTab(tab)}><span>{homeTabMeta[tab].icon}</span><b>{tab}</b></button>)}</div>
+      <div className="app-tabs" role="tablist">{visibleHomeTabs.map((tab) => <button key={tab} role="tab" aria-selected={homeTab === tab} className={homeTab === tab ? "selected" : ""} onClick={() => setHomeTab(tab)}><span>{homeTabMeta[tab].icon}</span><b>{tab}</b></button>)}</div>
       <div className="app-connection"><i className={liveStatus === "connected" ? "online" : ""} />{liveStatus === "connected" ? `Maison connectée en direct${lastSyncedAt ? ` · ${lastSyncedAt.toLocaleTimeString("fr-FR")}` : ""}` : liveStatus === "loading" ? "Connexion en cours…" : "Données momentanément indisponibles"}</div>
       {homeTab === "Maison" && <EnergyScene overview={overview} />}
       {homeTab === "Solaire" && <SolarPortalView overview={overview} tariffCopy={offPeakCopy} dossierId={dossierId} />}
       {homeTab === "Chauffage" && <HeatingPortalView overview={overview} hotWaterStatus={hotWaterStatus} tariffCopy={offPeakCopy} />}
       {homeTab === "Piscine" && <PoolPortalView overview={overview} controls={controls} onControl={onControl} />}
-      {homeTab === "Équipements" && <div className="equipment-premium">
+      {homeTab === "Équipements" && <div className="equipment-premium mobile-section">
         <PortalCategoryHeader eyebrow="ÉQUIPEMENTS" title="Votre maison" subtitle="Lumières, volets, accès et surveillance." icon="◉" />
         <div className="equipment-overview"><article><small>ÉQUIPEMENTS DISPONIBLES</small><strong>{available}<em> / {devices.length}</em></strong><span>Synchronisés avec Home Assistant</span></article><article><small>ÉTAT DE LA MAISON</small><strong>{lowBattery ? `${lowBattery} alerte${lowBattery > 1 ? "s" : ""}` : "Tout va bien"}</strong><span>{lowBattery ? "Batteries à vérifier" : "Aucune anomalie détectée"}</span></article></div>
       </div>}
@@ -1463,11 +1581,12 @@ function PortalCategoryHeader({ eyebrow, title, subtitle, icon, color = "#f4c430
 
 function integrateHistory(points: EnergyHistoryPoint[], field: keyof EnergyHistoryPoint, predicate = (_value: number) => true) {
   if (points.length < 2) return null;
+  const orderedPoints = [...points].sort((a, b) => Date.parse(a.capturedAt) - Date.parse(b.capturedAt));
   let wattHours = 0;
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const value = Number(points[index][field]);
+  for (let index = 0; index < orderedPoints.length - 1; index += 1) {
+    const value = Number(orderedPoints[index][field]);
     if (!Number.isFinite(value) || !predicate(value)) continue;
-    const elapsedHours = Math.min(15 * 60 * 1000, Math.max(0, Date.parse(points[index + 1].capturedAt) - Date.parse(points[index].capturedAt))) / 3_600_000;
+    const elapsedHours = Math.min(15 * 60 * 1000, Math.max(0, Date.parse(orderedPoints[index + 1].capturedAt) - Date.parse(orderedPoints[index].capturedAt))) / 3_600_000;
     wattHours += Math.abs(value) * elapsedHours;
   }
   return wattHours / 1000;
@@ -1475,21 +1594,47 @@ function integrateHistory(points: EnergyHistoryPoint[], field: keyof EnergyHisto
 
 function PortalEnergyChart({ history, date }: { history: EnergyHistoryPoint[]; date: string }) {
   const width = 720; const height = 270; const left = 45; const right = 705; const top = 18; const bottom = 228;
-  const values = history.flatMap((point) => [point.solarWatts, point.homeWatts, point.gridWatts, point.batteryWatts]);
-  const maximum = Math.max(1000, ...values.map((value) => Math.abs(Number(value) || 0)));
-  const scale = Math.ceil(maximum / 1000) * 1000;
+  const orderedHistory = useMemo(() => [...history].sort((a, b) => Date.parse(a.capturedAt) - Date.parse(b.capturedAt)), [history]);
+  const defaultIndex = Math.max(0, orderedHistory.length - 1);
+  const [cursorIndex, setCursorIndex] = useState(defaultIndex);
+  useEffect(() => setCursorIndex(defaultIndex), [date, defaultIndex]);
+  const values = orderedHistory.flatMap((point) => [point.solarWatts, point.homeWatts, point.gridWatts, point.batteryWatts]);
+  const maximum = Math.ceil(Math.max(1000, ...values.map((value) => Math.max(0, Number(value) || 0))) / 1000) * 1000;
+  const minimum = Math.floor(Math.min(-1000, ...values.map((value) => Math.min(0, Number(value) || 0))) / 1000) * 1000;
   const x = (timestamp: string) => {
     const point = new Date(timestamp);
     const minutes = Number(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(point).find((part) => part.type === "hour")?.value) * 60 + Number(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", minute: "2-digit" }).formatToParts(point).find((part) => part.type === "minute")?.value);
     return left + minutes / 1440 * (right - left);
   };
-  const y = (value: number) => top + (scale - value) / (scale * 2) * (bottom - top);
-  const line = (field: keyof EnergyHistoryPoint) => history.map((point, index) => `${index ? "L" : "M"}${x(point.capturedAt).toFixed(1)} ${y(Number(point[field]) || 0).toFixed(1)}`).join(" ");
-  if (history.length < 2) return <section className="portal-energy-chart empty"><header><div><small>{formatEnergyDay(new Date(`${date}T12:00:00`)).toUpperCase()}</small><h3>Profil de puissance</h3></div></header><p>Les mesures de cette journée ne sont pas encore disponibles.</p></section>;
-  return <section className="portal-energy-chart"><header><div><small>{formatEnergyDay(new Date(`${date}T12:00:00`)).toUpperCase()}</small><h3>Profil de puissance</h3></div><span>Mesures toutes les 5 min</span></header><div className="portal-energy-legend"><i className="solar" />Production <i className="home" />Consommation <i className="grid" />Réseau <i className="battery" />Batterie</div><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Courbes de puissance de la journée">
+  const y = (value: number) => top + (maximum - value) / (maximum - minimum) * (bottom - top);
+  const ySoc = (value: number) => bottom - Math.max(0, Math.min(100, value)) / 100 * (bottom - top);
+  const line = (field: keyof EnergyHistoryPoint) => orderedHistory.map((point, index) => `${index ? "L" : "M"}${x(point.capturedAt).toFixed(1)} ${y(Number(point[field]) || 0).toFixed(1)}`).join(" ");
+  const socLine = orderedHistory.map((point, index) => `${index ? "L" : "M"}${x(point.capturedAt).toFixed(1)} ${ySoc(Number(point.batteryPercent) || 0).toFixed(1)}`).join(" ");
+  const solarArea = orderedHistory.length
+    ? `${line("solarWatts")} L${x(orderedHistory[orderedHistory.length - 1].capturedAt).toFixed(1)} ${y(0).toFixed(1)} L${x(orderedHistory[0].capturedAt).toFixed(1)} ${y(0).toFixed(1)} Z`
+    : "";
+  const selected = orderedHistory[Math.min(cursorIndex, defaultIndex)] ?? null;
+  const cursorPosition = selected ? x(selected.capturedAt) : right;
+  const selectedTime = selected ? new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(new Date(selected.capturedAt)) : "—";
+  const updateCursor = (clientX: number, target: SVGSVGElement) => {
+    if (!orderedHistory.length) return;
+    const bounds = target.getBoundingClientRect();
+    const viewX = Math.max(left, Math.min(right, (clientX - bounds.left) / bounds.width * width));
+    let nearest = 0; let nearestDistance = Number.POSITIVE_INFINITY;
+    orderedHistory.forEach((point, index) => {
+      const distance = Math.abs(x(point.capturedAt) - viewX);
+      if (distance < nearestDistance) { nearest = index; nearestDistance = distance; }
+    });
+    setCursorIndex(nearest);
+  };
+  if (orderedHistory.length < 2) return <section className="portal-energy-chart empty"><header><div><small>{formatEnergyDay(new Date(`${date}T12:00:00`)).toUpperCase()}</small><h3>Profil de puissance</h3></div></header><p>Les mesures de cette journée ne sont pas encore disponibles.</p></section>;
+  const signedPower = (value: number) => `${value < 0 ? "−" : ""}${formatWatts(value)}`;
+  return <section className="portal-energy-chart"><header><div><small>{formatEnergyDay(new Date(`${date}T12:00:00`)).toUpperCase()}</small><h3>Profil de puissance</h3></div><span>Mesures toutes les 5 min</span></header><div className="portal-energy-readout"><strong>{selectedTime}</strong><span><i className="solar" />Production <b>{formatWatts(selected?.solarWatts ?? 0)}</b></span><span><i className="home" />Consommation <b>{formatWatts(selected?.homeWatts ?? 0)}</b></span><span><i className="grid" />Réseau <b>{signedPower(selected?.gridWatts ?? 0)}</b></span><span><i className="battery" />Batterie <b>{signedPower(selected?.batteryWatts ?? 0)}</b></span><span><i className="soc" />SOC <b>{Math.round(selected?.batteryPercent ?? 0)} %</b></span></div><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Courbes de puissance de la journée" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); updateCursor(event.clientX, event.currentTarget); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) updateCursor(event.clientX, event.currentTarget); }}>
     {[top, (top + bottom) / 2, bottom].map((position) => <line key={position} x1={left} x2={right} y1={position} y2={position} className="grid-line" />)}
     <line x1={left} x2={right} y1={y(0)} y2={y(0)} className="zero-line" />
-    <path d={line("solarWatts")} className="solar-line" /><path d={line("homeWatts")} className="home-line" /><path d={line("gridWatts")} className="grid-power-line" /><path d={line("batteryWatts")} className="battery-line" />
+    <path d={solarArea} className="solar-area" /><path d={line("solarWatts")} className="solar-line" /><path d={line("homeWatts")} className="home-line" /><path d={line("gridWatts")} className="grid-power-line" /><path d={line("batteryWatts")} className="battery-line" /><path d={socLine} className="soc-line" />
+    <text x={left - 6} y={top + 4} textAnchor="end">{Math.round(maximum / 100) / 10} kW</text><text x={left - 6} y={bottom + 4} textAnchor="end">{Math.round(minimum / 100) / 10} kW</text><text x={right + 6} y={top + 4} className="soc-axis">100 %</text><text x={right + 6} y={bottom + 4} className="soc-axis">0 %</text>
+    <line x1={cursorPosition} x2={cursorPosition} y1={top} y2={bottom} className="cursor-line" />
     {[0, 6, 12, 18, 24].map((hour) => <text key={hour} x={left + hour / 24 * (right - left)} y="255" textAnchor={hour === 0 ? "start" : hour === 24 ? "end" : "middle"}>{String(hour).padStart(2, "0")}:00</text>)}
   </svg></section>;
 }
@@ -1571,12 +1716,6 @@ function SolarPortalView({ overview, tariffCopy, dossierId }: { overview: Mobile
       <article><span className="solar-stat-icon blue">⌂</span><small>Autoconsommation</small><strong>{historicalDay ? historicalSelfConsumption : energy.selfConsumption ?? "—"}</strong><p>Production utilisée sur place</p></article>
       <article><span className="solar-stat-icon pink">▰</span><small>Autonomie</small><strong>{historicalDay ? historicalAutonomy : energy.autonomy ?? "—"}</strong><p>Consommation couverte sans réseau</p></article>
     </section>
-    <section className="energy-balance-card"><header><div><small>INSTALLATION</small><h3>Détail des panneaux</h3></div><span>☀</span></header><div>
-      <article><i>1</i><strong>{energy.pv1 ?? "0 W"}</strong><small>String PV1</small></article>
-      <article><i>2</i><strong>{energy.pv2 ?? "0 W"}</strong><small>String PV2</small></article>
-      <article><i>3</i><strong>{energy.pv3 ?? "0 W"}</strong><small>String PV3</small></article>
-      <article><i>↗</i><strong>{energy.peakPower ?? "0 W"}</strong><small>Pic du jour</small></article>
-    </div></section>
     {period === "day" && !historicalDay && <section className="energy-balance-card"><header><div><small>PRÉVISION</small><h3>Prévision contre production réelle</h3></div><span>✦</span></header><div>
       <article><i>☀</i><strong>{energy.dailyProduction ?? "—"}</strong><small>Produit aujourd’hui</small></article>
       <article><i>◎</i><strong>{energy.forecastToday ?? "—"}</strong><small>Objectif prévisionnel</small></article>
@@ -1591,6 +1730,12 @@ function SolarPortalView({ overview, tariffCopy, dossierId }: { overview: Mobile
     </div></section>
     {period === "day" && <PortalEnergyChart history={history} date={selectedDate} />}
     {period === "day" && !historicalDay && <section className="solar-advice-card"><header><span>✦</span><div><small>ASSISTANT ÉNERGIE</small><h3>Meilleurs créneaux</h3></div></header><article><b>Solaire en priorité</b><p>Les appareils flexibles sont proposés quand le surplus est suffisant. Le tarif du client sert de solution de secours.</p><em>{tariffCopy}</em></article></section>}
+    <section className="energy-balance-card"><header><div><small>INSTALLATION</small><h3>Détail des panneaux</h3></div><span>☀</span></header><div>
+      <article><i>1</i><strong>{energy.pv1 ?? "0 W"}</strong><small>String PV1</small></article>
+      <article><i>2</i><strong>{energy.pv2 ?? "0 W"}</strong><small>String PV2</small></article>
+      <article><i>3</i><strong>{energy.pv3 ?? "0 W"}</strong><small>String PV3</small></article>
+      <article><i>↗</i><strong>{energy.peakPower ?? "0 W"}</strong><small>Pic du jour</small></article>
+    </div></section>
   </div>;
 }
 
@@ -1601,7 +1746,7 @@ function HeatingPortalView({ overview, hotWaterStatus, tariffCopy }: {
   const target = overview?.comfort?.heatingSetpoint ?? "—";
   return <div className="mobile-section heating-mobile-section">
     <PortalCategoryHeader eyebrow="CONFORT" title="Chauffage" subtitle="La bonne température, pièce par pièce." icon="♨" color="#ff8169" />
-    <section className="heating-layout">
+    <section className="heating-layout compact-category-layout">
       <article className="thermostat-card"><div className="thermostat-state"><i /> Température maintenue</div><div className="thermostat-dial"><div><span>♨</span><strong>{current}</strong><small>Température actuelle</small></div></div><small>TEMPÉRATURE SOUHAITÉE</small><div className="target-temperature"><button disabled>−</button><strong>{target}</strong><button disabled>＋</button></div><p>Chambre · {overview?.comfort?.bedroomTemperature ?? "—"}</p></article>
       <article className="hot-water-card"><header><span>♨</span><div><small>EAU CHAUDE</small><h3>Ballon intelligent</h3></div><em>{hotWaterStatus}</em></header><div className="hot-water-main"><strong>{overview?.comfort?.hotWaterPower ?? "0 W"}</strong><span>Puissance instantanée</span></div><div className="hot-water-data"><span><small>Consommation du jour</small><b>{overview?.energy.hotWaterToday ?? "—"}</b></span><span><small>Mode</small><b>{overview?.comfort?.hotWaterMode ?? "Automatique"}</b></span></div><footer><b>Solaire prioritaire</b><span>{tariffCopy} en secours</span></footer></article>
     </section>
@@ -1634,6 +1779,8 @@ function VehiclePortalView({ overview, controls, onControl }: {
   const battery = overview?.comfort?.teslaBattery ?? "—";
   const plugged = overview?.comfort?.teslaPlugged?.toLowerCase() ?? "";
   const connected = ["on", "connected", "charging", "complete", "stopped", "branchée"].some((state) => plugged.includes(state));
+  const onlineState = overview?.comfort?.teslaOnline?.toLowerCase() ?? "";
+  const online = !["off", "unavailable", "unknown", "hors ligne"].includes(onlineState);
   const actionDefinitions = [
     ["❄", "Climatisation", "Climatisation Tesla"],
     ["ϟ", "Recharge", "Recharge Tesla"],
@@ -1643,8 +1790,8 @@ function VehiclePortalView({ overview, controls, onControl }: {
   ] as const;
   return <div className="mobile-section vehicle-mobile-section">
     <PortalCategoryHeader eyebrow="MOBILITÉ" title="Véhicule" subtitle="Batterie, recharge et autonomie." icon="◇" color="#55c8bd" />
-    <section className="vehicle-premium-card"><header><div><h3>Model X</h3><span><i /> {overview?.comfort?.teslaOnline === "off" ? "Hors ligne" : "En ligne"}</span></div><em>✓ SÉCURISÉ</em></header><img src="/vehicles/tesla-model-x-grey.png" alt="Tesla Model X grise" /></section>
-    <section className="vehicle-metric-row"><article><span>▰</span><div><strong>{battery}</strong><small>Batterie</small></div></article><article><span>↗</span><div><strong>{overview?.energy.teslaRange ?? "—"}</strong><small>Autonomie</small></div></article><article><span>♨</span><div><strong>{overview?.energy.teslaCabinTemperature ?? "—"}</strong><small>Habitacle</small></div></article><article><i /><div><strong>En ligne</strong><small>Connexion</small></div></article></section>
+    <section className="vehicle-premium-card"><header><div><h3>Model X</h3><span><i className={online ? "" : "offline"} /> {online ? "En ligne" : "Hors ligne"}</span></div><em>✓ SÉCURISÉ</em></header><img src="/vehicles/tesla-model-x-grey.png" alt="Tesla Model X grise" /></section>
+    <section className="vehicle-metric-row"><article><span>▰</span><div><strong>{battery}</strong><small>Batterie</small></div></article><article><span>↗</span><div><strong>{overview?.energy.teslaRange ?? "—"}</strong><small>Autonomie</small></div></article><article><span>♨</span><div><strong>{overview?.energy.teslaCabinTemperature ?? "—"}</strong><small>Habitacle</small></div></article><article><i className={online ? "" : "offline"} /><div><strong>{online ? "En ligne" : "Hors ligne"}</strong><small>Connexion</small></div></article></section>
     <div className={`vehicle-charge-state ${connected ? "connected" : ""}`}><span>ϟ</span><b>{connected ? `Branchée · ${overview?.comfort?.teslaPower ?? "0 W"}` : "Prête à charger"}</b></div>
     <section className="vehicle-actions-web"><header><h3>Commandes</h3><span>Actions sécurisées Tesla</span></header>{actionDefinitions.map(([icon, label, controlLabel]) => {
       const control = controls.find((candidate) => candidate.label === controlLabel);
@@ -1731,6 +1878,8 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
   const pluggedState = overview?.comfort?.teslaPlugged?.toLowerCase() ?? "";
   const vehiclePlugged = overview?.flow?.vehiclePlugged ?? (vehicleWatts > 5
     || ["on", "connected", "charging", "complete", "stopped", "no_power", "starting", "branchée"].some((state) => pluggedState.includes(state)));
+  const vehicleBattery = overview?.comfort?.teslaBattery ?? "";
+  const hasVehicleBattery = /\d/.test(vehicleBattery);
   const flowState = createEnergyFlowState({
     solarWatts,
     homeWatts,
@@ -1781,7 +1930,14 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
         sub={!flowState.battery.active ? "0 W" : `${flowState.battery.arrow} ${formatWatts(batteryWatts)}`}
         color="#f05d9b"
       /></div>
-      {vehiclePlugged && <div style={{ top: labelTop(448) }} className="scene-label-anchor"><SceneLabel className="scene-vehicle" icon="◇" title="Voiture" value={formatWatts(vehicleWatts)} color="#4ed6f5" /></div>}
+      {vehiclePlugged && <div style={{ top: labelTop(448) }} className="scene-label-anchor"><SceneLabel
+        className="scene-vehicle"
+        icon="◇"
+        title="Voiture"
+        value={vehicleWatts > CLIENT_EXPERIENCE.energyScene.flowActivationWatts && hasVehicleBattery ? vehicleBattery : formatWatts(vehicleWatts)}
+        sub={vehicleWatts > CLIENT_EXPERIENCE.energyScene.flowActivationWatts && hasVehicleBattery ? formatWatts(vehicleWatts) : undefined}
+        color="#4ed6f5"
+      /></div>}
     </div>
   </div>;
 }
@@ -1826,6 +1982,11 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
   const [coachOpen, setCoachOpen] = useState(false);
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachQuestion, setCoachQuestion] = useState("");
+  const [assistantRequest, setAssistantRequest] = useState("");
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantPreview, setAssistantPreview] = useState<AssistantAutomationPreview | null>(null);
+  const [assistantCreated, setAssistantCreated] = useState<string | null>(null);
+  const [supportBusy, setSupportBusy] = useState(false);
   const [coachInsights, setCoachInsights] = useState<EnergyCoachInsight[]>([]);
   const [solarForecast, setSolarForecast] = useState<SolarForecastSlot[]>([]);
   const [solarForecastSummary, setSolarForecastSummary] = useState<SolarForecastSummary | null>(null);
@@ -1926,6 +2087,80 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
     }
   }
 
+  async function prepareAssistantAutomation(requestOverride?: string) {
+    const message = (requestOverride ?? assistantRequest).trim();
+    if (message.length < 3 || assistantBusy) return;
+    setAssistantRequest(message);
+    setAssistantCreated(null);
+    setAssistantBusy(true);
+    try {
+      const response = await fetch("/api/assistant/automation/propose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ message, dossierPublicId: dossierId }),
+      });
+      const payload = await response.json() as AssistantAutomationPreview;
+      setAssistantPreview(payload);
+      if (!response.ok) notify(payload.error ?? "La proposition ne peut pas être préparée");
+    } catch {
+      setAssistantPreview({ error: "La Green Box ne répond pas pour le moment." });
+    } finally {
+      setAssistantBusy(false);
+    }
+  }
+
+  async function confirmAssistantAutomation() {
+    if (!assistantPreview?.confirmationToken || assistantBusy) return;
+    setAssistantBusy(true);
+    try {
+      const response = await fetch("/api/assistant/automation/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          confirmationToken: assistantPreview.confirmationToken,
+          confirmed: true,
+        }),
+      });
+      const payload = await response.json() as { message?: string; error?: string };
+      if (!response.ok) {
+        setAssistantPreview((preview) => preview ? { ...preview, error: payload.error } : null);
+        return;
+      }
+      const message = payload.message ?? "Automatisation envoyée à la Green Box.";
+      setAssistantCreated(message);
+      setAssistantPreview(null);
+      setAssistantRequest("");
+      notify(message);
+    } catch {
+      setAssistantPreview((preview) => preview ? { ...preview, error: "La confirmation n’a pas pu être envoyée." } : null);
+    } finally {
+      setAssistantBusy(false);
+    }
+  }
+
+  async function createSupportTicket() {
+    if (supportBusy) return;
+    setSupportBusy(true);
+    try {
+      const reason = assistantPreview?.result?.message ?? assistantPreview?.error ?? "Automatisation à préciser";
+      const response = await fetch("/api/assistant/automation/support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          dossierPublicId: dossierId,
+          message: assistantRequest,
+          reason,
+        }),
+      });
+      const payload = await response.json() as { message?: string; error?: string };
+      notify(response.ok ? (payload.message ?? "Ticket transmis au support") : (payload.error ?? "Le support n’est pas encore configuré"));
+    } catch {
+      notify("Le support n’est pas joignable pour le moment");
+    } finally {
+      setSupportBusy(false);
+    }
+  }
+
   const forecastMaximum = Math.max(1, ...solarForecast.slice(0, 12).map((slot) => slot.estimatedWh));
   const forecastTime = (value: string | null) => value
     ? new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
@@ -1945,6 +2180,56 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
         <p>Le coach analyse vos habitudes, chiffre les économies possibles et peut préparer une automatisation. Rien n’est activé sans votre accord.</p>
       </div>
       <button onClick={() => setCoachOpen((open) => !open)}>{coachOpen ? "Fermer le coach" : "Parler au coach"} <span>{coachOpen ? "×" : "→"}</span></button>
+    </section>
+    <section className="automation-assistant" id="assistant-domotique" aria-label="Assistant de création d’automatisations">
+      <header>
+        <div><span>✦</span><div><small>ASSISTANT DOMOTIQUE PREMIUM</small><h3>Dites simplement ce que vous voulez</h3><p>L’assistant prépare une règle sûre. Il ne crée rien avant votre confirmation explicite.</p></div></div>
+        <em>Aperçu obligatoire</em>
+      </header>
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        void prepareAssistantAutomation();
+      }}>
+        <textarea
+          value={assistantRequest}
+          maxLength={600}
+          onChange={(event) => {
+            setAssistantRequest(event.target.value);
+            setAssistantPreview(null);
+            setAssistantCreated(null);
+          }}
+          placeholder="Ex. Allume la filtration tous les jours à 10h30"
+          aria-label="Décrivez l’automatisation souhaitée"
+        />
+        <button className="primary" disabled={assistantBusy || assistantRequest.trim().length < 3}>
+          {assistantBusy ? "Préparation…" : "Préparer l’aperçu"}
+        </button>
+      </form>
+      {assistantCreated && <div className="assistant-result success" role="status"><span>✓</span><div><b>Demande confirmée</b><p>{assistantCreated}</p></div></div>}
+      {assistantPreview?.result?.status === "ready" && assistantPreview.result.proposal && <article className="assistant-preview">
+        <div className="assistant-preview-heading"><div><small>APERÇU À CONFIRMER · NON ACTIVÉ</small><h4>{assistantPreview.result.proposal.name}</h4></div><span>Valable 10 min</span></div>
+        <p>{assistantPreview.result.summary}</p>
+        <div className="assistant-rule"><span><b>QUAND</b>{assistantPreview.result.proposal.triggerLabel}</span><i>→</i><span><b>ALORS</b>{assistantPreview.result.proposal.actionLabel}</span></div>
+        {assistantPreview.error && <p className="assistant-error">{assistantPreview.error}</p>}
+        <div className="assistant-preview-actions">
+          <button type="button" onClick={() => setAssistantPreview(null)}>Modifier la demande</button>
+          <button type="button" className="primary" disabled={assistantBusy} onClick={() => void confirmAssistantAutomation()}>{assistantBusy ? "Confirmation…" : "Confirmer et créer"}</button>
+        </div>
+        <small className="assistant-safety-note">En confirmant, seule la règle affichée ci-dessus sera envoyée à votre Green Box.</small>
+      </article>}
+      {assistantPreview && assistantPreview.result?.status !== "ready" && <div className={`assistant-result ${assistantPreview.result?.status === "refused" ? "refused" : "attention"}`} role="status">
+        <span>{assistantPreview.result?.status === "refused" ? "!" : "?"}</span>
+        <div><b>{assistantPreview.result?.status === "refused" ? "Action non autorisée" : "Il me manque une précision"}</b><p>{assistantPreview.result?.message ?? assistantPreview.error}</p></div>
+      </div>}
+      {assistantPreview?.error && !assistantPreview.result && <div className="assistant-result attention" role="status"><span>!</span><div><b>Assistant indisponible</b><p>{assistantPreview.error}</p></div></div>}
+      {assistantPreview && assistantPreview.result?.status !== "ready" && <div className="assistant-help">
+        <div><small>{assistantPreview.help?.documentation?.title ?? "Pour réussir votre demande"}</small><ol>{(assistantPreview.help?.documentation?.steps ?? [
+          "Vérifiez que l’appareil est en ligne dans Équipements.",
+          "Indiquez une action, un appareil et une heure précise.",
+          "Relisez l’aperçu avant de confirmer.",
+        ]).map((step) => <li key={step}>{step}</li>)}</ol></div>
+        <button type="button" disabled={supportBusy} onClick={() => void createSupportTicket()}>{supportBusy ? "Envoi…" : "Créer un ticket support"}</button>
+      </div>}
     </section>
     {predictivePlan && <section className={`predictive-plan status-${predictivePlan.status}`} aria-label="Plan énergétique prédictif">
       {predictivePlans.length > 1 && <div className="predictive-load-tabs">{predictivePlans.map((plan) =>
@@ -1998,10 +2283,13 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
             <span><strong>Quand</strong>{message.proposal.trigger}</span>
             <span><strong>Alors</strong>{message.proposal.action}</span>
             <button onClick={() => {
-              selectAutomation(null);
-              setModal("automation");
-              notify("Vérifiez la proposition avant de la confirmer");
-            }}>Examiner cette proposition</button>
+              const request = `${message.proposal?.action ?? ""} ${message.proposal?.trigger ?? ""}`.trim();
+              setAssistantRequest(request);
+              setAssistantPreview(null);
+              setAssistantCreated(null);
+              window.setTimeout(() => document.getElementById("assistant-domotique")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+              notify("Précisez la règle puis préparez son aperçu");
+            }}>Préparer cette proposition</button>
           </article>}
         </div>)}
         {coachLoading && <div className="coach-message coach"><p><i className="coach-thinking" /> J’analyse les mesures…</p></div>}

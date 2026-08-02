@@ -1,7 +1,11 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { installationDossiers } from "../../../../db/schema";
-import { portalApiAuthorized } from "../../../../lib/portal-api-auth";
+import {
+  portalApiAdminAuthorized,
+  portalApiAuthorized,
+  portalHouseAuthorized,
+} from "../../../../lib/portal-api-auth";
 import {
   addDays,
   GRACE_DAYS,
@@ -24,6 +28,9 @@ export async function GET(
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
   const { publicId } = await context.params;
+  if (!await portalHouseAuthorized(publicId)) {
+    return Response.json({ error: "Accès refusé pour cette maison" }, { status: 403 });
+  }
   const dossier = await dossierByPublicId(publicId);
   if (!dossier) return Response.json({ error: "Maison introuvable" }, { status: 404 });
   return Response.json({
@@ -39,6 +46,9 @@ export async function PATCH(
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
   const { publicId } = await context.params;
+  if (!await portalHouseAuthorized(publicId)) {
+    return Response.json({ error: "Accès refusé pour cette maison" }, { status: 403 });
+  }
   const dossier = await dossierByPublicId(publicId);
   if (!dossier) return Response.json({ error: "Maison introuvable" }, { status: 404 });
   const body = await request.json() as {
@@ -50,6 +60,13 @@ export async function PATCH(
   const update: Partial<typeof installationDossiers.$inferInsert> = {
     updatedAt: nowIso,
   };
+
+  if (body.action !== "start_trial" && !await portalApiAdminAuthorized()) {
+    return Response.json({
+      error: "Cette action est réservée à l’équipe 1.2.3 Home",
+      code: "INSTALLER_REQUIRED",
+    }, { status: 403 });
+  }
 
   if (body.action === "start_trial") {
     if (dossier.subscriptionStatus !== "not_started") {

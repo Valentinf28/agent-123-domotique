@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, lt, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { assistantUsage, energySnapshots } from "../db/schema";
 import { selectAgentForDossier } from "./agent-home";
@@ -7,27 +7,25 @@ import {
   buildPredictiveEnergyPlan,
   type SolarForecastSlot,
 } from "./predictive-energy";
-
-export type EnergyInventoryItem = {
-  entityId: string;
-  name: string;
-  domain: string;
-  state: string;
-  deviceClass?: string | null;
-};
-
-export type EnergySnapshotValues = {
-  solarWatts: number;
-  homeWatts: number;
-  gridWatts: number;
-  batteryPercent: number;
-  batteryWatts: number;
-  filtrationWatts: number;
-  hotWaterWatts: number;
-  vehicleWatts: number;
-  dailyProductionWh: number;
-  dailyConsumptionWh: number;
-};
+import {
+  energySnapshotFromInventory,
+  type EnergyInventoryItem,
+  type EnergySnapshotValues,
+} from "./energy-snapshot";
+import {
+  ASSISTANT_MONTHLY_LIMIT,
+  assistantQuotaAllows,
+  assistantQuotaBucket,
+  type AssistantQuotaKind,
+} from "./assistant-quota";
+export {
+  ASSISTANT_MONTHLY_LIMIT,
+  assistantQuotaAllows,
+  assistantQuotaBucket,
+} from "./assistant-quota";
+export type { AssistantQuotaKind } from "./assistant-quota";
+export { energySnapshotFromInventory } from "./energy-snapshot";
+export type { EnergyInventoryItem, EnergySnapshotValues } from "./energy-snapshot";
 
 export type EnergyInsight = {
   id: string;
@@ -51,34 +49,6 @@ type FlexibleLoadConfiguration = {
 };
 
 const bindings = {
-  solarWatts: ["sensor.inverter_pv_power", "sensor.onduleur_pv_power", "input_number.demo_solar_power"],
-  homeWatts: [
-    "sensor.shellyem3_483fdac38616_channel_b_power",
-    "sensor.inverter_load_power",
-    "sensor.onduleur_load_power",
-    "input_number.demo_house_power",
-  ],
-  gridWatts: [
-    "sensor.shellyem3_483fdac38616_channel_c_power",
-    "sensor.inverter_grid_power",
-    "sensor.onduleur_grid_power",
-    "sensor.1_2_3_home_puissance_reseau",
-  ],
-  batteryPercent: ["sensor.inverter_battery", "sensor.onduleur_battery", "input_number.demo_battery_soc"],
-  batteryWatts: ["sensor.inverter_battery_power", "sensor.onduleur_battery_power", "sensor.1_2_3_home_puissance_batterie"],
-  filtrationWatts: ["sensor.filtration_piscine_puissance"],
-  hotWaterWatts: ["sensor.1_2_3_home_puissance_chauffe_eau"],
-  vehicleWatts: [
-    "sensor.tesla_model_x_charger_power",
-    "sensor.tesla_y_charger_power",
-    "input_number.demo_tesla_charge_power",
-  ],
-  dailyProductionWh: ["sensor.inverter_today_production", "sensor.onduleur_today_production"],
-  dailyConsumptionWh: [
-    "sensor.1_2_3_home_today_consumption",
-    "sensor.inverter_today_load_consumption",
-    "sensor.onduleur_today_load_consumption",
-  ],
   forecastTodayKwh: [
     "sensor.maison_energy_production_today",
     "sensor.energy_production_today",
@@ -212,29 +182,8 @@ export function solarForecastFromInventory(
     .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
 }
 
-function integer(value: number) {
-  return Math.round(Math.max(-100_000, Math.min(100_000, value)));
-}
-
-export function energySnapshotFromInventory(
-  inventory: EnergyInventoryItem[],
-): EnergySnapshotValues {
-  return {
-    solarWatts: integer(numberFrom(inventory, bindings.solarWatts)),
-    homeWatts: integer(numberFrom(inventory, bindings.homeWatts)),
-    gridWatts: integer(numberFrom(inventory, bindings.gridWatts)),
-    batteryPercent: integer(numberFrom(inventory, bindings.batteryPercent)),
-    batteryWatts: integer(numberFrom(inventory, bindings.batteryWatts)),
-    filtrationWatts: integer(numberFrom(inventory, bindings.filtrationWatts)),
-    hotWaterWatts: integer(numberFrom(inventory, bindings.hotWaterWatts)),
-    vehicleWatts: integer(numberFrom(inventory, bindings.vehicleWatts)),
-    dailyProductionWh: integer(numberFrom(inventory, bindings.dailyProductionWh) * 1000),
-    dailyConsumptionWh: integer(numberFrom(inventory, bindings.dailyConsumptionWh) * 1000),
-  };
-}
-
-export function fifteenMinuteBucket(date: Date) {
-  const minutes = Math.floor(date.getUTCMinutes() / 15) * 15;
+export function fiveMinuteBucket(date: Date) {
+  const minutes = Math.floor(date.getUTCMinutes() / 5) * 5;
   const bucket = new Date(date);
   bucket.setUTCMinutes(minutes, 0, 0);
   return bucket.toISOString();
@@ -384,16 +333,14 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
       0,
       sample.homeWatts -
       sample.filtrationWatts -
-      sample.hotWaterWatts -
-      sample.vehicleWatts,
+      sample.hotWaterWatts,
     )
   ).filter((value) => value > 0);
   const currentBaseLoad = Math.max(
     0,
     current.homeWatts -
     current.filtrationWatts -
-    current.hotWaterWatts -
-    current.vehicleWatts,
+    current.hotWaterWatts,
   );
   const baseLoadWatts = Math.round(Math.max(
     150,
@@ -478,26 +425,41 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
   };
 }
 
-export async function consumeAssistantRequest(dossierId: number) {
-  const month = new Date().toISOString().slice(0, 7);
+export async function consumeAssistantRequest(
+  dossierId: number,
+  kind: AssistantQuotaKind,
+  now = new Date(),
+) {
+  const month = assistantQuotaBucket(kind, now);
   const db = getDb();
-  const [usage] = await db.select().from(assistantUsage)
-    .where(and(
-      eq(assistantUsage.dossierId, dossierId),
-      eq(assistantUsage.month, month),
-    )).limit(1);
-  if ((usage?.requestCount ?? 0) >= 100) return false;
-  await db.insert(assistantUsage).values({
+  const [usage] = await db.insert(assistantUsage).values({
     dossierId,
     month,
     requestCount: 1,
-    updatedAt: new Date().toISOString(),
+    updatedAt: now.toISOString(),
   }).onConflictDoUpdate({
     target: [assistantUsage.dossierId, assistantUsage.month],
     set: {
       requestCount: sql`${assistantUsage.requestCount} + 1`,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now.toISOString(),
     },
-  });
-  return true;
+    setWhere: lt(assistantUsage.requestCount, ASSISTANT_MONTHLY_LIMIT),
+  }).returning({ requestCount: assistantUsage.requestCount });
+  return Boolean(usage && assistantQuotaAllows(usage.requestCount - 1));
+}
+
+export async function refundAssistantRequest(
+  dossierId: number,
+  kind: AssistantQuotaKind,
+  now = new Date(),
+) {
+  const month = assistantQuotaBucket(kind, now);
+  await getDb().update(assistantUsage).set({
+    requestCount: sql`${assistantUsage.requestCount} - 1`,
+    updatedAt: now.toISOString(),
+  }).where(and(
+    eq(assistantUsage.dossierId, dossierId),
+    eq(assistantUsage.month, month),
+    gt(assistantUsage.requestCount, 0),
+  ));
 }

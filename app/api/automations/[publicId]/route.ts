@@ -5,6 +5,7 @@ import {
 import {
   portalApiAuthorized,
   portalApiError,
+  portalHouseAuthorized,
 } from "../../../../lib/portal-api-auth";
 
 export async function PATCH(
@@ -28,13 +29,15 @@ export async function PATCH(
         { status: 400 },
       );
     }
+    if (typeof input.dossierPublicId !== "string" ||
+      !await portalHouseAuthorized(input.dossierPublicId)) {
+      return Response.json({ error: "Accès refusé pour cette maison" }, { status: 403 });
+    }
     const { publicId } = await context.params;
     const result = await queueAgentAutomationState(
       publicId,
       input.enabled,
-      typeof input.dossierPublicId === "string"
-        ? input.dossierPublicId
-        : null,
+      input.dossierPublicId,
     );
     return Response.json(result, {
       status: 202,
@@ -59,6 +62,9 @@ export async function DELETE(
     const { publicId } = await context.params;
     const dossierPublicId =
       new URL(request.url).searchParams.get("dossier");
+    if (!dossierPublicId || !await portalHouseAuthorized(dossierPublicId)) {
+      return Response.json({ error: "Accès refusé pour cette maison" }, { status: 403 });
+    }
     const result = await queueAgentAutomationDelete(
       publicId,
       dossierPublicId,

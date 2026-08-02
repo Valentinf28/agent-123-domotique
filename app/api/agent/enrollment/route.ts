@@ -2,7 +2,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { agentBoxes, agentEnrollmentCodes, installationDossiers } from "../../../../db/schema";
 import { enrollmentCode, sha256 } from "../../../../lib/agent-auth";
-import { portalApiAuthorized } from "../../../../lib/portal-api-auth";
+import { portalApiAdminAuthorized } from "../../../../lib/portal-api-auth";
 
 async function activeDossier(request?: Request) {
   const requested = request ? new URL(request.url).searchParams.get("dossier") : "";
@@ -18,8 +18,8 @@ async function activeDossier(request?: Request) {
 }
 
 export async function GET(request: Request) {
-  if (!await portalApiAuthorized()) {
-    return Response.json({ error: "Authentification requise" }, { status: 401 });
+  if (!await portalApiAdminAuthorized()) {
+    return Response.json({ error: "Accès installateur requis" }, { status: 403 });
   }
   const dossier = await activeDossier(request);
   if (!dossier) return Response.json({ agent: null });
@@ -38,8 +38,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!await portalApiAuthorized()) {
-    return Response.json({ error: "Authentification requise" }, { status: 401 });
+  if (!await portalApiAdminAuthorized()) {
+    return Response.json({ error: "Accès installateur requis" }, { status: 403 });
   }
   const dossier = await activeDossier(request);
   if (!dossier) return Response.json({ error: "Aucun dossier en préparation" }, { status: 404 });

@@ -92,6 +92,27 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 - `npm test`: build the starter and verify its rendered loading skeleton
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 
+## Abonnement Premium Stripe
+
+Le portail sait collecter le moyen de paiement pendant l’essai de 30 jours,
+activer automatiquement l’offre à 9,90 €/mois ou 99 €/an, appliquer le délai
+de grâce en cas d’impayé et ouvrir le portail client Stripe.
+
+Variables serveur requises (ne jamais les exposer dans l’application mobile) :
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_MONTHLY_PRICE_ID`
+- `STRIPE_YEARLY_PRICE_ID`
+
+Le webhook Stripe doit pointer vers `/api/subscriptions/webhook` et écouter au
+minimum `checkout.session.completed`, `customer.subscription.created`,
+`customer.subscription.updated` et `customer.subscription.deleted`.
+
+La migration `drizzle/0011_stripe_billing.sql` mémorise uniquement les
+identifiants techniques Stripe nécessaires. Les automatismes locaux restent
+accessibles même lorsqu’un abonnement distant est suspendu.
+
 ## Learn More
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)

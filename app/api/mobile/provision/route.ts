@@ -2,6 +2,10 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { installationDossiers, mobilePairingCodes, plannedDevices } from "../../../../db/schema";
 import { sha256 } from "../../../../lib/agent-auth";
+import {
+  normalizeEnabledModules,
+  normalizeSolarInstalledPowerWp,
+} from "../../../../lib/client-modules.js";
 import { subscriptionSummary } from "../../../../lib/subscription";
 
 const viewCatalog = {
@@ -22,6 +26,15 @@ function publicDeviceId(value: string) {
   return `appareil_${(hash >>> 0).toString(36)}`;
 }
 
+function offPeakPeriodsFromDossier(value: string) {
+  try {
+    const periods = JSON.parse(value);
+    return Array.isArray(periods) ? periods : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json() as { code?: string };
@@ -37,8 +50,7 @@ export async function POST(request: Request) {
     const [dossier] = await db.select().from(installationDossiers)
       .where(eq(installationDossiers.id, pairing.dossierId)).limit(1);
     if (!dossier) return Response.json({ error: "Maison introuvable" }, { status: 404 });
-    let modules: string[] = ["home"];
-    try { modules = JSON.parse(dossier.enabledModules); } catch {}
+    const modules = normalizeEnabledModules(dossier.enabledModules);
     const views = modules
       .filter((module): module is keyof typeof viewCatalog => module in viewCatalog)
       .map(module => viewCatalog[module]);
@@ -53,6 +65,9 @@ export async function POST(request: Request) {
       portalUrl: `${origin}/ma-maison`,
       apiBaseUrl: `${origin}/api`,
       subscription: subscriptionSummary(dossier),
+      tariffPlan: dossier.tariffPlan === "hp_hc" ? "hp_hc" : "base",
+      offPeakPeriods: offPeakPeriodsFromDossier(dossier.offPeakPeriodsJson),
+      solarInstalledPowerWp: normalizeSolarInstalledPowerWp(dossier.solarPeakWatts),
       modules,
       views,
       configuredDevices: configuredDevices

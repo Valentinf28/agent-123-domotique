@@ -16,6 +16,9 @@ import {
   powerValueWatts,
 } from "./energy-allocation.generated.js";
 import { dailySolarPeakWatts } from "./daily-solar-peak.generated.js";
+import { agentConnectionHealth } from "./connection-health.js";
+import { normalizeEnabledModules } from "./client-modules.js";
+import { subscriptionSummary } from "./subscription";
 
 type InventoryItem = {
   entityId: string;
@@ -43,6 +46,20 @@ type RingSecurityBinding = {
   label: string;
   room: string;
   kind: "camera" | "doorbell";
+};
+
+type PortalDevice = {
+  publicId: string;
+  name: string;
+  room: string;
+  areaPublicId: string;
+  category: string;
+  state: string;
+  available: boolean;
+  controllable: boolean;
+  battery: number | null;
+  visible: boolean;
+  lastChanged: string;
 };
 
 const ringSecurityBindings: RingSecurityBinding[] = [
@@ -495,10 +512,8 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     Object.values(ringCameraAssignments()).includes(selected.dossier.reference);
   const allowShowroomEntities =
     selected.dossier.reference.toUpperCase().includes("SHOWROOM");
-  const online = Boolean(
-    selected.agent.lastSeenAt &&
-    Date.now() - Date.parse(selected.agent.lastSeenAt) < 120_000
-  );
+  const connection = agentConnectionHealth(selected.agent.lastSeenAt);
+  const online = connection.connected;
   const ringOnline = Boolean(
     ringSource?.agent.lastSeenAt &&
     Date.now() - Date.parse(ringSource.agent.lastSeenAt) < 120_000
@@ -559,7 +574,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     };
   });
 
-  const devices = controlBindings
+  const devices: PortalDevice[] = controlBindings
     .filter((binding) =>
       binding.label !== "Caméras" ||
       (ringSecurity.length === 0 && !cameraPlacementReassigned)
@@ -680,7 +695,9 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     gte(energySnapshots.capturedAt, new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString()),
   )).limit(160);
   const peakPowerWatts = dailySolarPeakWatts({
-    samples: recentSolarSnapshots,
+    // Le module JavaScript généré infère [] comme never[] sans déclaration de
+    // types ; les éléments transmis respectent bien son contrat runtime.
+    samples: recentSolarSnapshots as unknown as never[],
     currentWatts: inventoryPowerWatts(energyItems.solar),
     reportedPeakWatts: inventoryPowerWatts(energyItems.peakPower),
     reportedPeakDate: energyItems.peakPower?.attributes?.date,
@@ -703,12 +720,15 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
 
   return {
     connected: online,
+    connection,
     source: "agent",
     dossier: {
       publicId: selected.dossier.publicId,
       reference: selected.dossier.reference,
       name: selected.dossier.customerName,
     },
+    subscription: subscriptionSummary(selected.dossier),
+    enabledModules: normalizeEnabledModules(selected.dossier.enabledModules),
     deviceCount: devices.length,
     unavailableCount: devices.filter((device) => !device.available).length,
     lowBatteryCount: devices.filter((device) => device.battery !== null && device.battery < 20).length,

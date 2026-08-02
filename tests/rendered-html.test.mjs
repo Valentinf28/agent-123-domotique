@@ -35,7 +35,11 @@ test("inclut le parcours de préparation réservé aux installateurs", async () 
 });
 
 test("propose les familles d’équipements du showroom sans associer les anciennes entités indisponibles", async () => {
-  const source = await readFile(new URL("../app/portal.tsx", import.meta.url), "utf8");
+  const [source, discovery, resolver] = await Promise.all([
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/preparation/discovery/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../shared/provisioning-discovery.js", import.meta.url), "utf8"),
+  ]);
   assert.match(source, /SUN-15K-SG01HP3-EU-AM2/);
   assert.match(source, /Shelly.*Pro 1PM/s);
   assert.match(source, /Philips Hue.*Bridge/s);
@@ -46,9 +50,12 @@ test("propose les familles d’équipements du showroom sans associer les ancien
   assert.match(source, /\["Salon","Cuisine","Chambre","Entrée","Extérieur","Garage","Local technique"\]/);
   assert.match(source, /associableInventory/);
   assert.match(source, /!\["unknown", "unavailable"\]\.includes/);
-  assert.match(source, /domains\.includes\(entity\.domain\) && terms\.some/);
-  assert.match(source, /item\.status === "Détecté"/);
-  assert.match(source, /status: "À préparer" as InstallationStatus/);
+  assert.match(source, /Rapport de découverte/);
+  assert.match(discovery, /applyCertain/);
+  assert.match(discovery, /confirmations/);
+  assert.match(resolver, /entityIsShowroomOnly/);
+  assert.match(resolver, /requiresConfirmation: true/);
+  assert.match(resolver, /report\.missing\.push/);
 });
 
 test("sauvegarde la préparation dans une base rattachée au dossier", async () => {
@@ -57,7 +64,7 @@ test("sauvegarde la préparation dans une base rattachée au dossier", async () 
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
   ]);
   assert.match(route, /export async function PUT/);
-  assert.match(route, /portalApiAuthorized/);
+  assert.match(route, /portalApiAdminAuthorized/);
   assert.match(schema, /installationDossiers/);
   assert.match(schema, /plannedDevices/);
   assert.match(schema, /agentBoxes/);
@@ -345,6 +352,19 @@ test("garde Home Assistant hors du parcours client", async () => {
   assert.doesNotMatch(worker, /Lovelace|HA_ACCESS_TOKEN|HA_BASE_URL|ma-maison\/ha/i);
   assert.doesNotMatch(mobileProvision, /homeAssistantUrl|entityId:/i);
   assert.match(mobileProvision, /portalUrl/);
+  assert.match(mobileProvision, /solarInstalledPowerWp: normalizeSolarInstalledPowerWp\(dossier\.solarPeakWatts\)/);
+});
+
+test("applique au portail les mêmes onglets configurés que sur le mobile", async () => {
+  const [portal, agentHome, mobileProvision] = await Promise.all([
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/agent-home.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/mobile/provision/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(agentHome, /enabledModules: normalizeEnabledModules\(selected\.dossier\.enabledModules\)/);
+  assert.match(mobileProvision, /const modules = normalizeEnabledModules\(dossier\.enabledModules\)/);
+  assert.match(portal, /module === "home" \|\| enabledModules\.includes\(module\)/);
+  assert.match(portal, /visibleHomeTabs\.map/);
 });
 
 test("gère l’essai de 30 jours sans couper la domotique locale", async () => {
@@ -388,7 +408,7 @@ test("inclut les assistants et le nouveau tarif dans le forfait client", async (
   assert.match(route, /Toute automatisation reste un brouillon/);
   assert.doesNotMatch(route, /agentCommands|ha\.services\.call/);
   assert.match(coach, /consumeAssistantRequest/);
-  assert.match(heartbeat, /fifteenMinuteBucket/);
+  assert.match(heartbeat, /fiveMinuteBucket/);
   assert.match(schema, /energySnapshots/);
   assert.match(schema, /assistantUsage/);
   assert.match(migration, /UPDATE `installation_dossiers`/);
@@ -415,4 +435,31 @@ test("prévoit la production solaire et protège la batterie avant de piloter le
   assert.match(schema, /batteryCapacityWh/);
   assert.match(schema, /flexibleLoadsJson/);
   assert.match(migration, /predictive_control_enabled/);
+});
+
+test("affiche le même historique énergétique interactif que l’application", async () => {
+  const [portal, styles, heartbeat] = await Promise.all([
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/agent/heartbeat/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(portal, /Mesures toutes les 5 min/);
+  assert.match(portal, /portal-energy-readout/);
+  assert.match(portal, /setPointerCapture/);
+  assert.match(portal, /cursor-line/);
+  assert.match(portal, /soc-line/);
+  assert.match(portal, /solar-area/);
+  assert.match(portal, /signedPower/);
+  assert.match(styles, /touch-action:none/);
+  assert.match(styles, /stroke-dasharray:6 5/);
+  assert.match(heartbeat, /fiveMinuteBucket/);
+});
+
+test("conserve la parité des états véhicule et du résumé Maison", async () => {
+  const portal = await readFile(new URL("../app/portal.tsx", import.meta.url), "utf8");
+  assert.match(portal, /const onlineState = overview\?\.comfort\?\.teslaOnline/);
+  assert.match(portal, /online \? "En ligne" : "Hors ligne"/);
+  assert.match(portal, /const vehicleBattery = overview\?\.comfort\?\.teslaBattery/);
+  assert.match(portal, /sub=\{vehicleWatts > CLIENT_EXPERIENCE\.energyScene\.flowActivationWatts/);
+  assert.ok(portal.indexOf("Bilan énergétique") < portal.indexOf("Détail des panneaux"));
 });

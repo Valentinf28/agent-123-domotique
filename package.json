@@ -11,8 +11,12 @@
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run check:energy-profile && npm run test:predictive && npm run build && node --test tests/rendered-html.test.mjs",
+    "test": "npm run check:energy-profile && npm run test:predictive && npm run test:energy-coach && npm run test:automation-assistant && npm run test:billing && npm run test:premium-security && npm run build && node --test tests/*.test.mjs",
     "test:predictive": "node --experimental-strip-types --test tests/predictive-energy.test.ts",
+    "test:energy-coach": "tsx --test tests/energy-coach.test.ts",
+    "test:automation-assistant": "tsx --test tests/automation-assistant.test.ts",
+    "test:billing": "tsx --test tests/stripe-subscription.test.ts",
+    "test:premium-security": "tsx --test tests/premium-security.test.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
@@ -20,7 +24,8 @@
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "stripe": "^22.4.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",

@@ -1,8 +1,13 @@
-import { getChatGPTUser } from "../../../chatgpt-auth";
 import { sha256 } from "../../../../lib/agent-auth";
+import {
+  portalApiAuthorized,
+  portalAuthorizedHouseIds,
+  portalHouseAuthorized,
+} from "../../../../lib/portal-api-auth";
 import {
   consumeAssistantRequest,
   getEnergyCoachContext,
+  refundAssistantRequest,
   type EnergyInsight,
 } from "../../../../lib/energy-coach";
 
@@ -18,14 +23,6 @@ type CoachReply = {
   automationProposal: AutomationProposal | null;
   suggestedQuestions: string[];
 };
-
-async function authorized() {
-  const user = await getChatGPTUser();
-  const localDevelopment =
-    process.env.NODE_ENV === "development" &&
-    process.env.HA_ALLOW_LOCAL_DEVELOPMENT === "true";
-  return Boolean(user || localDevelopment);
-}
 
 function localReply(message: string, insights: EnergyInsight[]): CoachReply {
   const normalized = message.toLowerCase();
@@ -72,7 +69,7 @@ async function openAiReply(
 ): Promise<CoachReply | null> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) return null;
-  if (!await consumeAssistantRequest(context.dossier.id)) {
+  if (!await consumeAssistantRequest(context.dossier.id, "energy")) {
     return {
       answer: "Le coach a atteint sa limite de protection pour ce mois. Les recommandations automatiques restent disponibles et le service reprendra au prochain cycle.",
       automationProposal: null,
@@ -159,16 +156,27 @@ async function openAiReply(
       }),
       signal: controller.signal,
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      await refundAssistantRequest(context.dossier.id, "energy");
+      return null;
+    }
     const payload = await response.json() as {
       output_text?: string;
       output?: Array<{ content?: Array<{ text?: string }> }>;
     };
     const text = responseText(payload);
-    if (!text) return null;
+    if (!text) {
+      await refundAssistantRequest(context.dossier.id, "energy");
+      return null;
+    }
     const parsed = JSON.parse(text) as CoachReply;
-    return typeof parsed.answer === "string" ? parsed : null;
+    if (typeof parsed.answer !== "string") {
+      await refundAssistantRequest(context.dossier.id, "energy");
+      return null;
+    }
+    return parsed;
   } catch {
+    await refundAssistantRequest(context.dossier.id, "energy").catch(() => undefined);
     return null;
   } finally {
     clearTimeout(timeout);
@@ -176,11 +184,16 @@ async function openAiReply(
 }
 
 export async function GET(request: Request) {
-  if (!await authorized()) {
+  if (!await portalApiAuthorized()) {
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
   try {
-    const dossier = new URL(request.url).searchParams.get("dossier");
+    const requested = new URL(request.url).searchParams.get("dossier");
+    const allowed = await portalAuthorizedHouseIds();
+    const dossier = requested || (allowed?.size === 1 ? [...allowed][0] : null);
+    if (allowed && (!dossier || !allowed.has(dossier))) {
+      return Response.json({ error: "Accès refusé pour cette maison" }, { status: 403 });
+    }
     const context = await getEnergyCoachContext(dossier);
     return Response.json({
       coach: {
@@ -199,7 +212,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!await authorized()) {
+  if (!await portalApiAuthorized()) {
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
   try {
@@ -207,6 +220,10 @@ export async function POST(request: Request) {
     const message = String(body.message ?? "").trim().slice(0, 600);
     if (message.length < 3) {
       return Response.json({ error: "Question trop courte" }, { status: 400 });
+    }
+    if (typeof body.dossierPublicId !== "string" ||
+      !await portalHouseAuthorized(body.dossierPublicId)) {
+      return Response.json({ error: "Accès refusé pour cette maison" }, { status: 403 });
     }
     const context = await getEnergyCoachContext(body.dossierPublicId);
     const reply = await openAiReply(message, context) ??

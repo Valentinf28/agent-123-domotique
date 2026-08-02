@@ -3,7 +3,7 @@ import { getDb } from "../../../../db";
 import { agentBoxes, agentCommands, energySnapshots, installationDossiers, plannedDevices } from "../../../../db/schema";
 import { authenticatedAgent, sha256 } from "../../../../lib/agent-auth";
 import { buildDashboardConfig } from "../../../../lib/dashboard-config";
-import { energySnapshotFromInventory, fifteenMinuteBucket } from "../../../../lib/energy-coach";
+import { energySnapshotFromInventory, fiveMinuteBucket } from "../../../../lib/energy-coach";
 
 export async function POST(request: Request) {
   const agent = await authenticatedAgent(request);
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       const snapshot = energySnapshotFromInventory(inventory);
       await db.insert(energySnapshots).values({
         dossierId: agent.dossierId,
-        bucket: fifteenMinuteBucket(nowDate),
+        bucket: fiveMinuteBucket(nowDate),
         capturedAt: now,
         ...snapshot,
       }).onConflictDoNothing();
