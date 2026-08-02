@@ -6,6 +6,7 @@ import { CLIENT_EXPERIENCE } from "../lib/client-experience.generated";
 import { createEnergyFlowState, flowDurationMs, formatKilowatts, formatKwh, formatWatts } from "../lib/energy-allocation.generated.js";
 import { createEnergySceneLayout } from "../lib/energy-scene.generated.js";
 import { addEnergyDays, energyDateKey, formatEnergyDay, isEnergyToday } from "../lib/energy-period.generated.js";
+import { MOON_PHASE_GLYPHS, MOON_PHASE_LABELS, moonDisplayPhase } from "../lib/moon-phase";
 
 type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
 type HomeTab = (typeof CLIENT_EXPERIENCE.tabs)[number]["label"];
@@ -167,6 +168,10 @@ type OffPeakPeriod = {
 };
 type EnergyConfiguration = {
   solarPeakWatts: number;
+  solarArrays: Array<{
+    id: string; label: string; peakWatts: number;
+    orientation: string; inclinationDegrees: number | null;
+  }>;
   batteryCapacityWh: number;
   batteryReservePercent: number;
   flexibleLoads: FlexibleLoadConfiguration[];
@@ -200,6 +205,11 @@ type DiscoveryReport = {
 };
 type InstallationDossier = {
   publicId: string; reference: string; customerName: string; status: string; updatedAt: string;
+};
+type ErpDossierOption = {
+  id: number; reference: string; title: string; customerName: string;
+  city?: string | null; postalCode?: string | null; status?: string | null;
+  solarPeakKwc?: string | number | null; hasBattery?: boolean;
 };
 type SubscriptionSummary = {
   status: "not_started" | "trialing" | "active" | "past_due" | "suspended" | "cancelled";
@@ -452,9 +462,11 @@ export default function Portal({
     }
   }
 
-  async function createDossier() {
-    const reference = newDossierReference.trim().toUpperCase();
-    const customerName = newDossierCustomer.trim();
+  async function createDossier(fromErp = false) {
+    const reference = fromErp
+      ? `IMPORT-${Date.now().toString().slice(-8)}`
+      : newDossierReference.trim().toUpperCase();
+    const customerName = fromErp ? "Nouvelle maison" : newDossierCustomer.trim();
     if (reference.length < 3 || customerName.length < 2) {
       notify("Renseignez une référence et un nom");
       return;
@@ -477,7 +489,7 @@ export default function Portal({
       setNewDossierReference("");
       setNewDossierCustomer("");
       setView("Préparation");
-      notify(`Dossier ${dossier.reference} créé`);
+      notify(fromErp ? "Sélectionnez maintenant le dossier ERP" : `Dossier ${dossier.reference} créé`);
     } catch {
       notify("La création du dossier a échoué");
     } finally {
@@ -688,6 +700,10 @@ export default function Portal({
           <small>NOUVELLE INSTALLATION</small>
           <h3 id="new-dossier-title">Créer un dossier</h3>
           <p>Créez une identité distincte avant d’enrôler la box. Une box restaurée ne doit jamais conserver l’identité de l’installation source.</p>
+          <button className="erp-start-button" disabled={creatingDossier} onClick={() => void createDossier(true)}>
+            <span>↗</span><b>Créer depuis un dossier ERP<small>Nom, adresse, solaire, batterie et équipements seront repris automatiquement.</small></b>
+          </button>
+          <div className="modal-separator"><span>ou créer manuellement</span></div>
           <label className="field">Référence
             <input value={newDossierReference} onChange={(event) => setNewDossierReference(event.target.value)} placeholder="SHOWROOM-123" autoFocus />
           </label>
@@ -696,7 +712,7 @@ export default function Portal({
           </label>
           <div className="modal-actions">
             <button onClick={() => setNewDossierOpen(false)}>Annuler</button>
-            <button className="primary" disabled={creatingDossier} onClick={() => void createDossier()}>
+            <button className="primary" disabled={creatingDossier} onClick={() => void createDossier(false)}>
               {creatingDossier ? "Création…" : "Créer le dossier"}
             </button>
           </div>
@@ -724,10 +740,20 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
   const [query, setQuery] = useState("");
   const [protocol, setProtocol] = useState("Tous");
   const [selectedRoom, setSelectedRoom] = useState("Salon");
-  const [dossier, setDossier] = useState({ reference: "Chargement…", customerName: "" });
+  const [dossier, setDossier] = useState<{
+    reference: string; customerName: string; customerAddress?: string | null;
+    erpDossierId?: number | null; erpImportedAt?: string | null;
+  }>({ reference: "Chargement…", customerName: "" });
+  const [tunnelStep, setTunnelStep] = useState(0);
+  const [erpQuery, setErpQuery] = useState("");
+  const [erpOptions, setErpOptions] = useState<ErpDossierOption[]>([]);
+  const [erpState, setErpState] = useState<"idle" | "searching" | "importing" | "error">("idle");
+  const [erpMessage, setErpMessage] = useState("");
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [enabledModules, setEnabledModules] = useState<AppModule[]>(["home", "solar", "heating", "access", "vehicle"]);
   const [energyConfiguration, setEnergyConfiguration] = useState<EnergyConfiguration>({
     solarPeakWatts: 0,
+    solarArrays: [],
     batteryCapacityWh: 0,
     batteryReservePercent: 25,
     flexibleLoads: [],
@@ -753,6 +779,9 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
         if (Array.isArray(payload.dossier.enabledModules)) setEnabledModules(payload.dossier.enabledModules);
         if (payload.dossier.energyConfiguration) setEnergyConfiguration({
           ...payload.dossier.energyConfiguration,
+          solarArrays: Array.isArray(payload.dossier.energyConfiguration.solarArrays)
+            ? payload.dossier.energyConfiguration.solarArrays
+            : [],
           tariffPlan: payload.dossier.energyConfiguration.tariffPlan === "hp_hc" ? "hp_hc" : "base",
           offPeakPeriods: Array.isArray(payload.dossier.energyConfiguration.offPeakPeriods)
             ? payload.dossier.energyConfiguration.offPeakPeriods
@@ -825,6 +854,66 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
       ? enabledModules.filter(value => value !== module)
       : [...enabledModules, module];
     void save(plannedItems, next);
+  }
+
+  async function searchErp() {
+    setErpState("searching");
+    setErpMessage("");
+    try {
+      const response = await fetch(`/api/erp/dossiers?q=${encodeURIComponent(erpQuery)}`, { headers: { Accept: "application/json" } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Recherche indisponible");
+      setErpOptions(Array.isArray(payload.dossiers) ? payload.dossiers : []);
+      setErpState("idle");
+      if (!payload.dossiers?.length) setErpMessage("Aucun dossier 1.2.3. correspondant");
+    } catch (error) {
+      setErpState("error");
+      setErpMessage(error instanceof Error ? error.message : "ERP indisponible");
+    }
+  }
+
+  async function importErp(erpDossierId: number) {
+    setErpState("importing");
+    setErpMessage("");
+    try {
+      const response = await fetch("/api/erp/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ erpDossierId, dossierPublicId: dossierId }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Import impossible");
+      setDossier(payload.dossier);
+      setPlannedItems(payload.items);
+      setEnabledModules(payload.enabledModules);
+      setEnergyConfiguration(payload.energyConfiguration);
+      setImportWarnings(Array.isArray(payload.warnings) ? payload.warnings : []);
+      setErpState("idle");
+      setTunnelStep(1);
+      notify(`Dossier ${payload.dossier.reference} importé depuis l’ERP`);
+    } catch (error) {
+      setErpState("error");
+      setErpMessage(error instanceof Error ? error.message : "Import impossible");
+    }
+  }
+
+  function updateSolarArray(index: number, update: Partial<EnergyConfiguration["solarArrays"][number]>, persist = false) {
+    const solarArrays = energyConfiguration.solarArrays.map((array, arrayIndex) => arrayIndex === index ? { ...array, ...update } : array);
+    const next = { ...energyConfiguration, solarArrays, solarPeakWatts: solarArrays.reduce((sum, array) => sum + Math.max(0, Number(array.peakWatts) || 0), 0) };
+    setEnergyConfiguration(next);
+    if (persist) void save(plannedItems, enabledModules, next);
+  }
+
+  function addSolarArray() {
+    const index = energyConfiguration.solarArrays.length + 1;
+    const next = { ...energyConfiguration, solarArrays: [...energyConfiguration.solarArrays, { id: `pan-${Date.now()}`, label: `Pan ${index}`, peakWatts: 0, orientation: "Sud", inclinationDegrees: 30 }] };
+    void save(plannedItems, enabledModules, next);
+  }
+
+  function removeSolarArray(index: number) {
+    const solarArrays = energyConfiguration.solarArrays.filter((_, arrayIndex) => arrayIndex !== index);
+    const next = { ...energyConfiguration, solarArrays, solarPeakWatts: solarArrays.reduce((sum, array) => sum + array.peakWatts, 0) };
+    void save(plannedItems, enabledModules, next);
   }
 
   function updateEnergySetting(key: "solarPeakWatts" | "batteryCapacityWh" | "batteryReservePercent", value: number) {
@@ -918,9 +1007,92 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
 
   return <div className="content preparation">
     <div className="section-intro split">
-      <div><span className="eyebrow">Dossier {dossier.reference} · {dossier.customerName}</span><h2>Préparer les objets à connecter</h2><p>La liste commerciale est transformée en procédure d’installation. Complétez les modèles avant le départ.</p></div>
+      <div><span className="eyebrow">Dossier {dossier.reference} · {dossier.customerName}</span><h2>Configurer une nouvelle maison</h2><p>Importez le dossier ERP, contrôlez les données utiles, puis générez la préparation du technicien.</p></div>
       <div className="prep-heading-actions"><span className={`save-state ${saveState}`}>{saveState === "saved" ? "✓ Liste enregistrée" : saveState === "saving" ? "Enregistrement…" : "Sauvegarde à reprendre"}</span><button className="primary" onClick={() => setView("Installation")}>Ouvrir la checklist</button></div>
     </div>
+    <section className="house-tunnel">
+      <nav className="house-tunnel-steps" aria-label="Étapes de configuration">
+        {["Dossier ERP", "Énergie", "Équipements", "Application", "Validation"].map((label, index) =>
+          <button type="button" key={label} className={index === tunnelStep ? "active" : index < tunnelStep ? "done" : ""} onClick={() => setTunnelStep(index)}>
+            <i>{index < tunnelStep ? "✓" : index + 1}</i><span>{label}</span>
+          </button>
+        )}
+      </nav>
+
+      {tunnelStep === 0 && <div className="tunnel-panel erp-import-panel">
+        <div className="tunnel-copy"><small>ÉTAPE 1 · SOURCE UNIQUE</small><h3>Importer le dossier depuis 1.2.3. Gestion</h3><p>La fiche client, la puissance solaire, la batterie, les pans de toiture et la liste domotique seront repris sans ressaisie.</p></div>
+        {dossier.erpDossierId ? <div className="erp-linked">
+          <span>✓</span><div><b>{dossier.reference} · {dossier.customerName}</b><small>{dossier.customerAddress || "Adresse à vérifier"}</small></div><em>ERP n° {dossier.erpDossierId}</em>
+        </div> : null}
+        <div className="erp-search"><label><span>⌕</span><input value={erpQuery} onChange={event => setErpQuery(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void searchErp(); }} placeholder="Référence, nom du client ou chantier…" /></label><button type="button" onClick={() => void searchErp()} disabled={erpState === "searching"}>{erpState === "searching" ? "Recherche…" : "Rechercher dans l’ERP"}</button></div>
+        {erpMessage && <p className={`erp-message ${erpState}`}>{erpMessage}</p>}
+        <div className="erp-results">{erpOptions.map(option => <article key={option.id}>
+          <div><small>{option.reference}</small><b>{option.customerName}</b><span>{[option.postalCode, option.city].filter(Boolean).join(" ") || option.title}</span></div>
+          <div className="erp-result-energy"><span>{option.solarPeakKwc ? `${option.solarPeakKwc} kWc` : "Puissance à vérifier"}</span><em>{option.hasBattery ? "Batterie" : "Sans batterie"}</em></div>
+          <button type="button" onClick={() => void importErp(option.id)} disabled={erpState === "importing"}>{erpState === "importing" ? "Import…" : "Importer"}</button>
+        </article>)}</div>
+        <div className="tunnel-actions"><span>Le technicien pourra corriger les données manquantes à l’étape suivante.</span><button type="button" className="primary" onClick={() => setTunnelStep(1)}>Continuer manuellement</button></div>
+      </div>}
+
+      {tunnelStep === 1 && <div className="tunnel-panel energy-tunnel-panel">
+        <div className="tunnel-copy"><small>ÉTAPE 2 · PRODUCTION ET STOCKAGE</small><h3>Vérifier l’installation énergétique</h3><p>Les pans servent aux prévisions de production. Leur somme doit correspondre à la puissance réellement installée.</p></div>
+        {importWarnings.length > 0 && <div className="import-warnings">{importWarnings.map(warning => <span key={warning}>! {warning}</span>)}</div>}
+        <div className="solar-array-list">{energyConfiguration.solarArrays.map((array, index) => <article key={array.id}>
+          <div className="solar-array-number">☀<small>Pan {index + 1}</small></div>
+          <label><span>Nom</span><input value={array.label} onChange={event => updateSolarArray(index, { label: event.target.value })} onBlur={() => updateSolarArray(index, {}, true)} /></label>
+          <label><span>Puissance</span><div><input type="number" min="0" value={array.peakWatts} onChange={event => updateSolarArray(index, { peakWatts: Number(event.target.value) })} onBlur={() => updateSolarArray(index, {}, true)} /><em>Wc</em></div></label>
+          <label><span>Orientation</span><select value={array.orientation} onChange={event => updateSolarArray(index, { orientation: event.target.value }, true)}>{["Nord","Nord-Est","Est","Sud-Est","Sud","Sud-Ouest","Ouest","Nord-Ouest","À vérifier"].map(value => <option key={value}>{value}</option>)}</select></label>
+          <label><span>Inclinaison</span><div><input type="number" min="0" max="90" value={array.inclinationDegrees ?? ""} onChange={event => updateSolarArray(index, { inclinationDegrees: event.target.value === "" ? null : Number(event.target.value) })} onBlur={() => updateSolarArray(index, {}, true)} /><em>°</em></div></label>
+          <button type="button" aria-label={`Supprimer ${array.label}`} onClick={() => removeSolarArray(index)}>×</button>
+        </article>)}</div>
+        {!energyConfiguration.solarArrays.length && <div className="solar-array-empty">Aucun pan importé. Ajoutez au moins un pan pour activer la prévision solaire.</div>}
+        <button type="button" className="solar-array-add" onClick={addSolarArray}>＋ Ajouter un pan de toiture</button>
+        <div className="energy-tunnel-summary">
+          <label><span>Puissance totale</span><div><input type="number" value={energyConfiguration.solarPeakWatts} onChange={event => setEnergyConfiguration({ ...energyConfiguration, solarPeakWatts: Number(event.target.value) })} onBlur={event => updateEnergySetting("solarPeakWatts", Number(event.target.value))} /><em>Wc</em></div><small>{energyConfiguration.solarArrays.length ? "Calculée depuis les pans" : "Saisie manuelle"}</small></label>
+          <label><span>Capacité utile batterie</span><div><input type="number" min="0" value={energyConfiguration.batteryCapacityWh} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryCapacityWh: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryCapacityWh", Number(event.target.value))} /><em>Wh</em></div><small>0 Wh si aucune batterie</small></label>
+          <label><span>Réserve minimale</span><div><input type="number" min="5" max="80" value={energyConfiguration.batteryReservePercent} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryReservePercent: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryReservePercent", Number(event.target.value))} /><em>%</em></div><small>Protection du stockage</small></label>
+        </div>
+        <div className="tunnel-actions"><button type="button" onClick={() => setTunnelStep(0)}>Retour</button><button type="button" className="primary" onClick={() => setTunnelStep(2)}>Valider l’énergie</button></div>
+      </div>}
+
+      {tunnelStep === 2 && <div className="tunnel-panel devices-tunnel-panel">
+        <div className="tunnel-copy"><small>ÉTAPE 3 · LISTE COMMERCIALE</small><h3>Contrôler les équipements à connecter</h3><p>Les modèles encore inconnus restent signalés « à confirmer » afin que le technicien prépare ses accès avant le rendez-vous.</p></div>
+        <div className="tunnel-device-list">{plannedItems.map((item, index) => <article key={`${item.id}-${index}`}>
+          <i>{item.icon}</i><div><small>{item.category} · {item.room}</small><b>{item.brand} {item.model}</b><span>{item.prerequisites}</span></div>
+          <label><span>Quantité</span><input type="number" min="1" max="99" value={item.quantity} onChange={event => void save(plannedItems.map((planned, itemIndex) => itemIndex === index ? { ...planned, quantity: Math.max(1, Number(event.target.value)) } : planned))} /></label>
+          <em className={item.model === item.category || item.brand === "Marque à confirmer" ? "warning" : ""}>{item.protocol}</em>
+          <button type="button" aria-label={`Retirer ${item.model}`} onClick={() => void save(plannedItems.filter((_, itemIndex) => itemIndex !== index))}>×</button>
+        </article>)}</div>
+        {!plannedItems.length && <div className="solar-array-empty">Aucun équipement n’est prévu dans le dossier ERP. Utilisez les réglages avancés pour en ajouter.</div>}
+        <div className="tunnel-actions"><button type="button" onClick={() => setTunnelStep(1)}>Retour</button><button type="button" className="primary" onClick={() => setTunnelStep(3)}>Valider les équipements</button></div>
+      </div>}
+
+      {tunnelStep === 3 && <div className="tunnel-panel modules-tunnel-panel">
+        <div className="tunnel-copy"><small>ÉTAPE 4 · EXPÉRIENCE CLIENT</small><h3>Choisir les onglets de l’application</h3><p>La sélection est proposée automatiquement d’après les équipements. Le client ne verra que ce qui existe réellement chez lui.</p></div>
+        <div className="module-grid">{appModules.map(module => {
+          const enabled = enabledModules.includes(module.key);
+          return <button key={module.key} type="button" className={enabled ? "enabled" : ""} onClick={() => toggleModule(module.key)} aria-pressed={enabled}>
+            <i>{module.icon}</i><span><b>{module.label}</b><small>{module.description}</small></span><em>{module.required ? "Toujours actif" : enabled ? "Activé" : "Masqué"}</em>
+          </button>;
+        })}</div>
+        <div className="tunnel-actions"><button type="button" onClick={() => setTunnelStep(2)}>Retour</button><button type="button" className="primary" onClick={() => setTunnelStep(4)}>Voir le récapitulatif</button></div>
+      </div>}
+
+      {tunnelStep === 4 && <div className="tunnel-panel review-tunnel-panel">
+        <div className="tunnel-copy"><small>ÉTAPE 5 · PRÊT POUR LE TECHNICIEN</small><h3>Valider la préparation de {dossier.customerName}</h3><p>Un dernier contrôle évite toute ressaisie et signale ce qui devra être confirmé sur place.</p></div>
+        <div className="review-grid">
+          <article><i>⌂</i><span><small>Maison</small><b>{dossier.reference}</b><em>{dossier.customerAddress || "Adresse à vérifier"}</em></span></article>
+          <article className={energyConfiguration.solarPeakWatts > 0 ? "ok" : "warning"}><i>☀</i><span><small>Photovoltaïque</small><b>{energyConfiguration.solarPeakWatts.toLocaleString("fr-FR")} Wc</b><em>{energyConfiguration.solarArrays.length} pan{energyConfiguration.solarArrays.length > 1 ? "s" : ""} de toiture</em></span></article>
+          <article className={energyConfiguration.batteryCapacityWh > 0 ? "ok" : "neutral"}><i>▥</i><span><small>Batterie</small><b>{energyConfiguration.batteryCapacityWh > 0 ? `${(energyConfiguration.batteryCapacityWh / 1000).toLocaleString("fr-FR")} kWh` : "Non prévue"}</b><em>Réserve {energyConfiguration.batteryReservePercent} %</em></span></article>
+          <article className={plannedItems.length ? "ok" : "warning"}><i>◇</i><span><small>Équipements</small><b>{totalObjects} objet{totalObjects > 1 ? "s" : ""}</b><em>{plannedItems.filter(item => item.brand === "Marque à confirmer").length} à préciser</em></span></article>
+          <article className="ok"><i>▣</i><span><small>Application</small><b>{enabledModules.length} onglets</b><em>{enabledModules.map(value => appModules.find(module => module.key === value)?.label).filter(Boolean).join(" · ")}</em></span></article>
+        </div>
+        <div className="final-check"><span>✓</span><div><b>La configuration est enregistrée</b><p>La checklist d’installation reprend ces données et guidera ensuite la détection automatique des appareils.</p></div></div>
+        <div className="tunnel-actions"><button type="button" onClick={() => setTunnelStep(3)}>Retour</button><button type="button" className="primary" onClick={() => setView("Installation")}>Générer la checklist</button></div>
+      </div>}
+    </section>
+    <details className="preparation-advanced">
+      <summary>Réglages avancés et catalogue manuel <span>À utiliser uniquement pour compléter le dossier ERP</span></summary>
     <section className="prep-summary">
       <div><small>Objets prévus</small><strong>{totalObjects}</strong><span>{plannedItems.length} références</span></div>
       <div><small>Temps estimé</small><strong>{estimated} min</strong><span>hors câblage</span></div>
@@ -1015,6 +1187,7 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
         <div className="discovery-note"><span>⌁</span><div><b>Recherche automatique sur place</b><p>Les appareils réseau seront rapprochés par modèle, numéro de série et adresse MAC. L’adresse IP ne sera demandée qu’en dernier recours.</p></div></div>
       </aside>
     </div>
+    </details>
   </div>;
 }
 
@@ -1954,6 +2127,7 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
   const sceneLayout = createEnergySceneLayout(scenePeriod, 370, 630);
   const labelTop = (base: number) => `${((base + sceneLayout.verticalOffset) / 630) * 100}%`;
   const sceneImage = CLIENT_EXPERIENCE.energyScene.portalImages[scenePeriod];
+  const moonPhase = moonDisplayPhase(overview?.energy.moonPhase);
   return <div className="energy-scene-wrap">
     <div
       className={`energy-scene-card ${isDay ? "is-day" : "is-night"}`}
@@ -1964,6 +2138,14 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
         className="energy-scene-house"
       />
       <div className="energy-scene-shade" />
+      {!isDay && <span
+        className="portal-moon-phase"
+        role="img"
+        aria-label={MOON_PHASE_LABELS[moonPhase]}
+        title={MOON_PHASE_LABELS[moonPhase]}
+      >
+        {MOON_PHASE_GLYPHS[moonPhase]}
+      </span>}
 
       <svg className="scene-flow-svg" viewBox="0 0 370 630" preserveAspectRatio="none" aria-hidden="true">
         <SceneFlow route="solar" d={sceneLayout.paths.solar} {...flowState.solar} color="#ffe700" power={solarWatts} />

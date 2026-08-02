@@ -23,11 +23,20 @@ type PlannedDevicePayload = {
 
 type EnergyConfigurationPayload = {
   solarPeakWatts?: number;
+  solarArrays?: SolarArrayPayload[];
   batteryCapacityWh?: number;
   batteryReservePercent?: number;
   flexibleLoads?: FlexibleLoadPayload[];
   tariffPlan?: string;
   offPeakPeriods?: OffPeakPeriodPayload[];
+};
+
+type SolarArrayPayload = {
+  id?: string;
+  label?: string;
+  peakWatts?: number;
+  orientation?: string;
+  inclinationDegrees?: number | null;
 };
 
 type OffPeakPeriodPayload = {
@@ -79,6 +88,35 @@ function offPeakPeriodsFrom(value: string) {
   } catch {
     return [];
   }
+}
+
+function solarArraysFrom(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function sanitizeSolarArrays(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).map((raw, index) => {
+    const item = raw && typeof raw === "object" ? raw as SolarArrayPayload : {};
+    const id = String(item.id ?? `pan-${index + 1}`).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 40);
+    const label = String(item.label ?? `Pan ${index + 1}`).trim().slice(0, 80);
+    if (!id || !label) throw new Error("INVALID_SOLAR_ARRAY");
+    const rawInclination = item.inclinationDegrees;
+    return {
+      id,
+      label,
+      peakWatts: boundedInteger(item.peakWatts, 0, 0, 100_000),
+      orientation: String(item.orientation ?? "À vérifier").trim().slice(0, 60) || "À vérifier",
+      inclinationDegrees: rawInclination === null || rawInclination === undefined || rawInclination === ""
+        ? null
+        : boundedInteger(rawInclination, 0, 0, 90),
+    };
+  });
 }
 
 function sanitizeOffPeakPeriods(value: unknown) {
@@ -155,11 +193,15 @@ export async function GET(request: Request) {
     return Response.json({
       dossier: {
         publicId: dossier.publicId, reference: dossier.reference, customerName: dossier.customerName,
+        customerAddress: dossier.customerAddress,
+        erpDossierId: dossier.erpDossierId,
+        erpImportedAt: dossier.erpImportedAt,
         enabledModules: (() => {
           try { return JSON.parse(dossier.enabledModules) as string[]; } catch { return defaultModules; }
         })(),
         energyConfiguration: {
           solarPeakWatts: dossier.solarPeakWatts,
+          solarArrays: solarArraysFrom(dossier.solarArraysJson),
           batteryCapacityWh: dossier.batteryCapacityWh,
           batteryReservePercent: dossier.batteryReservePercent,
           flexibleLoads: flexibleLoadsFrom(dossier.flexibleLoadsJson),
@@ -234,6 +276,9 @@ export async function PUT(request: Request) {
     const existingFlexibleLoads = flexibleLoadsFrom(dossier.flexibleLoadsJson);
     const energyConfiguration = {
       solarPeakWatts: boundedInteger(requestedEnergy.solarPeakWatts, dossier.solarPeakWatts, 0, 100_000),
+      solarArrays: requestedEnergy.solarArrays === undefined
+        ? solarArraysFrom(dossier.solarArraysJson)
+        : sanitizeSolarArrays(requestedEnergy.solarArrays),
       batteryCapacityWh: boundedInteger(requestedEnergy.batteryCapacityWh, dossier.batteryCapacityWh, 0, 500_000),
       batteryReservePercent: boundedInteger(requestedEnergy.batteryReservePercent, dossier.batteryReservePercent, 5, 80),
       flexibleLoads: requestedEnergy.flexibleLoads === undefined
@@ -258,6 +303,7 @@ export async function PUT(request: Request) {
     const dossierUpdate = db.update(installationDossiers).set({
       enabledModules: JSON.stringify(enabledModules),
       solarPeakWatts: energyConfiguration.solarPeakWatts,
+      solarArraysJson: JSON.stringify(energyConfiguration.solarArrays),
       batteryCapacityWh: energyConfiguration.batteryCapacityWh,
       batteryReservePercent: energyConfiguration.batteryReservePercent,
       flexibleLoadsJson: JSON.stringify(energyConfiguration.flexibleLoads),
@@ -274,7 +320,7 @@ export async function PUT(request: Request) {
     return Response.json({ saved: true, count: items.length, enabledModules, energyConfiguration });
   } catch (error) {
     const invalid = error instanceof Error &&
-      ["INVALID_ITEM", "INVALID_ENTITY", "INVALID_FLEXIBLE_LOAD", "INVALID_OFF_PEAK_PERIOD"].includes(error.message);
+      ["INVALID_ITEM", "INVALID_ENTITY", "INVALID_FLEXIBLE_LOAD", "INVALID_OFF_PEAK_PERIOD", "INVALID_SOLAR_ARRAY"].includes(error.message);
     return Response.json(
       { error: invalid ? "Un équipement ou son association est invalide" : "Enregistrement impossible" },
       { status: invalid ? 400 : 503 },
