@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.vinext/
+.wrangler/
+dist/
+node_modules/
+__pycache__/
+*.py[cod]
+tsconfig.tsbuildinfo
