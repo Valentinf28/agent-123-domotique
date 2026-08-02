@@ -2,9 +2,15 @@ import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { agentBoxes, installationDossiers, plannedDevices } from "../../../../db/schema";
 import { portalApiAdminAuthorized } from "../../../../lib/portal-api-auth";
-import { analyzeProvisioning } from "../../../../shared/provisioning-discovery.js";
+import { ENERGY_PROFILE } from "../../../../lib/energy-profile.generated";
+import { HOUSE_BINDINGS } from "../../../../lib/house-bindings.generated";
+import { analyzeHouseBindings } from "../../../../shared/house-binding-discovery.js";
+import { analyzeProvisioning, entityIsShowroomOnly } from "../../../../shared/provisioning-discovery.js";
 
 type Confirmation = { key?: string; entityId?: string };
+type BindingConfirmation = { key?: string; entityId?: string };
+
+const bindingProfile = { ...ENERGY_PROFILE, ...HOUSE_BINDINGS };
 
 async function dossierFromRequest(request: Request, body?: Record<string, unknown>) {
   const requested = String(body?.dossierPublicId ?? new URL(request.url).searchParams.get("dossier") ?? "");
@@ -29,6 +35,15 @@ function inventoryFrom(value: string) {
   }
 }
 
+function bindingsFrom(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, string> : {};
+  } catch {
+    return {};
+  }
+}
+
 async function discoveryContext(request: Request, body?: Record<string, unknown>) {
   const dossier = await dossierFromRequest(request, body);
   if (!dossier) return null;
@@ -43,7 +58,13 @@ async function discoveryContext(request: Request, body?: Record<string, unknown>
     inventory,
     isShowroom: dossier.reference.toUpperCase().includes("SHOWROOM"),
   });
-  return { dossier, agent, items, inventory, report };
+  const bindings = analyzeHouseBindings({
+    profile: bindingProfile,
+    inventory,
+    isShowroom: dossier.reference.toUpperCase().includes("SHOWROOM"),
+    overrides: bindingsFrom(dossier.entityBindingsJson),
+  });
+  return { dossier, agent, items, inventory, report: { ...report, bindings } };
 }
 
 export async function GET(request: Request) {
@@ -67,6 +88,7 @@ export async function POST(request: Request) {
       dossierPublicId?: string;
       applyCertain?: boolean;
       confirmations?: Confirmation[];
+      bindingConfirmations?: BindingConfirmation[];
     };
     const context = await discoveryContext(request, body as Record<string, unknown>);
     if (!context) return Response.json({ error: "Dossier introuvable" }, { status: 404 });
@@ -80,6 +102,27 @@ export async function POST(request: Request) {
     const alreadyUsed = new Set(context.items.map((item) => item.matchedEntityId).filter(Boolean));
     const applied: Array<{ key: string; entityId: string; source: "certain" | "confirmed" }> = [];
     const db = getDb();
+    const isShowroom = context.dossier.reference.toUpperCase().includes("SHOWROOM");
+    const savedBindings = bindingsFrom(context.dossier.entityBindingsJson);
+    const bindingConfirmations = Array.isArray(body.bindingConfirmations) ? body.bindingConfirmations.slice(0, 100) : [];
+    for (const confirmation of bindingConfirmations) {
+      const key = String(confirmation.key ?? "");
+      const entityId = String(confirmation.entityId ?? "");
+      if (!(key in bindingProfile)) {
+        return Response.json({ error: `Rôle de capteur invalide : ${key}` }, { status: 400 });
+      }
+      const entity = context.inventory.find((candidate: { entityId?: string }) => candidate.entityId === entityId);
+      if (!entity || (!isShowroom && entityIsShowroomOnly(entity))) {
+        return Response.json({ error: `Capteur invalide pour ${key}` }, { status: 400 });
+      }
+      savedBindings[key] = entityId;
+    }
+    if (bindingConfirmations.length) {
+      await db.update(installationDossiers).set({
+        entityBindingsJson: JSON.stringify(savedBindings),
+        updatedAt: new Date().toISOString(),
+      }).where(eq(installationDossiers.id, context.dossier.id));
+    }
 
     for (const item of context.items) {
       if (item.matchedEntityId) continue;
@@ -112,10 +155,16 @@ export async function POST(request: Request) {
       applied.push({ key, entityId: chosen.entityId, source });
     }
 
+    const bindingReport = analyzeHouseBindings({
+      profile: bindingProfile,
+      inventory: context.inventory,
+      isShowroom,
+      overrides: savedBindings,
+    });
     return Response.json({
       saved: true,
       applied,
-      report: context.report,
+      report: { ...context.report, bindings: bindingReport },
     }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return Response.json({ error: "Découverte impossible" }, { status: 400 });

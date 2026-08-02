@@ -1,12 +1,15 @@
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { installationDossiers, mobilePairingCodes, plannedDevices } from "../../../../db/schema";
+import { agentBoxes, installationDossiers, mobilePairingCodes, plannedDevices } from "../../../../db/schema";
 import { sha256 } from "../../../../lib/agent-auth";
+import { ENERGY_PROFILE } from "../../../../lib/energy-profile.generated";
+import { HOUSE_BINDINGS } from "../../../../lib/house-bindings.generated";
 import {
   normalizeEnabledModules,
   normalizeSolarInstalledPowerWp,
 } from "../../../../lib/client-modules.js";
 import { subscriptionSummary } from "../../../../lib/subscription";
+import { analyzeHouseBindings } from "../../../../shared/house-binding-discovery.js";
 
 const viewCatalog = {
   home: { key: "home", label: "Maison", icon: "home-variant-outline", path: "/app" },
@@ -35,6 +38,24 @@ function offPeakPeriodsFromDossier(value: string) {
   }
 }
 
+function inventoryFrom(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function bindingsFrom(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, string> : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json() as { code?: string };
@@ -56,6 +77,15 @@ export async function POST(request: Request) {
       .map(module => viewCatalog[module]);
     const configuredDevices = await db.select().from(plannedDevices)
       .where(eq(plannedDevices.dossierId, dossier.id));
+    const [agent] = await db.select().from(agentBoxes)
+      .where(eq(agentBoxes.dossierId, dossier.id)).limit(1);
+    const bindingReport = analyzeHouseBindings({
+      profile: { ...ENERGY_PROFILE, ...HOUSE_BINDINGS },
+      inventory: inventoryFrom(agent?.inventoryJson ?? "[]"),
+      isShowroom: dossier.reference.toUpperCase().includes("SHOWROOM"),
+      essentialKeys: [...Object.keys(ENERGY_PROFILE), ...Object.keys(HOUSE_BINDINGS)],
+      overrides: bindingsFrom(dossier.entityBindingsJson),
+    });
     await db.update(mobilePairingCodes).set({ usedAt: new Date().toISOString() })
       .where(eq(mobilePairingCodes.id, pairing.id));
     const origin = new URL(request.url).origin;
@@ -70,6 +100,7 @@ export async function POST(request: Request) {
       solarInstalledPowerWp: normalizeSolarInstalledPowerWp(dossier.solarPeakWatts),
       modules,
       views,
+      bindings: bindingReport.bindings,
       configuredDevices: configuredDevices
         .filter((device) => Boolean(device.matchedEntityId))
         .map((device) => ({

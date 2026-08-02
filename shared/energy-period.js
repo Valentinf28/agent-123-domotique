@@ -1,19 +1,24 @@
 const pad2 = (value) => String(value).padStart(2, '0');
 
+const validEnergyDate = (value = new Date()) => {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  return Number.isFinite(date.getTime()) ? date : new Date();
+};
+
 export function energyDateKey(value = new Date()) {
-  const date = value instanceof Date ? value : new Date(value);
+  const date = validEnergyDate(value);
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
 export function energyDayBounds(value = new Date()) {
-  const date = value instanceof Date ? value : new Date(value);
+  const date = validEnergyDate(value);
   const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const end = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
   return { start, end };
 }
 
 export function addEnergyDays(value, amount) {
-  const date = value instanceof Date ? value : new Date(value);
+  const date = validEnergyDate(value);
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + amount);
 }
 
@@ -22,7 +27,8 @@ export function isEnergyToday(value, now = new Date()) {
 }
 
 export function formatEnergyDay(value, options = {}) {
-  const date = value instanceof Date ? value : new Date(value);
+  const date = validEnergyDate(value);
+  options = options || {};
   if (options.relative !== false && isEnergyToday(date)) return "Aujourd’hui";
   return new Intl.DateTimeFormat('fr-FR', {
     weekday: options.weekday === false ? undefined : 'short',
@@ -33,7 +39,7 @@ export function formatEnergyDay(value, options = {}) {
 }
 
 export function calendarMonthDays(value) {
-  const date = value instanceof Date ? value : new Date(value);
+  const date = validEnergyDate(value);
   const first = new Date(date.getFullYear(), date.getMonth(), 1);
   const mondayOffset = (first.getDay() + 6) % 7;
   const gridStart = addEnergyDays(first, -mondayOffset);

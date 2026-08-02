@@ -181,7 +181,7 @@ type DiscoveryCandidate = {
 };
 type DiscoverySuggestion = {
   key: string; label: string; room: string; category?: string;
-  entityId: string; entityName: string; candidates: DiscoveryCandidate[];
+  entityId: string; entityName: string; candidates: DiscoveryCandidate[]; source?: "manual";
 };
 type DiscoveryReport = {
   inventoryCount: number;
@@ -189,6 +189,14 @@ type DiscoveryReport = {
   certain: DiscoverySuggestion[];
   ambiguous: Array<DiscoverySuggestion & { requiresConfirmation: true }>;
   missing: Array<{ key: string; label: string; room: string; category: string }>;
+  bindings: {
+    total: number;
+    ready: boolean;
+    resolved: DiscoverySuggestion[];
+    ambiguous: Array<DiscoverySuggestion & { requiresConfirmation: true }>;
+    missing: Array<{ key: string; label: string }>;
+    bindings: Record<string, string>;
+  };
 };
 type InstallationDossier = {
   publicId: string; reference: string; customerName: string; status: string; updatedAt: string;
@@ -1109,6 +1117,30 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
     }
   }
 
+  async function confirmBinding(key: string, entityId: string) {
+    if (!entityId) return;
+    setSavingId(`binding:${key}`);
+    try {
+      const response = await fetch("/api/preparation/discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          dossierPublicId: dossierId,
+          bindingConfirmations: [{ key, entityId }],
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Association impossible");
+      setDiscoveryReport(payload.report);
+      const entity = associableInventory.find(candidate => candidate.entityId === entityId);
+      notify(`${entity?.name || entityId} est maintenant utilisé pour cette maison`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Association impossible");
+    } finally {
+      setSavingId("");
+    }
+  }
+
   async function createEnrollment() {
     try {
       const response = await fetch(`/api/agent/enrollment?dossier=${encodeURIComponent(dossierId)}`, {
@@ -1202,6 +1234,28 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
         <article className="discovery-safe"><b>Associations enregistrées</b><strong>{discoveryReport.certain.length}</strong><small>Les choix existants sont conservés.</small></article>
         <article className="discovery-ambiguous"><b>À confirmer</b><strong>{discoveryReport.ambiguous.length}</strong><small>Aucune association ambiguë n’est appliquée seule.</small></article>
         <article className="discovery-missing"><b>Éléments manquants</b><strong>{discoveryReport.missing.length}</strong><small>À connecter ou à rechercher sur place.</small></article>
+      </div>
+      <div className="discovery-list">
+        <b>Capteurs essentiels de la maison</b>
+        <p>
+          <span>{discoveryReport.bindings.ready ? "✓ Configuration énergétique prête" : "Configuration énergétique à terminer"}</span>
+          <small>{discoveryReport.bindings.resolved.length}/{discoveryReport.bindings.total} capteurs reconnus automatiquement</small>
+        </p>
+        {discoveryReport.bindings.resolved.filter(item => item.source === "manual").map(item => <p key={item.key}><span>✓ Validé · {item.label}</span><small>{item.entityName}</small></p>)}
+        {discoveryReport.bindings.ambiguous.map(item => <p key={item.key}>
+          <span>À confirmer · {item.label}</span>
+          <select aria-label={`Choisir le capteur pour ${item.label}`} disabled={savingId === `binding:${item.key}`} defaultValue="" onChange={event => void confirmBinding(item.key, event.target.value)}>
+            <option value="">Sélectionner la bonne mesure…</option>
+            {item.candidates.map(candidate => <option key={candidate.entityId} value={candidate.entityId}>{candidate.name} · {candidate.entityId}</option>)}
+          </select>
+        </p>)}
+        {discoveryReport.bindings.missing.map(item => <p key={item.key}>
+          <span>Manquant · {item.label}</span>
+          <select aria-label={`Choisir le capteur pour ${item.label}`} disabled={savingId === `binding:${item.key}`} defaultValue="" onChange={event => void confirmBinding(item.key, event.target.value)}>
+            <option value="">Rechercher dans les entités disponibles…</option>
+            {associableInventory.map(entity => <option key={entity.entityId} value={entity.entityId}>{entity.name} · {entity.entityId}</option>)}
+          </select>
+        </p>)}
       </div>
       {discoveryReport.ambiguous.length > 0 && <div className="discovery-list"><b>Suggestions à confirmer dans la checklist</b>{discoveryReport.ambiguous.map(item => <p key={item.key}><span>{item.label} · {item.room}</span><small>{item.candidates.slice(0, 3).map(candidate => candidate.name).join(" · ")}</small></p>)}</div>}
       {discoveryReport.missing.length > 0 && <div className="discovery-list missing"><b>Non trouvés dans cette maison</b>{discoveryReport.missing.map(item => <p key={item.key}><span>{item.label} · {item.room}</span><small>{item.category}</small></p>)}</div>}
