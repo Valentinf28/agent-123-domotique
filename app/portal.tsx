@@ -1537,10 +1537,17 @@ function Dashboard({ dossierId, enabledModules, setView, setModal, notify, devic
   ) => Promise<void>;
 }) {
   const [homeTab, setHomeTab] = useState<HomeTab>("Maison");
+  const detectedPool = Boolean(
+    overview?.controls?.some((control) =>
+      CLIENT_EXPERIENCE.controlLabelsByTab.pool.includes(
+        control.label as (typeof CLIENT_EXPERIENCE.controlLabelsByTab.pool)[number],
+      )
+    ),
+  );
   const visibleHomeTabs = useMemo(() => homeTabs.filter((tab) => {
     const module = homeTabKeys[tab];
-    return module === "home" || enabledModules.includes(module);
-  }), [enabledModules]);
+    return module === "home" || enabledModules.includes(module) || (module === "pool" && detectedPool);
+  }), [detectedPool, enabledModules]);
   useEffect(() => {
     if (!visibleHomeTabs.includes(homeTab)) setHomeTab("Maison");
   }, [homeTab, visibleHomeTabs]);
