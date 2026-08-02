@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.26
+
+- Respecte les 45 secondes de tolérance avant d’arrêter une recharge dont le surplus devient insuffisant.
+- Ne coupe plus la borne pendant les quelques secondes nécessaires au démarrage de la voiture.
+- Relance automatiquement la recharge toutes les 15 secondes tant que la voiture est prête et que le surplus reste suffisant.
+
 ## 0.5.25
 
 - Laisse à la borne le temps de stabiliser sa mesure après l'enclenchement du relais.
