@@ -58,6 +58,13 @@ outputs.push(
   [resolve(root, "../mobile/src/services/dailySolarPeak.js"), `${dailySolarPeakBanner}${dailySolarPeakSource}`],
 );
 
+const entityResolutionSource = await readFile(resolve(root, "shared/entity-resolution.js"), "utf8");
+const entityResolutionBanner = "// Généré depuis ma-maison-portail-site/shared/entity-resolution.js. Ne pas modifier à la main.\n";
+outputs.push(
+  [resolve(root, "lib/entity-resolution.generated.js"), `${entityResolutionBanner}${entityResolutionSource}`],
+  [resolve(root, "../mobile/src/services/entityResolution.js"), `${entityResolutionBanner}${entityResolutionSource}`],
+);
+
 if (process.argv.includes("--check")) {
   for (const [path, expected] of outputs) {
     assert.equal(await readFile(path, "utf8"), expected, `${path} n'est pas synchronisé`);

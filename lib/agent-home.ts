@@ -5,6 +5,10 @@ import { relayHouseIdForDossier } from "./relay-house";
 import { ENERGY_PROFILE } from "./energy-profile.generated";
 import { HOUSE_BINDINGS } from "./house-bindings.generated";
 import {
+  normalizeEntityText,
+  resolveEntityCandidate,
+} from "./entity-resolution.generated.js";
+import {
   allocateHomeAndVehiclePower,
   formatWatts,
   powerValueWatts,
@@ -252,20 +256,20 @@ function parseInventory(value: string): InventoryItem[] {
 }
 
 function normalized(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return normalizeEntityText(value);
 }
 
 function find(inventory: InventoryItem[], ids: readonly string[]) {
-  const matches = ids
-    .map((id) => inventory.find((item) =>
-      item.entityId === id ||
-      normalized(item.name) === normalized(id) ||
-      normalized(item.entityId.replace(/^[^.]+\./, "")) === normalized(id)
-    ))
-    .filter((item): item is InventoryItem => Boolean(item));
-  return matches.find((item) => !["unknown", "unavailable"].includes(item.state))
-    ?? matches[0]
-    ?? null;
+  const candidate = resolveEntityCandidate(inventory.map((item) => ({
+    item,
+    entityId: item.entityId,
+    name: item.name,
+    deviceClass: typeof item.attributes?.device_class === "string"
+      ? item.attributes.device_class
+      : "",
+    state: item.state,
+  })), ids);
+  return candidate?.item ?? null;
 }
 
 function attributeNumber(item: InventoryItem | null, key: string) {
@@ -606,6 +610,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     yearlyImport: scopedFind(inventory, valueBindings.yearlyImport, allowShowroomEntities),
     yearlyExport: scopedFind(inventory, valueBindings.yearlyExport, allowShowroomEntities),
     installedPower: scopedFind(inventory, valueBindings.installedPower, allowShowroomEntities),
+    peakPower: scopedFind(inventory, valueBindings.peakPower, allowShowroomEntities),
   };
   const dailyMetrics = derivedEnergyMetrics(
     energyItems.dailyProduction,
@@ -637,6 +642,8 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
   const peakPowerWatts = dailySolarPeakWatts({
     samples: recentSolarSnapshots,
     currentWatts: inventoryPowerWatts(energyItems.solar),
+    reportedPeakWatts: inventoryPowerWatts(energyItems.peakPower),
+    reportedPeakDate: energyItems.peakPower?.attributes?.date,
   });
   const lektricoStateValue = String(lektricoState?.state || "").trim().toLowerCase();
   const teslaPlugged = scopedFind(inventory, valueBindings.teslaPlugged, allowShowroomEntities);

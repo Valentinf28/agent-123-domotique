@@ -6,6 +6,10 @@ import {
   formatWatts,
   powerEntityWatts,
 } from "./energy-allocation.generated.js";
+import {
+  normalizeEntityText,
+  resolveEntityCandidate,
+} from "./entity-resolution.generated.js";
 
 type HaState = {
   entity_id: string;
@@ -131,32 +135,18 @@ const overviewBindings: Record<string, string[]> = {
 };
 
 function normalize(value = "") {
-  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[._-]+/g, " ").replace(/\s+/g, " ").trim();
+  return normalizeEntityText(value);
 }
 
 function resolve(states: HaState[], aliases: string[]) {
-  return states.map((entity) => {
-    const source = normalize(`${entity.entity_id} ${text(entity.attributes?.friendly_name, "")}`);
-    const id = normalize(entity.entity_id);
-    const score = aliases.reduce((best, alias) => {
-      const target = normalize(alias);
-      if (id === target) return Math.max(best, 1000);
-      if (source.includes(target)) return Math.max(best, 100 + target.length);
-      return best;
-    }, 0);
-    return { entity, score };
-  }).sort((a, b) => b.score - a.score)[0]?.score
-    ? states.map((entity) => {
-        const source = normalize(`${entity.entity_id} ${text(entity.attributes?.friendly_name, "")}`);
-        const id = normalize(entity.entity_id);
-        const score = aliases.reduce((best, alias) => {
-          const target = normalize(alias);
-          return Math.max(best, id === target ? 1000 : source.includes(target) ? 100 + target.length : 0);
-        }, 0);
-        return { entity, score };
-      }).sort((a, b) => b.score - a.score)[0].entity
-    : null;
+  const candidate = resolveEntityCandidate(states.map((entity) => ({
+    entity,
+    entityId: entity.entity_id,
+    name: text(entity.attributes?.friendly_name, ""),
+    deviceClass: text(entity.attributes?.device_class, ""),
+    state: entity.state,
+  })), aliases);
+  return candidate?.entity ?? null;
 }
 
 function displayValue(entity: HaState | null, fallback: string) {

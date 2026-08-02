@@ -34,6 +34,8 @@ function sampleWatts(sample) {
 export function dailySolarPeakWatts({
   samples = [],
   currentWatts = 0,
+  reportedPeakWatts = 0,
+  reportedPeakDate = null,
   now = new Date(),
   timeZone = defaultTimeZone,
 } = {}) {
@@ -45,5 +47,8 @@ export function dailySolarPeakWatts({
     return watts === null ? [] : [watts];
   });
   values.push(Math.max(0, Number(currentWatts) || 0));
+  if (dateKey(reportedPeakDate, timeZone) === today) {
+    values.push(Math.max(0, Number(reportedPeakWatts) || 0));
+  }
   return Math.round(Math.max(0, ...values));
 }
