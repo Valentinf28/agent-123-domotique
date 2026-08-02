@@ -19,6 +19,8 @@ SPEC.loader.exec_module(agent)
 
 ENTITIES = {
     "gridPowerEntityId": "sensor.shellyem3_483fdac38616_channel_c_power",
+    "batteryPowerEntityId": "sensor.onduleur_battery_power",
+    "batteryLevelEntityId": "sensor.batterie_deye_soc",
     "chargerStateEntityId": "sensor.1p7k_501290_state",
     "chargerCurrentEntityId": "sensor.1p7k_501290_courant",
     "chargerVoltageEntityId": "sensor.1p7k_501290_tension",
@@ -71,6 +73,11 @@ class LektricoSolarPlanTests(unittest.TestCase):
         self.assertIn("default", serialized)
         self.assertIn("'need_auth'", serialized)
         self.assertIn("'paused_by_scheduler'", serialized)
+        self.assertIn("sensor.batterie_deye_soc", serialized)
+        self.assertIn(">= 95", serialized)
+        self.assertIn("sensor.onduleur_battery_power", serialized)
+        self.assertIn("battery_discharge", serialized)
+        self.assertEqual(automation["trigger"][1]["for"]["seconds"], 15)
         stop_choice = automation["action"][0]["choose"][0]
         self.assertEqual(
             stop_choice["sequence"],
@@ -80,6 +87,32 @@ class LektricoSolarPlanTests(unittest.TestCase):
             }],
         )
         self.assertNotIn("'value': 0", serialized)
+
+    def test_keeps_battery_sensors_optional(self):
+        payload = {
+            key: value for key, value in ENTITIES.items()
+            if key not in {"batteryPowerEntityId", "batteryLevelEntityId"}
+        }
+        available = [
+            {"entity_id": entity_id, "state": "off", "attributes": {}}
+            for key, value in payload.items()
+            for entity_id in (value if key == "faultEntityIds" else [value])
+        ]
+
+        def fake_request(url, **kwargs):
+            return available if url.endswith("/states") else {}
+
+        with patch.object(agent, "request_json", side_effect=fake_request):
+            response = agent.relay_command(
+                "token",
+                {
+                    "id": "test",
+                    "action": "ha.ev_charger.solar_plan",
+                    "payload": payload,
+                },
+            )
+
+        self.assertTrue(response["ok"])
 
     def test_refuses_an_unknown_charger_entity(self):
         with patch.object(agent, "request_json", return_value=[]):

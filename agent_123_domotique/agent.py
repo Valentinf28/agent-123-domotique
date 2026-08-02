@@ -1009,6 +1009,8 @@ def relay_command(
                 "ma_maison_lektrico_solar_charging",
             )).strip()
             grid_power_entity_id = str(payload.get("gridPowerEntityId", "")).strip()
+            battery_power_entity_id = str(payload.get("batteryPowerEntityId", "")).strip()
+            battery_level_entity_id = str(payload.get("batteryLevelEntityId", "")).strip()
             charger_state_entity_id = str(payload.get("chargerStateEntityId", "")).strip()
             charger_current_entity_id = str(payload.get("chargerCurrentEntityId", "")).strip()
             charger_voltage_entity_id = str(payload.get("chargerVoltageEntityId", "")).strip()
@@ -1017,6 +1019,7 @@ def relay_command(
             stop_button_entity_id = str(payload.get("stopButtonEntityId", "")).strip()
             fault_entity_ids = payload.get("faultEntityIds", [])
             reserve_watts = int(payload.get("reserveWatts", 100))
+            minimum_battery_percent = int(payload.get("minimumBatteryPercent", 95))
             minimum_amps = int(payload.get("minimumAmps", 6))
             maximum_amps = int(payload.get("maximumAmps", 32))
 
@@ -1027,6 +1030,8 @@ def relay_command(
                 raise ValueError("Identifiant d’automatisation invalide")
             if not 0 <= reserve_watts <= 1000:
                 raise ValueError("Marge réseau invalide")
+            if not 0 <= minimum_battery_percent <= 100:
+                raise ValueError("Seuil de batterie invalide")
             if not 6 <= minimum_amps <= maximum_amps <= 80:
                 raise ValueError("Limites de courant invalides")
             if not isinstance(fault_entity_ids, list):
@@ -1041,6 +1046,10 @@ def relay_command(
                 start_button_entity_id: "button",
                 stop_button_entity_id: "button",
             }
+            optional_entities = {
+                battery_power_entity_id: "sensor",
+                battery_level_entity_id: "sensor",
+            }
             for entity_id, expected_domain in required_entities.items():
                 parts = entity_id.split(".", 1)
                 if (
@@ -1049,6 +1058,16 @@ def relay_command(
                     or not all(part.replace("_", "").isalnum() for part in parts)
                 ):
                     raise ValueError("Capteur ou commande Lektrico invalide")
+            for entity_id, expected_domain in optional_entities.items():
+                if not entity_id:
+                    continue
+                parts = entity_id.split(".", 1)
+                if (
+                    len(parts) != 2
+                    or parts[0] != expected_domain
+                    or not all(part.replace("_", "").isalnum() for part in parts)
+                ):
+                    raise ValueError("Capteur de batterie invalide")
             for entity_id in fault_entity_ids:
                 parts = str(entity_id).split(".", 1)
                 if (
@@ -1069,7 +1088,11 @@ def relay_command(
             }
             missing_entities = [
                 entity_id
-                for entity_id in (*required_entities.keys(), *fault_entity_ids)
+                for entity_id in (
+                    *required_entities.keys(),
+                    *(entity_id for entity_id in optional_entities if entity_id),
+                    *fault_entity_ids,
+                )
                 if entity_id not in available_entity_ids
             ]
             if missing_entities:
@@ -1081,22 +1104,40 @@ def relay_command(
                 f"is_state('{entity_id}', 'on')"
                 for entity_id in fault_entity_ids
             ) or "false"
+            battery_ready_template = (
+                "states('" + battery_level_entity_id + "') | float(0) >= "
+                + str(minimum_battery_percent)
+                if battery_level_entity_id
+                else "true"
+            )
+            battery_discharge_template = (
+                "[states('" + battery_power_entity_id + "') | float(0), 0] | max"
+                if battery_power_entity_id
+                else "0"
+            )
+            charger_ready_condition = (
+                "states('" + charger_state_entity_id + "') "
+                "in ['connected', 'paused', 'paused_by_scheduler', 'need_auth']"
+            )
             start_threshold_template = (
                 "{{ states('" + grid_power_entity_id + "') | float(0) < "
                 "-((" + str(minimum_amps) + " * "
                 "([states('" + charger_voltage_entity_id + "') | float(230), 210] | max))"
-                " + " + str(reserve_watts) + ") }}"
+                " + " + str(reserve_watts) + ") and ("
+                + battery_ready_template + ") and "
+                + charger_ready_condition + " and not (" + fault_condition + ") }}"
             )
             available_template = (
-                "{{ states('" + charger_state_entity_id + "') "
-                "in ['connected', 'paused', 'paused_by_scheduler', 'need_auth'] and not ("
-                + fault_condition + ") }}"
+                "{{ " + charger_ready_condition + " and ("
+                + battery_ready_template + ") and not (" + fault_condition + ") }}"
             )
             target_current_template = (
                 "{% set grid = states('" + grid_power_entity_id + "') | float(0) %} "
                 "{% set current = states('" + charger_current_entity_id + "') | float(0) %} "
                 "{% set voltage = [states('" + charger_voltage_entity_id + "') | float(230), 210] | max %} "
-                "{% set desired = (current + ((-grid - " + str(reserve_watts) + ") / voltage)) "
+                "{% set battery_discharge = " + battery_discharge_template + " %} "
+                "{% set desired = (current + ((-grid - " + str(reserve_watts)
+                + " - battery_discharge) / voltage)) "
                 "| round(0, 'floor') | int %} "
                 "{{ [[desired, " + str(minimum_amps) + "] | max, "
                 + str(maximum_amps) + "] | min }}"
@@ -1105,7 +1146,7 @@ def relay_command(
                 "{{ is_state('" + charger_state_entity_id + "', 'charging') and "
                 "(states('" + charger_current_entity_id + "') | float(0) + "
                 "((0 - (states('" + grid_power_entity_id + "') | float(0)) - "
-                + str(reserve_watts) + ") / "
+                + str(reserve_watts) + " - (" + battery_discharge_template + ")) / "
                 "([states('" + charger_voltage_entity_id + "') | float(230), 210] | max))) < "
                 + str(minimum_amps) + " }}"
             )
@@ -1115,7 +1156,8 @@ def relay_command(
                 "alias": "1.2.3 Home · Recharge solaire Lektrico",
                 "description": (
                     "Ajuste la limite dynamique de la borne Lektrico sur le surplus "
-                    f"solaire, avec une marge réseau de {reserve_watts} W."
+                    f"solaire après {minimum_battery_percent} % de batterie, avec une "
+                    f"marge réseau de {reserve_watts} W."
                 ),
                 "trigger": [
                     {
@@ -1126,7 +1168,7 @@ def relay_command(
                     {
                         "platform": "template",
                         "value_template": start_threshold_template,
-                        "for": {"hours": 0, "minutes": 0, "seconds": 30},
+                        "for": {"hours": 0, "minutes": 0, "seconds": 15},
                         "id": "demarrage",
                     },
                     {

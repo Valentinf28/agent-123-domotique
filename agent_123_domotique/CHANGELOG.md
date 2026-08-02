@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 0.5.23
+
+- Donne la priorité à la batterie de la maison jusqu’à 95 % avant de lancer la recharge solaire.
+- Relance automatiquement la voiture lorsque la borne revient en ligne avec un surplus disponible.
+- Déduit la décharge de la batterie du surplus réellement utilisable afin d’éviter qu’elle alimente la voiture.
+- Réduit le délai de démarrage à 15 secondes lorsque toutes les conditions sont réunies.
+
 ## 0.5.22
 
 - Autorise le redémarrage solaire quand une voiture branchée attend l'autorisation de la borne.
