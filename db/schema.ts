@@ -143,10 +143,12 @@ export const mobilePairingCodes = sqliteTable("mobile_pairing_codes", {
   publicId: text("public_id").notNull(),
   dossierId: integer("dossier_id").notNull().references(() => installationDossiers.id, { onDelete: "cascade" }),
   codeHash: text("code_hash").notNull(),
+  configurationTokenHash: text("configuration_token_hash"),
   expiresAt: text("expires_at").notNull(),
   usedAt: text("used_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("mobile_pairing_codes_public_id_idx").on(table.publicId),
   uniqueIndex("mobile_pairing_codes_hash_idx").on(table.codeHash),
+  uniqueIndex("mobile_pairing_codes_configuration_token_hash_idx").on(table.configurationTokenHash),
 ]);

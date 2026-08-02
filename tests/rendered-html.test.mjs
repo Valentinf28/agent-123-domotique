@@ -355,6 +355,18 @@ test("garde Home Assistant hors du parcours client", async () => {
   assert.match(mobileProvision, /solarInstalledPowerWp: normalizeSolarInstalledPowerWp\(dossier\.solarPeakWatts\)/);
 });
 
+test("provisionne l’application avec un accès relayé propre à chaque maison", async () => {
+  const [mobileProvision, mobileConfiguration] = await Promise.all([
+    readFile(new URL("../app/api/mobile/provision/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/mobile/configuration/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(mobileProvision, /internal\/client-credential/);
+  assert.match(mobileProvision, /configurationToken/);
+  assert.match(mobileConfiguration, /configurationTokenHash/);
+  assert.match(mobileConfiguration, /normalizeEnabledModules/);
+  assert.match(mobileConfiguration, /offPeakPeriods/);
+});
+
 test("applique au portail les mêmes onglets configurés que sur le mobile", async () => {
   const [portal, agentHome, mobileProvision] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
