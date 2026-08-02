@@ -119,9 +119,9 @@ test("rafraîchit les mesures importantes toutes les cinq secondes sans renvoyer
   assert.match(agent, /FULL_INVENTORY_SECONDS = 60/);
   assert.match(agent, /FAST_ENTITY_PREFIXES/);
   assert.match(agent, /interval - cycle_duration/);
-  assert.match(config, /version: "0\.5\.18"/);
+  assert.match(config, /version: "0\.5\.19"/);
   assert.match(config, /heartbeat_seconds: "int\(5,300\)"/);
-  assert.match(agentHome, /matches\.find\(\(item\) => !\["unknown", "unavailable"\]\.includes\(item\.state\)\)/);
+  assert.match(agentHome, /resolveEntityCandidate\(inventory\.map/);
 });
 
 test("partage le même profil de capteurs énergétiques avec l’application", async () => {

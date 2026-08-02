@@ -905,11 +905,16 @@ def relay_command(
             )
         elif action == "ha.history":
             start = urllib.parse.quote(str(payload.get("start", "")), safe=":TZ+-")
+            end_value = str(payload.get("end", "")).strip()
             entity_id = urllib.parse.quote(str(payload.get("entityId", "")), safe="._")
             if not start or not entity_id:
                 raise ValueError("Période ou entité manquante")
+            end_query = (
+                "&end_time=" + urllib.parse.quote(end_value, safe=":TZ+-")
+                if end_value else ""
+            )
             result = request_json(
-                f"{SUPERVISOR_API}/history/period/{start}?filter_entity_id={entity_id}&minimal_response",
+                f"{SUPERVISOR_API}/history/period/{start}?filter_entity_id={entity_id}&minimal_response{end_query}",
                 token=supervisor_token,
             )
         elif action == "ha.proxy":

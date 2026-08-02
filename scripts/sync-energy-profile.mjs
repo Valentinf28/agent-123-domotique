@@ -65,6 +65,13 @@ outputs.push(
   [resolve(root, "../mobile/src/services/entityResolution.js"), `${entityResolutionBanner}${entityResolutionSource}`],
 );
 
+const energyPeriodSource = await readFile(resolve(root, "shared/energy-period.js"), "utf8");
+const energyPeriodBanner = "// Généré depuis ma-maison-portail-site/shared/energy-period.js. Ne pas modifier à la main.\n";
+outputs.push(
+  [resolve(root, "lib/energy-period.generated.js"), `${energyPeriodBanner}${energyPeriodSource}`],
+  [resolve(root, "../mobile/src/services/energyPeriod.js"), `${energyPeriodBanner}${energyPeriodSource}`],
+);
+
 if (process.argv.includes("--check")) {
   for (const [path, expected] of outputs) {
     assert.equal(await readFile(path, "utf8"), expected, `${path} n'est pas synchronisé`);

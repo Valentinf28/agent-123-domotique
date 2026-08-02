@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     const nowDate = new Date();
     const now = nowDate.toISOString();
     const energySampleDue = !agent.lastEnergySampleAt ||
-      nowDate.getTime() - Date.parse(agent.lastEnergySampleAt) >= 15 * 60 * 1000;
+      nowDate.getTime() - Date.parse(agent.lastEnergySampleAt) >= 5 * 60 * 1000;
     await getDb().update(agentBoxes).set({
       status: "online",
       haVersion: String(body.haVersion ?? "").slice(0, 40) || null,

@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.19
+
+- Permet de demander une date de fin précise pour l’historique Home Assistant.
+- Rend possible la consultation complète d’une journée passée dans l’application.
+- Enregistre les mesures énergétiques du portail toutes les cinq minutes pour un graphique plus précis.
+
 ## 0.5.17
 
 - Unifie les cumuls énergétiques jour, mois et année utilisés par l’application et le portail.

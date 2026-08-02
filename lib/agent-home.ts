@@ -1,4 +1,4 @@
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
 import { getDb } from "../db";
 import { agentBoxes, agentCommands, energySnapshots, installationDossiers } from "../db/schema";
 import { relayHouseIdForDossier } from "./relay-house";
@@ -418,6 +418,49 @@ export async function selectAgentForDossier(dossierPublicId?: string | null) {
   const [dossier] = await getDb().select().from(installationDossiers)
     .where(eq(installationDossiers.id, agent.dossierId)).limit(1);
   return dossier ? { agent, dossier } : null;
+}
+
+function parisMidnightUtc(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const nominalUtc = Date.UTC(year, month - 1, day);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(nominalUtc));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const representedUtc = Date.UTC(
+    Number(values.year), Number(values.month) - 1, Number(values.day),
+    Number(values.hour), Number(values.minute), Number(values.second),
+  );
+  return new Date(nominalUtc - (representedUtc - nominalUtc));
+}
+
+function parisDateKey(value: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(value);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+export async function getAgentEnergyHistory(
+  dossierPublicId: string | null | undefined,
+  dateKey: string,
+) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error("INVALID_DATE");
+  const selected = await selectAgentForDossier(dossierPublicId);
+  if (!selected) throw new Error("CONNECTOR_NOT_CONFIGURED");
+  const start = parisMidnightUtc(dateKey);
+  const nextDate = new Date(start.getTime() + 36 * 60 * 60 * 1000);
+  const nextKey = parisDateKey(nextDate);
+  const end = parisMidnightUtc(nextKey);
+  return getDb().select().from(energySnapshots).where(and(
+    eq(energySnapshots.dossierId, selected.dossier.id),
+    gte(energySnapshots.capturedAt, start.toISOString()),
+    lt(energySnapshots.capturedAt, end.toISOString()),
+  )).orderBy(asc(energySnapshots.capturedAt));
 }
 
 async function selectRingSourceForDossier(

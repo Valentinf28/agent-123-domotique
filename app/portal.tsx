@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CLIENT_EXPERIENCE } from "../lib/client-experience.generated";
-import { createEnergyFlowState, flowDurationMs, formatKilowatts, formatWatts } from "../lib/energy-allocation.generated.js";
+import { createEnergyFlowState, flowDurationMs, formatKilowatts, formatKwh, formatWatts } from "../lib/energy-allocation.generated.js";
 import { createEnergySceneLayout } from "../lib/energy-scene.generated.js";
+import { addEnergyDays, energyDateKey, formatEnergyDay, isEnergyToday } from "../lib/energy-period.generated.js";
 
 type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
 type HomeTab = (typeof CLIENT_EXPERIENCE.tabs)[number]["label"];
@@ -102,6 +103,11 @@ type MobileOverview = {
     tariffPlan: "base" | "hp_hc";
     offPeakPeriods: OffPeakPeriod[];
   };
+};
+type EnergyHistoryPoint = {
+  capturedAt: string;
+  solarWatts: number; homeWatts: number; gridWatts: number;
+  batteryWatts: number; batteryPercent: number;
 };
 type CompatibilityLevel = "Automatique" | "Assistée" | "Expert";
 type CatalogItem = {
@@ -1397,7 +1403,7 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
       <div className="app-tabs" role="tablist">{homeTabs.map((tab) => <button key={tab} role="tab" aria-selected={homeTab === tab} className={homeTab === tab ? "selected" : ""} onClick={() => setHomeTab(tab)}><span>{homeTabMeta[tab].icon}</span><b>{tab}</b></button>)}</div>
       <div className="app-connection"><i className={liveStatus === "connected" ? "online" : ""} />{liveStatus === "connected" ? `Maison connectée en direct${lastSyncedAt ? ` · ${lastSyncedAt.toLocaleTimeString("fr-FR")}` : ""}` : liveStatus === "loading" ? "Connexion en cours…" : "Données momentanément indisponibles"}</div>
       {homeTab === "Maison" && <EnergyScene overview={overview} />}
-      {homeTab === "Solaire" && <SolarPortalView overview={overview} tariffCopy={offPeakCopy} />}
+      {homeTab === "Solaire" && <SolarPortalView overview={overview} tariffCopy={offPeakCopy} dossierId={dossierId} />}
       {homeTab === "Chauffage" && <HeatingPortalView overview={overview} hotWaterStatus={hotWaterStatus} tariffCopy={offPeakCopy} />}
       {homeTab === "Piscine" && <PoolPortalView overview={overview} controls={controls} onControl={onControl} />}
       {homeTab === "Équipements" && <div className="equipment-premium">
@@ -1455,16 +1461,81 @@ function PortalCategoryHeader({ eyebrow, title, subtitle, icon, color = "#f4c430
   </header>;
 }
 
-function SolarPortalView({ overview, tariffCopy }: { overview: MobileOverview | null; tariffCopy: string }) {
+function integrateHistory(points: EnergyHistoryPoint[], field: keyof EnergyHistoryPoint, predicate = (_value: number) => true) {
+  if (points.length < 2) return null;
+  let wattHours = 0;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const value = Number(points[index][field]);
+    if (!Number.isFinite(value) || !predicate(value)) continue;
+    const elapsedHours = Math.min(15 * 60 * 1000, Math.max(0, Date.parse(points[index + 1].capturedAt) - Date.parse(points[index].capturedAt))) / 3_600_000;
+    wattHours += Math.abs(value) * elapsedHours;
+  }
+  return wattHours / 1000;
+}
+
+function PortalEnergyChart({ history, date }: { history: EnergyHistoryPoint[]; date: string }) {
+  const width = 720; const height = 270; const left = 45; const right = 705; const top = 18; const bottom = 228;
+  const values = history.flatMap((point) => [point.solarWatts, point.homeWatts, point.gridWatts, point.batteryWatts]);
+  const maximum = Math.max(1000, ...values.map((value) => Math.abs(Number(value) || 0)));
+  const scale = Math.ceil(maximum / 1000) * 1000;
+  const x = (timestamp: string) => {
+    const point = new Date(timestamp);
+    const minutes = Number(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(point).find((part) => part.type === "hour")?.value) * 60 + Number(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", minute: "2-digit" }).formatToParts(point).find((part) => part.type === "minute")?.value);
+    return left + minutes / 1440 * (right - left);
+  };
+  const y = (value: number) => top + (scale - value) / (scale * 2) * (bottom - top);
+  const line = (field: keyof EnergyHistoryPoint) => history.map((point, index) => `${index ? "L" : "M"}${x(point.capturedAt).toFixed(1)} ${y(Number(point[field]) || 0).toFixed(1)}`).join(" ");
+  if (history.length < 2) return <section className="portal-energy-chart empty"><header><div><small>{formatEnergyDay(new Date(`${date}T12:00:00`)).toUpperCase()}</small><h3>Profil de puissance</h3></div></header><p>Les mesures de cette journée ne sont pas encore disponibles.</p></section>;
+  return <section className="portal-energy-chart"><header><div><small>{formatEnergyDay(new Date(`${date}T12:00:00`)).toUpperCase()}</small><h3>Profil de puissance</h3></div><span>Mesures toutes les 5 min</span></header><div className="portal-energy-legend"><i className="solar" />Production <i className="home" />Consommation <i className="grid" />Réseau <i className="battery" />Batterie</div><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Courbes de puissance de la journée">
+    {[top, (top + bottom) / 2, bottom].map((position) => <line key={position} x1={left} x2={right} y1={position} y2={position} className="grid-line" />)}
+    <line x1={left} x2={right} y1={y(0)} y2={y(0)} className="zero-line" />
+    <path d={line("solarWatts")} className="solar-line" /><path d={line("homeWatts")} className="home-line" /><path d={line("gridWatts")} className="grid-power-line" /><path d={line("batteryWatts")} className="battery-line" />
+    {[0, 6, 12, 18, 24].map((hour) => <text key={hour} x={left + hour / 24 * (right - left)} y="255" textAnchor={hour === 0 ? "start" : hour === 24 ? "end" : "middle"}>{String(hour).padStart(2, "0")}:00</text>)}
+  </svg></section>;
+}
+
+function SolarPortalView({ overview, tariffCopy, dossierId }: { overview: MobileOverview | null; tariffCopy: string; dossierId: string }) {
   const [period, setPeriod] = useState<"day" | "month" | "year">("day");
+  const [selectedDate, setSelectedDate] = useState(() => energyDateKey());
+  const [history, setHistory] = useState<EnergyHistoryPoint[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setHistoryLoading(true);
+    const query = new URLSearchParams({ date: selectedDate });
+    if (dossierId) query.set("dossier", dossierId);
+    fetch(`/api/home/history?${query}`, { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((payload) => { if (active) setHistory(Array.isArray(payload.history) ? payload.history : []); })
+      .catch(() => { if (active) setHistory([]); })
+      .finally(() => { if (active) setHistoryLoading(false); });
+    return () => { active = false; };
+  }, [dossierId, selectedDate]);
   const energy = overview?.energy ?? {};
+  const historicalDay = !isEnergyToday(new Date(`${selectedDate}T12:00:00`));
+  const historicalProduction = integrateHistory(history, "solarWatts", (value) => value >= 0);
+  const historicalConsumption = integrateHistory(history, "homeWatts", (value) => value >= 0);
+  const historicalImport = integrateHistory(history, "gridWatts", (value) => value > 0);
+  const historicalExport = integrateHistory(history, "gridWatts", (value) => value < 0);
+  const historicalSelfConsumed = historicalProduction === null
+    ? null
+    : Math.max(0, historicalProduction - (historicalExport ?? 0));
+  const historicalSelfConsumption = historicalProduction && historicalProduction > 0 && historicalSelfConsumed !== null
+    ? `${Math.round(historicalSelfConsumed / historicalProduction * 100)} %`
+    : "—";
+  const historicalAutonomy = historicalConsumption && historicalConsumption > 0
+    ? `${Math.round(Math.max(0, 1 - (historicalImport ?? 0) / historicalConsumption) * 100)} %`
+    : "—";
+  const historicalSavings = historicalSelfConsumed === null
+    ? "—"
+    : `${new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 2 }).format(historicalSelfConsumed * 0.194)}`;
   const periodValues = {
     day: {
-      label: "Aujourd’hui",
-      production: energy.dailyProduction,
-      consumption: energy.dailyConsumption,
-      imported: energy.dailyImport,
-      exported: energy.dailyExport,
+      label: historicalDay ? formatEnergyDay(new Date(`${selectedDate}T12:00:00`)) : "Aujourd’hui",
+      production: historicalDay ? formatKwh(historicalProduction) : energy.dailyProduction,
+      consumption: historicalDay ? formatKwh(historicalConsumption) : energy.dailyConsumption,
+      imported: historicalDay ? formatKwh(historicalImport) : energy.dailyImport,
+      exported: historicalDay ? formatKwh(historicalExport) : energy.dailyExport,
     },
     month: {
       label: "Ce mois",
@@ -1493,11 +1564,12 @@ function SolarPortalView({ overview, tariffCopy }: { overview: MobileOverview | 
       <footer><span><small>INSTALLATION</small><b>{energy.installedPower ?? "9 635 Wc"}</b></span><span><small>CAPACITÉ UTILISÉE</small><b>{Math.round(Math.max(0, livePower / installedPower * 100))} %</b></span></footer>
     </section>
     <div className="period-tabs">{([['day', 'Jour'], ['month', 'Mois'], ['year', 'Année']] as const).map(([key, label]) => <button key={key} className={period === key ? "selected" : ""} onClick={() => setPeriod(key)}>{label}</button>)}</div>
+    {period === "day" && <div className="portal-date-navigation"><button aria-label="Jour précédent" onClick={() => setSelectedDate(energyDateKey(addEnergyDays(new Date(`${selectedDate}T12:00:00`), -1)))}>‹</button><label><span>▣</span><strong>{formatEnergyDay(new Date(`${selectedDate}T12:00:00`))}</strong><input type="date" max={energyDateKey()} value={selectedDate} onChange={(event) => event.target.value && setSelectedDate(event.target.value)} /></label><button aria-label="Jour suivant" disabled={isEnergyToday(new Date(`${selectedDate}T12:00:00`))} onClick={() => setSelectedDate(energyDateKey(addEnergyDays(new Date(`${selectedDate}T12:00:00`), 1)))}>›</button>{historyLoading && <em>Actualisation…</em>}</div>}
     <section className="solar-stat-grid">
-      <article><span className="solar-stat-icon">☀</span><small>{period === "day" ? "Utilisée sur place" : "Production"}</small><strong>{period === "day" ? energy.selfConsumed ?? "—" : periodValues.production ?? "—"}</strong><p>{period === "day" ? "Production consommée directement" : periodValues.label}</p></article>
-      <article><span className="solar-stat-icon teal">€</span><small>Économies</small><strong>{energy.savings ?? "—"}</strong><p>Valorisation de l’énergie locale</p></article>
-      <article><span className="solar-stat-icon blue">⌂</span><small>Autoconsommation</small><strong>{energy.selfConsumption ?? "—"}</strong><p>Production utilisée sur place</p></article>
-      <article><span className="solar-stat-icon pink">▰</span><small>Autonomie</small><strong>{energy.autonomy ?? "—"}</strong><p>Consommation couverte sans réseau</p></article>
+      <article><span className="solar-stat-icon">☀</span><small>{period === "day" ? "Utilisée sur place" : "Production"}</small><strong>{period === "day" ? historicalDay ? formatKwh(historicalSelfConsumed) : energy.selfConsumed ?? "—" : periodValues.production ?? "—"}</strong><p>{period === "day" ? "Production consommée directement" : periodValues.label}</p></article>
+      <article><span className="solar-stat-icon teal">€</span><small>Économies</small><strong>{historicalDay ? historicalSavings : energy.savings ?? "—"}</strong><p>{historicalDay ? "Estimation au tarif de référence" : "Valorisation de l’énergie locale"}</p></article>
+      <article><span className="solar-stat-icon blue">⌂</span><small>Autoconsommation</small><strong>{historicalDay ? historicalSelfConsumption : energy.selfConsumption ?? "—"}</strong><p>Production utilisée sur place</p></article>
+      <article><span className="solar-stat-icon pink">▰</span><small>Autonomie</small><strong>{historicalDay ? historicalAutonomy : energy.autonomy ?? "—"}</strong><p>Consommation couverte sans réseau</p></article>
     </section>
     <section className="energy-balance-card"><header><div><small>INSTALLATION</small><h3>Détail des panneaux</h3></div><span>☀</span></header><div>
       <article><i>1</i><strong>{energy.pv1 ?? "0 W"}</strong><small>String PV1</small></article>
@@ -1505,7 +1577,7 @@ function SolarPortalView({ overview, tariffCopy }: { overview: MobileOverview | 
       <article><i>3</i><strong>{energy.pv3 ?? "0 W"}</strong><small>String PV3</small></article>
       <article><i>↗</i><strong>{energy.peakPower ?? "0 W"}</strong><small>Pic du jour</small></article>
     </div></section>
-    {period === "day" && <section className="energy-balance-card"><header><div><small>PRÉVISION</small><h3>Prévision contre production réelle</h3></div><span>✦</span></header><div>
+    {period === "day" && !historicalDay && <section className="energy-balance-card"><header><div><small>PRÉVISION</small><h3>Prévision contre production réelle</h3></div><span>✦</span></header><div>
       <article><i>☀</i><strong>{energy.dailyProduction ?? "—"}</strong><small>Produit aujourd’hui</small></article>
       <article><i>◎</i><strong>{energy.forecastToday ?? "—"}</strong><small>Objectif prévisionnel</small></article>
       <article><i>◔</i><strong>{energy.forecastRemaining ?? "—"}</strong><small>Reste à produire</small></article>
@@ -1517,7 +1589,8 @@ function SolarPortalView({ overview, tariffCopy }: { overview: MobileOverview | 
       <article><i>↑</i><strong>{periodValues.exported ?? "—"}</strong><small>Injectée</small></article>
       <article><i>♧</i><strong>{energy.co2Avoided ?? "—"}</strong><small>CO₂ évité</small></article>
     </div></section>
-    {period === "day" && <section className="solar-advice-card"><header><span>✦</span><div><small>ASSISTANT ÉNERGIE</small><h3>Meilleurs créneaux</h3></div></header><article><b>Solaire en priorité</b><p>Les appareils flexibles sont proposés quand le surplus est suffisant. Le tarif du client sert de solution de secours.</p><em>{tariffCopy}</em></article></section>}
+    {period === "day" && <PortalEnergyChart history={history} date={selectedDate} />}
+    {period === "day" && !historicalDay && <section className="solar-advice-card"><header><span>✦</span><div><small>ASSISTANT ÉNERGIE</small><h3>Meilleurs créneaux</h3></div></header><article><b>Solaire en priorité</b><p>Les appareils flexibles sont proposés quand le surplus est suffisant. Le tarif du client sert de solution de secours.</p><em>{tariffCopy}</em></article></section>}
   </div>;
 }
 
