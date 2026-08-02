@@ -33,6 +33,9 @@ SOLAR_FORECAST_REFRESH_SECONDS = 15 * 60
 SOLAR_FORECAST_PREFIX = "sensor.1_2_3_home_solar_forecast_"
 SOLAR_FORECAST_CACHE: list[dict[str, Any]] = []
 SOLAR_FORECAST_FETCHED_AT = 0.0
+REGISTRY_METADATA_CACHE: dict[str, dict[str, Any]] = {}
+REGISTRY_METADATA_FETCHED_AT = 0.0
+REGISTRY_METADATA_REFRESH_SECONDS = 15 * 60
 FAST_ENTITY_PREFIXES = (
     "sensor.inverter_",
     "sensor.onduleur_",
@@ -44,12 +47,14 @@ FAST_ENTITY_PREFIXES = (
     "sensor.pool_",
     "sensor.tesla_",
     "sensor.model_x_",
+    "sensor.lektrico_",
     "binary_sensor.tesla_",
     "binary_sensor.model_x_",
     "switch.tesla_",
     "switch.model_x_",
     "button.tesla_",
     "button.model_x_",
+    "button.lektrico_",
     "climate.",
     "weather.",
     "sun.sun",
@@ -81,6 +86,7 @@ SAFE_ATTRIBUTE_KEYS = (
     "battery_level",
     "charging_state",
     "door_lock",
+    "date",
 )
 DEVICE_DAILY_ENERGY_BINDINGS = (
     (
@@ -193,6 +199,72 @@ def home_assistant_ws_command(
         socket.close()
 
 
+def registry_metadata_from_results(
+    entity_result: Any,
+    device_result: Any,
+) -> dict[str, dict[str, Any]]:
+    """Joint les registres HA sans exposer de secret ni d'adresse locale."""
+    entities = entity_result.get("result") if isinstance(entity_result, dict) else entity_result
+    devices = device_result.get("result") if isinstance(device_result, dict) else device_result
+    if not isinstance(entities, list):
+        entities = []
+    if not isinstance(devices, list):
+        devices = []
+    devices_by_id = {
+        str(device.get("id")): device
+        for device in devices
+        if isinstance(device, dict) and device.get("id")
+    }
+    metadata: dict[str, dict[str, Any]] = {}
+    for entity in entities:
+        if not isinstance(entity, dict) or not entity.get("entity_id"):
+            continue
+        values: dict[str, Any] = {}
+        platform = entity.get("platform")
+        if isinstance(platform, str) and platform:
+            values["platform"] = platform[:80]
+        original_name = entity.get("original_name")
+        if isinstance(original_name, str) and original_name:
+            values["original_name"] = original_name[:180]
+        device = devices_by_id.get(str(entity.get("device_id")), {})
+        if isinstance(device, dict):
+            device_name = device.get("name_by_user") or device.get("name")
+            if isinstance(device_name, str) and device_name:
+                values["device_name"] = device_name[:180]
+            for key in ("manufacturer", "model", "serial_number"):
+                value = device.get(key)
+                if isinstance(value, (str, int, float)) and str(value):
+                    values[key] = str(value)[:180]
+        if values:
+            metadata[str(entity["entity_id"])] = values
+    return metadata
+
+
+def home_assistant_registry_metadata(supervisor_token: str) -> dict[str, dict[str, Any]]:
+    global REGISTRY_METADATA_CACHE, REGISTRY_METADATA_FETCHED_AT
+    if (
+        REGISTRY_METADATA_CACHE
+        and time.monotonic() - REGISTRY_METADATA_FETCHED_AT < REGISTRY_METADATA_REFRESH_SECONDS
+    ):
+        return REGISTRY_METADATA_CACHE
+    try:
+        entities = home_assistant_ws_command(
+            supervisor_token,
+            {"type": "config/entity_registry/list"},
+            timeout=12,
+        )
+        devices = home_assistant_ws_command(
+            supervisor_token,
+            {"type": "config/device_registry/list"},
+            timeout=12,
+        )
+        REGISTRY_METADATA_CACHE = registry_metadata_from_results(entities, devices)
+        REGISTRY_METADATA_FETCHED_AT = time.monotonic()
+    except Exception as error:
+        log(f"Métadonnées du registre Home Assistant indisponibles ({error})")
+    return REGISTRY_METADATA_CACHE
+
+
 def apply_dashboard(
     supervisor_token: str,
     dashboard: dict[str, Any],
@@ -214,7 +286,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.25",
+        "User-Agent": "Agent-123-Domotique/0.5.27",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -231,21 +303,39 @@ def daily_energy_delta(current_state: str, history: Any) -> float | None:
         current = float(current_state)
     except (TypeError, ValueError):
         return None
+    if not math.isfinite(current) or current < 0:
+        return None
     if not isinstance(history, list):
         return None
     series = history[0] if history and isinstance(history[0], list) else history
-    baseline = None
+    values: list[float] = []
     for row in series:
         if not isinstance(row, dict):
             continue
         try:
-            baseline = float(row.get("state"))
-            break
+            value = float(row.get("state"))
         except (TypeError, ValueError):
             continue
-    if baseline is None or current < baseline:
+        if math.isfinite(value) and value >= 0:
+            values.append(value)
+    if not values:
         return None
-    return round(current - baseline, 4)
+    if not math.isclose(values[-1], current, rel_tol=0, abs_tol=1e-9):
+        values.append(current)
+    total = 0.0
+    previous = values[0]
+    for value in values[1:]:
+        difference = value - previous
+        if difference >= 0:
+            total += difference
+            previous = value
+            continue
+        jitter_tolerance = max(0.1, previous * 0.001)
+        if abs(difference) <= jitter_tolerance:
+            continue
+        total += value
+        previous = value
+    return round(total, 4)
 
 
 def daily_pv_peak(
@@ -535,6 +625,7 @@ def home_assistant_summary(
         1 for state in states
         if isinstance(state, dict) and state.get("state") not in {"unavailable", "unknown"}
     )
+    registry_metadata = home_assistant_registry_metadata(supervisor_token) if full_inventory else {}
     inventory = []
     for state in states[:1000]:
         if not isinstance(state, dict):
@@ -545,17 +636,19 @@ def home_assistant_summary(
         attributes = state.get("attributes")
         if not isinstance(attributes, dict):
             attributes = {}
+        safe_attributes = {
+            key: attributes[key]
+            for key in SAFE_ATTRIBUTE_KEYS
+            if key in attributes
+        }
+        safe_attributes.update(registry_metadata.get(entity_id, {}))
         inventory.append({
             "entityId": entity_id,
             "name": str(attributes.get("friendly_name", entity_id)),
             "domain": entity_id.split(".", 1)[0] if "." in entity_id else "",
             "state": str(state.get("state", "")),
             "deviceClass": attributes.get("device_class"),
-            "attributes": {
-                key: attributes[key]
-                for key in SAFE_ATTRIBUTE_KEYS
-                if key in attributes
-            },
+            "attributes": safe_attributes,
         })
     if full_inventory:
         inventory.extend(shelly_daily_energy_inventory(
@@ -830,6 +923,131 @@ def solar_forecast_inventory(
         now - SOLAR_FORECAST_FETCHED_AT < SOLAR_FORECAST_REFRESH_SECONDS
     ):
         return SOLAR_FORECAST_CACHE
+    return _refresh_solar_forecast_inventory(supervisor_token, states, now)
+
+
+def lektrico_off_peak_automation(payload: dict[str, Any]) -> dict[str, Any]:
+    charger_state_entity_id = str(payload.get("chargerStateEntityId", "")).strip()
+    dynamic_limit_entity_id = str(payload.get("dynamicLimitEntityId", "")).strip()
+    start_button_entity_id = str(payload.get("startButtonEntityId", "")).strip()
+    stop_button_entity_id = str(payload.get("stopButtonEntityId", "")).strip()
+    entity_ids = (
+        charger_state_entity_id,
+        dynamic_limit_entity_id,
+        start_button_entity_id,
+        stop_button_entity_id,
+    )
+    if any(
+        len(entity_id.split(".", 1)) != 2
+        or not all(part.replace("_", "").isalnum() for part in entity_id.split(".", 1))
+        for entity_id in entity_ids
+    ):
+        raise ValueError("Entités Lektrico invalides")
+    if not dynamic_limit_entity_id.startswith("number."):
+        raise ValueError("Limite dynamique Lektrico invalide")
+    if not start_button_entity_id.startswith("button.") or not stop_button_entity_id.startswith(
+        "button."
+    ):
+        raise ValueError("Commandes Lektrico invalides")
+
+    periods = payload.get("offPeakPeriods")
+    if not isinstance(periods, list) or not periods:
+        periods = [{"start": "22:00", "end": "06:00"}]
+    normalized_periods: list[tuple[str, str, int, int]] = []
+    for period in periods[:4]:
+        if not isinstance(period, dict):
+            continue
+        start = str(period.get("start", "")).strip()
+        end = str(period.get("end", "")).strip()
+        try:
+            start_time = datetime.strptime(start, "%H:%M")
+            end_time = datetime.strptime(end, "%H:%M")
+        except ValueError:
+            continue
+        normalized_periods.append((
+            start,
+            end,
+            start_time.hour * 60 + start_time.minute,
+            end_time.hour * 60 + end_time.minute,
+        ))
+    if not normalized_periods:
+        normalized_periods = [("22:00", "06:00", 1320, 360)]
+    maximum_amps = max(6, min(64, round(float(payload.get("maximumAmps", 16)))))
+
+    time_expressions = []
+    for _, _, start_minutes, end_minutes in normalized_periods:
+        if start_minutes == end_minutes:
+            time_expressions.append("true")
+        elif start_minutes < end_minutes:
+            time_expressions.append(
+                f"({start_minutes} <= minutes and minutes < {end_minutes})"
+            )
+        else:
+            time_expressions.append(
+                f"(minutes >= {start_minutes} or minutes < {end_minutes})"
+            )
+    off_peak_template = (
+        "{% set minutes = now().hour * 60 + now().minute %} "
+        "{{ " + " or ".join(time_expressions) + " }}"
+    )
+    plugged_template = (
+        "{{ states('" + charger_state_entity_id + "') | lower in "
+        "['starting', 'finishing', 'stopped', 'complete', 'no_power', "
+        "'need_auth', 'locked', 'suspended_ev', 'suspended_evse', "
+        "'charging', 'connected', 'paused', 'paused_by_scheduler'] }}"
+    )
+    triggers: list[dict[str, Any]] = [
+        {"platform": "homeassistant", "event": "start"},
+        {"platform": "state", "entity_id": charger_state_entity_id},
+    ]
+    for index, (start, end, _, _) in enumerate(normalized_periods):
+        triggers.extend((
+            {"platform": "time", "at": f"{start}:00", "id": f"start_{index}"},
+            {"platform": "time", "at": f"{end}:00", "id": f"end_{index}"},
+        ))
+    return {
+        "id": "ma_maison_lektrico_off_peak_charging",
+        "alias": "1.2.3 Home · Recharge heures creuses Lektrico",
+        "description": (
+            "Recharge uniquement pendant les heures creuses configurées dans le portail, "
+            "véhicule branché."
+        ),
+        "trigger": triggers,
+        "condition": [],
+        "action": [{
+            "choose": [{
+                "conditions": [
+                    {"condition": "template", "value_template": off_peak_template},
+                    {"condition": "template", "value_template": plugged_template},
+                ],
+                "sequence": [
+                    {
+                        "service": "number.set_value",
+                        "target": {"entity_id": dynamic_limit_entity_id},
+                        "data": {"value": maximum_amps},
+                    },
+                    {
+                        "service": "button.press",
+                        "target": {"entity_id": start_button_entity_id},
+                    },
+                ],
+            }],
+            "default": [
+                {"condition": "template", "value_template": plugged_template},
+                {
+                    "service": "button.press",
+                    "target": {"entity_id": stop_button_entity_id},
+                },
+            ],
+        }],
+        "mode": "restart",
+    }
+def _refresh_solar_forecast_inventory(
+    supervisor_token: str,
+    states: list[dict[str, Any]],
+    now: float,
+) -> list[dict[str, Any]]:
+    global SOLAR_FORECAST_CACHE, SOLAR_FORECAST_FETCHED_AT
     try:
         response = home_assistant_ws_command(
             supervisor_token,
@@ -1130,6 +1348,23 @@ def relay_command(
                     }],
                     "mode": "restart",
                 },
+                timeout=60,
+            )
+            request_json(
+                f"{SUPERVISOR_API}/services/automation/reload",
+                method="POST",
+                token=supervisor_token,
+                payload={},
+                timeout=60,
+            )
+        elif action == "ha.ev_charger.off_peak_plan":
+            automation = lektrico_off_peak_automation(payload)
+            result = request_json(
+                f"{SUPERVISOR_API}/config/automation/config/"
+                "ma_maison_lektrico_off_peak_charging",
+                method="POST",
+                token=supervisor_token,
+                payload=automation,
                 timeout=60,
             )
             request_json(

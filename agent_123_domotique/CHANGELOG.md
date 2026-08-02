@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.27
+
+- Conserve la régulation solaire Lektrico fiabilisée et son redémarrage automatique.
+- Ajoute le mode de recharge Lektrico pendant une ou plusieurs plages d'heures creuses.
+- Enrichit l'inventaire transmis au portail avec les métadonnées sûres du registre Home Assistant pour faciliter la découverte et le préparamétrage des appareils.
+
 ## 0.5.26
 
 - Respecte les 45 secondes de tolérance avant d’arrêter une recharge dont le surplus devient insuffisant.
