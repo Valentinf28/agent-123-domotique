@@ -1,6 +1,6 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { getDb } from "../db";
-import { agentBoxes, agentCommands, installationDossiers } from "../db/schema";
+import { agentBoxes, agentCommands, energySnapshots, installationDossiers } from "../db/schema";
 import { relayHouseIdForDossier } from "./relay-house";
 import { ENERGY_PROFILE } from "./energy-profile.generated";
 import { HOUSE_BINDINGS } from "./house-bindings.generated";
@@ -9,6 +9,7 @@ import {
   formatWatts,
   powerValueWatts,
 } from "./energy-allocation.generated.js";
+import { dailySolarPeakWatts } from "./daily-solar-peak.generated.js";
 
 type InventoryItem = {
   entityId: string;
@@ -626,6 +627,17 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     fallbackVehicleWatts: inventoryPowerWatts(teslaPower, "kW"),
     chargerAvailable: lektricoAvailable,
   });
+  const recentSolarSnapshots = await getDb().select({
+    capturedAt: energySnapshots.capturedAt,
+    solarWatts: energySnapshots.solarWatts,
+  }).from(energySnapshots).where(and(
+    eq(energySnapshots.dossierId, selected.dossier.id),
+    gte(energySnapshots.capturedAt, new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString()),
+  )).limit(160);
+  const peakPowerWatts = dailySolarPeakWatts({
+    samples: recentSolarSnapshots,
+    currentWatts: inventoryPowerWatts(energyItems.solar),
+  });
   const lektricoStateValue = String(lektricoState?.state || "").trim().toLowerCase();
   const teslaPlugged = scopedFind(inventory, valueBindings.teslaPlugged, allowShowroomEntities);
   const teslaPluggedValue = String(teslaPlugged?.state || "").trim().toLowerCase();
@@ -694,7 +706,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
         pv1: formattedPower(scopedFind(inventory, valueBindings.pv1, allowShowroomEntities)),
         pv2: formattedPower(scopedFind(inventory, valueBindings.pv2, allowShowroomEntities)),
         pv3: formattedPower(scopedFind(inventory, valueBindings.pv3, allowShowroomEntities)),
-        peakPower: formattedPower(scopedFind(inventory, valueBindings.peakPower, allowShowroomEntities)),
+        peakPower: formatWatts(peakPowerWatts),
         forecastToday: formattedEnergy(scopedFind(inventory, valueBindings.forecastToday, allowShowroomEntities)),
         forecastRemaining: formattedEnergy(scopedFind(inventory, valueBindings.forecastRemaining, allowShowroomEntities)),
         forecastPowerNow: formattedPower(scopedFind(inventory, valueBindings.forecastPowerNow, allowShowroomEntities), "—"),

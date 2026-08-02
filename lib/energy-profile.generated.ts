@@ -153,8 +153,7 @@ export const ENERGY_PROFILE = {
     "couverture nuageuse"
   ],
   "peakPower": [
-    "sensor.pic_pv_jour",
-    "pic puissance"
+    "sensor.pic_pv_jour"
   ],
   "installedPower": [
     "input_number.1_2_3_home_installed_solar_power",

@@ -51,6 +51,13 @@ outputs.push(
   [resolve(root, "../mobile/src/services/energySceneGeometry.js"), `${energySceneBanner}${energySceneSource}`],
 );
 
+const dailySolarPeakSource = await readFile(resolve(root, "shared/daily-solar-peak.js"), "utf8");
+const dailySolarPeakBanner = "// Généré depuis ma-maison-portail-site/shared/daily-solar-peak.js. Ne pas modifier à la main.\n";
+outputs.push(
+  [resolve(root, "lib/daily-solar-peak.generated.js"), `${dailySolarPeakBanner}${dailySolarPeakSource}`],
+  [resolve(root, "../mobile/src/services/dailySolarPeak.js"), `${dailySolarPeakBanner}${dailySolarPeakSource}`],
+);
+
 if (process.argv.includes("--check")) {
   for (const [path, expected] of outputs) {
     assert.equal(await readFile(path, "utf8"), expected, `${path} n'est pas synchronisé`);

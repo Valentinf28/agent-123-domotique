@@ -30,6 +30,6 @@
   "forecastRemaining": ["sensor.maison_energy_production_today_remaining", "sensor.energy_production_today_remaining", "prevision production restante"],
   "forecastPowerNow": ["sensor.maison_power_production_now", "sensor.power_production_now", "puissance solaire prevue maintenant"],
   "cloudCover": ["sensor.escorpain_cloud_cover", "sensor.cloud_cover", "couverture nuageuse"],
-  "peakPower": ["sensor.pic_pv_jour", "pic puissance"],
+  "peakPower": ["sensor.pic_pv_jour"],
   "installedPower": ["input_number.1_2_3_home_installed_solar_power", "sensor.1_2_3_home_installed_solar_power", "puissance installee"]
 }
