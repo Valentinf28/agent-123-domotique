@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.27
+
+- Ajoute la consultation complète des journées précédentes depuis le calendrier de l'application et du portail.
+- Permet de demander une date de fin précise pour l'historique Home Assistant.
+- Enregistre les mesures énergétiques toutes les cinq minutes pour afficher des courbes plus détaillées.
+
 ## 0.5.19
 
 - Permet de demander une date de fin précise pour l’historique Home Assistant.
