@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.28
+
+- Limite chaque demande d'historique à la journée sélectionnée dans l'application.
+- Rétablit les données et le graphique lors de la consultation d'un jour précédent.
+- Allège les réponses Home Assistant pour accélérer le chargement du calendrier solaire.
+
 ## 0.5.27
 
 - Conserve la régulation solaire Lektrico fiabilisée et son redémarrage automatique.
