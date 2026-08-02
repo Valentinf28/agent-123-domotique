@@ -339,6 +339,9 @@ function derivedEnergyMetrics(
     ? Math.max(0, Math.min(100, (consumptionKwh - importedKwh) / consumptionKwh * 100))
     : consumptionKwh === 0 ? 0 : null;
   return {
+    selfConsumed: selfConsumedKwh === null
+      ? "—"
+      : `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(selfConsumedKwh)} kWh`,
     selfConsumption: selfConsumption === null ? "—" : `${Math.round(selfConsumption)} %`,
     autonomy: autonomy === null ? "—" : `${Math.round(autonomy)} %`,
     savings: selfConsumedKwh === null ? "—" : `${(selfConsumedKwh * 0.194).toFixed(2).replace(".", ",")} €`,
@@ -623,6 +626,14 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
     fallbackVehicleWatts: inventoryPowerWatts(teslaPower, "kW"),
     chargerAvailable: lektricoAvailable,
   });
+  const lektricoStateValue = String(lektricoState?.state || "").trim().toLowerCase();
+  const teslaPlugged = scopedFind(inventory, valueBindings.teslaPlugged, allowShowroomEntities);
+  const teslaPluggedValue = String(teslaPlugged?.state || "").trim().toLowerCase();
+  const vehiclePlugged = allocatedPower.vehicleWatts > 5
+    || [lektricoStateValue, teslaPluggedValue].some((state) =>
+      ["on", "connected", "charging", "complete", "stopped", "no_power", "starting", "branchée"]
+        .some((candidate) => state.includes(candidate))
+    );
   const heatingClimate = scopedFind(inventory, valueBindings.heatingSetpoint, allowShowroomEntities);
   const poolClimate = scopedFind(inventory, HOUSE_BINDINGS.poolHeatPump, allowShowroomEntities);
   const weather = inventory.find((item) => item.domain === "weather") ?? null;
@@ -647,6 +658,18 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
       .map((name) => ({ publicId: publicId(name, "piece"), name })),
     automations,
     mobileOverview: {
+      // Les libellés de `energy` sont faits pour l'affichage et perdent
+      // volontairement le signe. `flow` est la source numérique canonique
+      // utilisée par le portail pour conserver le sens import/export et
+      // charge/décharge exactement comme dans l'application mobile.
+      flow: {
+        solarWatts: inventoryPowerWatts(energyItems.solar),
+        homeWatts: allocatedPower.homeWatts,
+        gridWatts: inventoryPowerWatts(energyItems.grid),
+        batteryWatts: inventoryPowerWatts(energyItems.batteryPower),
+        vehicleWatts: allocatedPower.vehicleWatts,
+        vehiclePlugged,
+      },
       energy: {
         solar: formattedPower(energyItems.solar),
         home: formatWatts(allocatedPower.homeWatts),
@@ -712,7 +735,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
         teslaPower: formatWatts(allocatedPower.vehicleWatts),
         teslaPlugged: lektricoState
           ? formatted(lektricoState, "", "off")
-          : formatted(scopedFind(inventory, valueBindings.teslaPlugged, allowShowroomEntities), "", "off"),
+          : formatted(teslaPlugged, "", "off"),
         teslaOnline: formatted(scopedFind(inventory, valueBindings.teslaOnline, allowShowroomEntities), "", "off"),
         teslaCharging: formatted(scopedFind(inventory, valueBindings.teslaCharging, allowShowroomEntities), "", "off"),
         teslaDoors: formatted(scopedFind(inventory, valueBindings.teslaDoors, allowShowroomEntities), "", "unknown"),

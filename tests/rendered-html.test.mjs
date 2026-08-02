@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   allocateHomeAndVehiclePower,
+  createEnergyFlowState,
   powerEntityWatts,
 } from "../lib/energy-allocation.generated.js";
 
@@ -197,6 +198,11 @@ test("partage le calcul maison et borne avec l’application", async () => {
   assert.equal(generatedPortal.replace(/^.*\n/, ""), canonical);
   assert.equal(generatedMobile.replace(/^.*\n/, ""), canonical);
   assert.match(agentHome, /allocateHomeAndVehiclePower/);
+  assert.match(agentHome, /flow:\s*\{/);
+  assert.match(agentHome, /gridWatts: inventoryPowerWatts\(energyItems\.grid\)/);
+  assert.match(agentHome, /batteryWatts: inventoryPowerWatts\(energyItems\.batteryPower\)/);
+  assert.match(portal, /overview\?\.flow\?\.gridWatts/);
+  assert.match(portal, /createEnergyFlowState/);
   assert.match(agentHome, /chargerWatts: inventoryPowerWatts\(lektricoPower, "kW"\)/);
   assert.match(agentHome, /vehiclePower: formatWatts/);
   assert.match(portal, /energy\.vehiclePower/);
@@ -215,6 +221,19 @@ test("convertit la borne en watts et la retire entièrement de la maison", () =>
   }), {
     homeWatts: 1000,
     vehicleWatts: 2382.69,
+  });
+
+  assert.deepEqual(createEnergyFlowState({ gridWatts: -2100 }).grid, {
+    active: true,
+    reverse: false,
+    direction: "export",
+    arrow: "←",
+  });
+  assert.deepEqual(createEnergyFlowState({ batteryWatts: -900 }).battery, {
+    active: true,
+    reverse: false,
+    direction: "charging",
+    arrow: "↓",
   });
 });
 

@@ -42,6 +42,48 @@ export function allocateHomeAndVehiclePower({
   };
 }
 
+export function createEnergyFlowState({
+  solarWatts,
+  homeWatts,
+  gridWatts,
+  batteryWatts,
+  vehicleWatts,
+  vehiclePlugged = false,
+  activationWatts = 5,
+}) {
+  const threshold = Math.max(0, Number(activationWatts) || 0);
+  const solar = Number(solarWatts) || 0;
+  const home = Math.max(0, Number(homeWatts) || 0);
+  const grid = Number(gridWatts) || 0;
+  const battery = Number(batteryWatts) || 0;
+  const vehicle = Math.max(0, Number(vehicleWatts) || 0);
+
+  return {
+    solar: { active: solar > threshold, reverse: false },
+    // Convention Deye/Home Assistant : réseau positif = import, négatif = export.
+    // Le tracé est défini de l'onduleur vers le réseau : l'import est donc inversé.
+    grid: {
+      active: Math.abs(grid) > threshold,
+      reverse: grid > 0,
+      direction: grid > 0 ? 'import' : grid < 0 ? 'export' : 'idle',
+      arrow: grid > 0 ? '→' : grid < 0 ? '←' : '',
+    },
+    home: { active: home > threshold, reverse: false },
+    // Convention Deye/Home Assistant : batterie positive = décharge, négative = charge.
+    // Le tracé est défini de l'onduleur vers la batterie : la décharge est donc inversée.
+    battery: {
+      active: Math.abs(battery) > threshold,
+      reverse: battery > 0,
+      direction: battery > 0 ? 'discharging' : battery < 0 ? 'charging' : 'idle',
+      arrow: battery > 0 ? '↑' : battery < 0 ? '↓' : '',
+    },
+    vehicle: {
+      active: Boolean(vehiclePlugged) && vehicle > threshold,
+      reverse: false,
+    },
+  };
+}
+
 export function flowDurationMs(powerWatts) {
   const pixelsPerSecond = 6 + Math.min(Math.abs(Number(powerWatts) || 0), 10000) * 0.009;
   return Math.max(500, Math.round(32000 / pixelsPerSecond));

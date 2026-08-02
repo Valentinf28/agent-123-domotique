@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CLIENT_EXPERIENCE } from "../lib/client-experience.generated";
-import { flowDurationMs, formatWatts } from "../lib/energy-allocation.generated.js";
+import { createEnergyFlowState, flowDurationMs, formatWatts } from "../lib/energy-allocation.generated.js";
 import { createEnergySceneLayout } from "../lib/energy-scene.generated.js";
 
 type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
@@ -68,6 +68,14 @@ type PredictiveEnergyPlan = {
   confidence: "low" | "medium" | "high";
 };
 type MobileOverview = {
+  flow?: {
+    solarWatts: number;
+    homeWatts: number;
+    gridWatts: number;
+    batteryWatts: number;
+    vehicleWatts: number;
+    vehiclePlugged: boolean;
+  };
   energy: Record<string, string>;
   controls: {
     publicId: string; label: string; icon: string;
@@ -1482,11 +1490,11 @@ function SolarPortalView({ overview, tariffCopy }: { overview: MobileOverview | 
     <section className="solar-live-card">
       <div className="solar-live-heading"><span>☀</span><div><small>PRODUCTION EN DIRECT</small><strong>{energy.solar ?? "0 W"}</strong></div><em><i /> TEMPS RÉEL</em></div>
       <div className="solar-capacity"><i style={{ width: `${liveRatio}%` }} /></div>
-      <footer><span><small>INSTALLATION</small><b>{energy.installedPower ?? "9 635 Wc"}</b></span><span><small>PRODUIT AUJOURD’HUI</small><b>{energy.dailyProduction ?? "—"}</b></span><span><small>BATTERIE</small><b>{energy.battery ?? "—"}</b></span></footer>
+      <footer><span><small>INSTALLATION</small><b>{energy.installedPower ?? "9 635 Wc"}</b></span><span><small>CAPACITÉ UTILISÉE</small><b>{Math.round(Math.max(0, livePower / installedPower * 100))} %</b></span></footer>
     </section>
     <div className="period-tabs">{([['day', 'Jour'], ['month', 'Mois'], ['year', 'Année']] as const).map(([key, label]) => <button key={key} className={period === key ? "selected" : ""} onClick={() => setPeriod(key)}>{label}</button>)}</div>
     <section className="solar-stat-grid">
-      <article><span className="solar-stat-icon">☀</span><small>Production</small><strong>{periodValues.production ?? "—"}</strong><p>{periodValues.label}</p></article>
+      <article><span className="solar-stat-icon">☀</span><small>{period === "day" ? "Utilisée sur place" : "Production"}</small><strong>{period === "day" ? energy.selfConsumed ?? "—" : periodValues.production ?? "—"}</strong><p>{period === "day" ? "Production consommée directement" : periodValues.label}</p></article>
       <article><span className="solar-stat-icon teal">€</span><small>Économies</small><strong>{energy.savings ?? "—"}</strong><p>Valorisation de l’énergie locale</p></article>
       <article><span className="solar-stat-icon blue">⌂</span><small>Autoconsommation</small><strong>{energy.selfConsumption ?? "—"}</strong><p>Production utilisée sur place</p></article>
       <article><span className="solar-stat-icon pink">▰</span><small>Autonomie</small><strong>{energy.autonomy ?? "—"}</strong><p>Consommation couverte sans réseau</p></article>
@@ -1497,10 +1505,10 @@ function SolarPortalView({ overview, tariffCopy }: { overview: MobileOverview | 
       <article><i>3</i><strong>{energy.pv3 ?? "0 W"}</strong><small>String PV3</small></article>
       <article><i>↗</i><strong>{energy.peakPower ?? "0 W"}</strong><small>Pic du jour</small></article>
     </div></section>
-    {period === "day" && <section className="energy-balance-card"><header><div><small>PRÉVISION</small><h3>Prévision et réel</h3></div><span>✦</span></header><div>
-      <article><i>☀</i><strong>{energy.forecastToday ?? "—"}</strong><small>Prévu aujourd’hui</small></article>
+    {period === "day" && <section className="energy-balance-card"><header><div><small>PRÉVISION</small><h3>Prévision contre production réelle</h3></div><span>✦</span></header><div>
+      <article><i>☀</i><strong>{energy.dailyProduction ?? "—"}</strong><small>Produit aujourd’hui</small></article>
+      <article><i>◎</i><strong>{energy.forecastToday ?? "—"}</strong><small>Objectif prévisionnel</small></article>
       <article><i>◔</i><strong>{energy.forecastRemaining ?? "—"}</strong><small>Reste à produire</small></article>
-      <article><i>ϟ</i><strong>{energy.forecastPowerNow ?? "—"}</strong><small>Prévu maintenant</small></article>
       <article><i>☁</i><strong>{energy.cloudCover ?? "—"}</strong><small>Couverture nuageuse</small></article>
     </div></section>}
     <section className="energy-balance-card"><header><div><small>{periodValues.label.toUpperCase()}</small><h3>Bilan énergétique</h3></div><span>↔</span></header><div>
@@ -1641,20 +1649,28 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
     return () => window.clearInterval(timer);
   }, []);
 
-  const solarWatts = powerNumber(overview?.energy.solar);
-  const homeWatts = powerNumber(overview?.energy.home);
-  const gridWatts = powerNumber(overview?.energy.grid);
-  const batteryWatts = powerNumber(overview?.energy.batteryPower);
-  const vehicleWatts = Math.max(0, powerNumber(overview?.energy.vehiclePower ?? overview?.comfort?.teslaPower));
+  const solarWatts = overview?.flow?.solarWatts ?? powerNumber(overview?.energy.solar);
+  const homeWatts = overview?.flow?.homeWatts ?? powerNumber(overview?.energy.home);
+  const gridWatts = overview?.flow?.gridWatts ?? powerNumber(overview?.energy.grid);
+  const batteryWatts = overview?.flow?.batteryWatts ?? powerNumber(overview?.energy.batteryPower);
+  const vehicleWatts = overview?.flow?.vehicleWatts
+    ?? Math.max(0, powerNumber(overview?.energy.vehiclePower ?? overview?.comfort?.teslaPower));
   const pluggedState = overview?.comfort?.teslaPlugged?.toLowerCase() ?? "";
-  const vehiclePlugged = vehicleWatts > 5
-    || ["on", "connected", "charging", "complete", "stopped", "no_power", "starting", "branchée"].some((state) => pluggedState.includes(state));
+  const vehiclePlugged = overview?.flow?.vehiclePlugged ?? (vehicleWatts > 5
+    || ["on", "connected", "charging", "complete", "stopped", "no_power", "starting", "branchée"].some((state) => pluggedState.includes(state)));
+  const flowState = createEnergyFlowState({
+    solarWatts,
+    homeWatts,
+    gridWatts,
+    batteryWatts,
+    vehicleWatts,
+    vehiclePlugged,
+    activationWatts: CLIENT_EXPERIENCE.energyScene.flowActivationWatts,
+  });
   const isDay = scenePeriod !== "night";
   const sceneLayout = createEnergySceneLayout(scenePeriod, 370, 630);
   const labelTop = (base: number) => `${((base + sceneLayout.verticalOffset) / 630) * 100}%`;
   const sceneImage = CLIENT_EXPERIENCE.energyScene.portalImages[scenePeriod];
-  const activeFlowWatts = CLIENT_EXPERIENCE.energyScene.flowActivationWatts;
-
   return <div className="energy-scene-wrap">
     <div
       className={`energy-scene-card ${isDay ? "is-day" : "is-night"}`}
@@ -1667,11 +1683,11 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
       <div className="energy-scene-shade" />
 
       <svg className="scene-flow-svg" viewBox="0 0 370 630" preserveAspectRatio="none" aria-hidden="true">
-        <SceneFlow route="solar" d={sceneLayout.paths.solar} active={solarWatts > activeFlowWatts} color="#ffe700" power={solarWatts} />
-        <SceneFlow route="grid" d={sceneLayout.paths.grid} active={Math.abs(gridWatts) > activeFlowWatts} reverse={gridWatts > 0} color="#438ed0" power={gridWatts} />
-        <SceneFlow route="home" d={sceneLayout.paths.home} active={homeWatts > activeFlowWatts} color="#55c8bd" power={homeWatts} />
-        <SceneFlow route="battery" d={sceneLayout.paths.battery} active={Math.abs(batteryWatts) > activeFlowWatts} reverse={batteryWatts > 0} color="#f05d9b" power={batteryWatts} />
-        <SceneFlow route="vehicle" d={sceneLayout.paths.vehicle} active={vehiclePlugged && vehicleWatts > activeFlowWatts} color="#4ed6f5" power={vehicleWatts} />
+        <SceneFlow route="solar" d={sceneLayout.paths.solar} {...flowState.solar} color="#ffe700" power={solarWatts} />
+        <SceneFlow route="grid" d={sceneLayout.paths.grid} {...flowState.grid} color="#438ed0" power={gridWatts} />
+        <SceneFlow route="home" d={sceneLayout.paths.home} {...flowState.home} color="#55c8bd" power={homeWatts} />
+        <SceneFlow route="battery" d={sceneLayout.paths.battery} {...flowState.battery} color="#f05d9b" power={batteryWatts} />
+        <SceneFlow route="vehicle" d={sceneLayout.paths.vehicle} {...flowState.vehicle} color="#4ed6f5" power={vehicleWatts} />
         <circle className="scene-inverter-hub" cx={sceneLayout.inverterHub.x} cy={sceneLayout.inverterHub.y} r="6" />
       </svg>
 
@@ -1680,7 +1696,7 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
         className="scene-grid"
         icon="♜"
         title="Réseau"
-        value={Math.abs(gridWatts) < 5 ? "0 W" : `${gridWatts > 0 ? "→ " : "← "}${formatWatts(gridWatts)}`}
+        value={!flowState.grid.active ? "0 W" : `${flowState.grid.arrow} ${formatWatts(gridWatts)}`}
         color="#438ed0"
       /></div>
       <div style={{ top: labelTop(268) }} className="scene-label-anchor"><SceneLabel className="scene-home" icon="⌂" title="Consommation" value={formatWatts(homeWatts)} color="#55c8bd" /></div>
@@ -1689,7 +1705,7 @@ function EnergyScene({ overview }: { overview: MobileOverview | null }) {
         icon="▰"
         title="Batterie"
         value={overview?.energy.battery ?? "0 %"}
-        sub={Math.abs(batteryWatts) < 5 ? "0 W" : `${batteryWatts > 0 ? "↑ " : "↓ "}${formatWatts(batteryWatts)}`}
+        sub={!flowState.battery.active ? "0 W" : `${flowState.battery.arrow} ${formatWatts(batteryWatts)}`}
         color="#f05d9b"
       /></div>
       {vehiclePlugged && <div style={{ top: labelTop(448) }} className="scene-label-anchor"><SceneLabel className="scene-vehicle" icon="◇" title="Voiture" value={formatWatts(vehicleWatts)} color="#4ed6f5" /></div>}
