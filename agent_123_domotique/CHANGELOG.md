@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.31
+
+- Espace les lectures normales de la caméra piscine à cinq minutes.
+- Conserve la dernière mesure valide lorsqu'une image intermédiaire est illisible.
+- Confirme les débuts et fins d'alarme après 15 secondes et signale une liaison périmée après 15 minutes.
+
 ## 0.5.30
 
 - Corrige la séparation des chiffres lorsque le halo de l'afficheur ne les relie pas.
