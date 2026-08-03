@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.5.30
+
+- Corrige la séparation des chiffres lorsque le halo de l'afficheur ne les relie pas.
+- Lit correctement les affichages réels `9.1` et `42`, soit `420 mV` pour l'ORP.
+
 ## 0.5.29
 
 - Ajoute la lecture locale des afficheurs AstralPool par la caméra ESPHome de la piscine.

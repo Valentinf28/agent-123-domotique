@@ -134,27 +134,55 @@ def _decode_two_characters(image: Image.Image) -> tuple[str | None, float]:
     candidates = _runs(columns, minimum=1)
     if not candidates:
         return None, 0.0
-    # Le halo rouge relie souvent les deux caractères en une seule projection.
-    # Le groupe de caractères est plus large et plus lumineux que le voyant ALARM.
-    start, end = max(candidates, key=lambda run: sum(columns[run[0]:run[1]]))
+
+    groups = []
+    for start, end in candidates:
+        lit_rows = [y for y in range(height) if any(mask[y][x] for x in range(start, end))]
+        if lit_rows:
+            groups.append((start, end, min(lit_rows), max(lit_rows) + 1, sum(columns[start:end])))
+    if not groups:
+        return None, 0.0
+
+    # Écarte les voyants ALARM et les points décimaux, nettement moins hauts que
+    # les chiffres. Le chiffre 1 reste volontairement accepté malgré sa faible largeur.
+    tallest = max(bottom - top for _, _, top, bottom, _ in groups)
+    digit_groups = [group for group in groups if group[3] - group[2] >= max(8, tallest * 0.65)]
+
+    def classify_range(
+        left: int,
+        right: int,
+        top: int,
+        bottom: int,
+        *,
+        allow_skinny_one: bool = True,
+    ) -> tuple[str | None, float]:
+        if allow_skinny_one and (right - left) / max(1, bottom - top) <= 0.48:
+            return "1", 0.8
+        return _classify_character(image.crop((max(0, left - 1), max(0, top - 2), min(width, right + 1), min(height, bottom + 2))))
+
+    if len(digit_groups) >= 2:
+        # Les deux chiffres peuvent être séparés (notamment 9.1). Conserve la
+        # paire la plus lumineuse tout en respectant l'ordre de l'afficheur.
+        chosen = sorted(sorted(digit_groups, key=lambda group: group[4], reverse=True)[:2])
+        decoded = [classify_range(left, right, top, bottom) for left, right, top, bottom, _ in chosen]
+        if all(character for character, _ in decoded):
+            return "".join(character for character, _ in decoded), min(confidence for _, confidence in decoded)
+
+    # Le halo relie parfois les deux chiffres. Essaie plusieurs séparations :
+    # leurs largeurs ne sont pas égales, surtout pour 4 et 2 à cette distance.
+    start, end, top, bottom, _ = max(digit_groups or groups, key=lambda group: group[4])
     if end - start < 8:
         return None, 0.0
-    lit_rows = [y for y in range(height) if any(mask[y][x] for x in range(start, end))]
-    if not lit_rows:
+    possibilities = []
+    for split in range(start + int((end - start) * 0.35), start + int((end - start) * 0.66) + 1):
+        first = classify_range(start, split, top, bottom, allow_skinny_one=False)
+        second = classify_range(split, end, top, bottom, allow_skinny_one=False)
+        if first[0] and second[0]:
+            possibilities.append((min(first[1], second[1]), first[0] + second[0]))
+    if not possibilities:
         return None, 0.0
-    top, bottom = max(0, min(lit_rows) - 2), min(height, max(lit_rows) + 3)
-    center = (start + end) / 2
-    character_ranges = [(start, int(center)), (int(center), end)]
-    characters = []
-    confidences = []
-    for left, right in character_ranges:
-        left, right = max(0, left - 1), min(width, right + 1)
-        character, confidence = _classify_character(image.crop((left, top, right, bottom)))
-        if not character:
-            return None, 0.0
-        characters.append(character)
-        confidences.append(confidence)
-    return "".join(characters), min(confidences)
+    confidence, text = max(possibilities)
+    return text, confidence
 
 
 def _crop(image: Image.Image, region: tuple[float, float, float, float]) -> Image.Image:
