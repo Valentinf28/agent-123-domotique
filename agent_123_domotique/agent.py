@@ -26,6 +26,7 @@ HA_TUNNELS: dict[str, websocket.WebSocket] = {}
 OPTIONS_PATH = Path("/data/options.json")
 STATE_PATH = Path("/data/agent-state.json")
 PV_PEAK_STATE_PATH = Path("/data/pv-peak-state.json")
+POOL_CAMERA_STATE_PATH = Path("/data/pool-camera-state.json")
 SUPERVISOR_API = "http://supervisor/core/api"
 HOME_ASSISTANT_FRONTEND = "http://homeassistant:8123"
 FULL_INVENTORY_SECONDS = 60
@@ -150,6 +151,163 @@ PV_POWER_ENTITY_IDS = (
     "sensor.inverter_pv_power",
     "sensor.deye_active_power_pv",
 )
+
+
+def set_ha_state(
+    supervisor_token: str,
+    entity_id: str,
+    state: str,
+    attributes: dict[str, Any],
+) -> None:
+    request_json(
+        f"{SUPERVISOR_API}/states/{entity_id}",
+        method="POST",
+        token=supervisor_token,
+        payload={"state": state, "attributes": attributes},
+    )
+
+
+def write_pool_camera_state(state: dict[str, Any]) -> None:
+    temporary = POOL_CAMERA_STATE_PATH.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state), encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    temporary.replace(POOL_CAMERA_STATE_PATH)
+
+
+def publish_pool_reading(supervisor_token: str, reading, captured_at: int) -> None:
+    common = {
+        "managed_by": "Agent 1.2.3 Domotique",
+        "source": "camera-traitement-piscine",
+        "captured_at": captured_at,
+        "confidence": round(reading.confidence, 2),
+    }
+    set_ha_state(
+        supervisor_token,
+        "sensor.ph_piscine",
+        "unavailable" if reading.ph is None else f"{reading.ph:.1f}",
+        {
+            **common,
+            "friendly_name": "pH piscine",
+            "icon": "mdi:ph",
+            "state_class": "measurement",
+            "raw_display": reading.ph_text,
+        },
+    )
+    set_ha_state(
+        supervisor_token,
+        "sensor.orp_piscine",
+        "unavailable" if reading.orp_mv is None else str(reading.orp_mv),
+        {
+            **common,
+            "friendly_name": "ORP piscine",
+            "icon": "mdi:flash-outline",
+            "device_class": "voltage",
+            "state_class": "measurement",
+            "unit_of_measurement": "mV",
+            "raw_display": reading.orp_text,
+            "display_multiplier": 10,
+        },
+    )
+    for entity_id, friendly_name in (
+        ("binary_sensor.alarme_traitement_piscine", "Alarme traitement piscine"),
+        ("binary_sensor.manque_chlore_piscine", "Manque de chlore piscine"),
+    ):
+        set_ha_state(
+            supervisor_token,
+            entity_id,
+            "on" if reading.alarm else "off",
+            {
+                **common,
+                "friendly_name": friendly_name,
+                "device_class": "problem",
+                "icon": "mdi:flask-empty-outline" if reading.alarm else "mdi:flask-check-outline",
+            },
+        )
+    set_ha_state(
+        supervisor_token,
+        "binary_sensor.communication_traitement_piscine",
+        "on",
+        {
+            **common,
+            "friendly_name": "Communication traitement piscine",
+            "device_class": "connectivity",
+        },
+    )
+
+
+def pool_camera_forever(
+    supervisor_token: str,
+    url: str,
+    mirror: bool,
+    interval: int = 15,
+) -> None:
+    # Chargé uniquement quand l'option maison est activée : l'agent reste
+    # compatible avec les installations sans caméra ni Pillow.
+    from pool_camera import (
+        confirmed_reading,
+        fetch_pool_image,
+        load_camera_state,
+        read_pool_image,
+        reading_record,
+    )
+
+    state = load_camera_state(POOL_CAMERA_STATE_PATH)
+    history = state.get("history") if isinstance(state.get("history"), list) else []
+    while True:
+        started_at = time.monotonic()
+        try:
+            reading = read_pool_image(fetch_pool_image(url), mirror=mirror)
+            record = reading_record(reading)
+            history = [*history[-2:], record]
+            state["history"] = history
+            confirmed = confirmed_reading(history)
+            if confirmed:
+                publish_pool_reading(supervisor_token, confirmed, int(record["at"]))
+                state["last_success_at"] = int(record["at"])
+                if confirmed.alarm and not state.get("alarm_notified"):
+                    request_json(
+                        f"{SUPERVISOR_API}/services/persistent_notification/create",
+                        method="POST",
+                        token=supervisor_token,
+                        payload={
+                            "notification_id": "123_home_manque_chlore_piscine",
+                            "title": "Piscine · manque de chlore",
+                            "message": (
+                                "L’afficheur AstralPool signale AL. Vérifiez le bidon de "
+                                "chlore et le circuit d’aspiration. Aucune injection n’a été "
+                                "commandée par 1.2.3 Home."
+                            ),
+                        },
+                    )
+                    state["alarm_notified"] = True
+                elif not confirmed.alarm and state.get("alarm_notified"):
+                    request_json(
+                        f"{SUPERVISOR_API}/services/persistent_notification/dismiss",
+                        method="POST",
+                        token=supervisor_token,
+                        payload={"notification_id": "123_home_manque_chlore_piscine"},
+                    )
+                    state["alarm_notified"] = False
+            write_pool_camera_state(state)
+        except Exception as error:
+            log(f"Caméra piscine indisponible ({error})")
+            last_success = int(state.get("last_success_at", 0) or 0)
+            if time.time() - last_success > 90:
+                try:
+                    set_ha_state(
+                        supervisor_token,
+                        "binary_sensor.communication_traitement_piscine",
+                        "off",
+                        {
+                            "friendly_name": "Communication traitement piscine",
+                            "device_class": "connectivity",
+                            "managed_by": "Agent 1.2.3 Domotique",
+                        },
+                    )
+                except Exception:
+                    pass
+        elapsed = time.monotonic() - started_at
+        time.sleep(max(1, interval - elapsed))
 
 
 def log(message: str) -> None:
@@ -1930,6 +2088,19 @@ def main() -> None:
         raise SystemExit("Accès interne à Home Assistant indisponible")
     if not enrollment_code and not (relay_url and relay_house_id and relay_token):
         raise SystemExit("Configuration incomplète : code d'installation ou liaison VPS requis")
+
+    if bool(options.get("pool_camera_enabled", False)):
+        pool_camera_url = str(options.get(
+            "pool_camera_url",
+            "http://camera-traitement-piscine.local:8081/",
+        )).strip()
+        pool_camera_mirror = bool(options.get("pool_camera_mirror", True))
+        threading.Thread(
+            target=pool_camera_forever,
+            args=(supervisor_token, pool_camera_url, pool_camera_mirror),
+            daemon=True,
+        ).start()
+        log(f"Lecture caméra piscine activée · {pool_camera_url}")
 
     state = read_json(STATE_PATH, {})
     last_full_inventory_at = 0.0

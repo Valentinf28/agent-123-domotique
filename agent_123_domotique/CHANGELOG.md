@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.29
+
+- Ajoute la lecture locale des afficheurs AstralPool par la caméra ESPHome de la piscine.
+- Publie le pH, l'ORP, l'état de communication et l'alarme de manque de chlore dans Home Assistant.
+- Ajoute une notification persistante en cas de manque de chlore, sans aucune commande des pompes doseuses.
+
 ## 0.5.28
 
 - Limite chaque demande d'historique à la journée sélectionnée dans l'application.
