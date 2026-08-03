@@ -239,11 +239,12 @@ def pool_camera_forever(
     supervisor_token: str,
     url: str,
     mirror: bool,
-    interval: int = 15,
+    interval: int = 5 * 60,
 ) -> None:
     # Chargé uniquement quand l'option maison est activée : l'agent reste
     # compatible avec les installations sans caméra ni Pillow.
     from pool_camera import (
+        PoolReading,
         confirmed_reading,
         fetch_pool_image,
         load_camera_state,
@@ -257,13 +258,40 @@ def pool_camera_forever(
         started_at = time.monotonic()
         try:
             reading = read_pool_image(fetch_pool_image(url), mirror=mirror)
-            record = reading_record(reading)
-            history = [*history[-2:], record]
+            records = [reading_record(reading)]
+            # Un début ou une fin d'alarme est confirmé sans attendre le cycle
+            # normal de cinq minutes.
+            if reading.alarm or state.get("alarm_notified"):
+                time.sleep(15)
+                records.append(reading_record(read_pool_image(fetch_pool_image(url), mirror=mirror)))
+            for record in records:
+                history = [*history[-2:], record]
             state["history"] = history
             confirmed = confirmed_reading(history)
             if confirmed:
-                publish_pool_reading(supervisor_token, confirmed, int(record["at"]))
-                state["last_success_at"] = int(record["at"])
+                captured_at = int(records[-1]["at"])
+                if confirmed.ph is not None:
+                    state["last_valid_ph"] = confirmed.ph
+                    state["last_valid_ph_text"] = confirmed.ph_text
+                    state["last_valid_ph_at"] = captured_at
+                if confirmed.orp_mv is not None:
+                    state["last_valid_orp_mv"] = confirmed.orp_mv
+                    state["last_valid_orp_text"] = confirmed.orp_text
+                    state["last_valid_orp_at"] = captured_at
+                # Une image partiellement illisible ne doit pas faire disparaître
+                # une mesure précédemment validée. AL reste volontairement sans pH.
+                effective = PoolReading(
+                    ph=None if confirmed.alarm else (
+                        confirmed.ph if confirmed.ph is not None else state.get("last_valid_ph")
+                    ),
+                    orp_mv=confirmed.orp_mv if confirmed.orp_mv is not None else state.get("last_valid_orp_mv"),
+                    alarm=confirmed.alarm,
+                    ph_text=confirmed.ph_text if confirmed.alarm or confirmed.ph is not None else state.get("last_valid_ph_text"),
+                    orp_text=confirmed.orp_text if confirmed.orp_mv is not None else state.get("last_valid_orp_text"),
+                    confidence=confirmed.confidence,
+                )
+                publish_pool_reading(supervisor_token, effective, captured_at)
+                state["last_success_at"] = captured_at
                 if confirmed.alarm and not state.get("alarm_notified"):
                     request_json(
                         f"{SUPERVISOR_API}/services/persistent_notification/create",
@@ -292,7 +320,7 @@ def pool_camera_forever(
         except Exception as error:
             log(f"Caméra piscine indisponible ({error})")
             last_success = int(state.get("last_success_at", 0) or 0)
-            if time.time() - last_success > 90:
+            if time.time() - last_success > 15 * 60:
                 try:
                     set_ha_state(
                         supervisor_token,

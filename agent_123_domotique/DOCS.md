@@ -35,8 +35,11 @@ pompes doseuses. Les entités créées sont :
 - `binary_sensor.manque_chlore_piscine` ;
 - `binary_sensor.communication_traitement_piscine`.
 
-Deux lectures identiques sont exigées avant de publier une nouvelle mesure. Si
+Les lectures normales sont espacées de cinq minutes et deux lectures identiques
+sont exigées avant de publier une nouvelle mesure. Les transitions d'alarme sont
+confirmées par une seconde image après 15 secondes. Si
 l'afficheur pH indique `AL`, le pH devient indisponible et l'alarme de manque de
 chlore est activée. Home Assistant affiche alors une notification persistante.
-Une perte d'image pendant plus de 90 secondes rend l'état de communication
-indisponible sans inventer de mesure.
+Une perte d'image pendant plus de 15 minutes rend l'état de communication
+indisponible. La dernière mesure valide reste affichée au lieu d'être remplacée
+par une valeur inventée ou momentanément illisible.
