@@ -453,9 +453,12 @@ def _vote_characters_with_confidence(values: list[str | None]) -> tuple[str | No
     ]
     consensus = min(count / len(candidates) for _, count in winners)
     text = "".join(character for character, _ in winners)
-    if consensus < 0.80:
+    # Sur le Micro Rx, le balayage transforme ponctuellement un 6 en 2, 3 ou
+    # 8. Un accord d'au moins 60 % sur chaque position est déjà nettement plus
+    # fiable que la fusion temporelle, qui peut alors reconstruire deux 3.
+    if consensus < 0.60:
         return text, 0.45
-    return text, min(0.85, 0.65 + (consensus - 0.80))
+    return text, min(0.85, 0.58 + (consensus - 0.60) * 0.60)
 
 
 def _detect_ph_alarm(images: list[Image.Image]) -> tuple[bool, float]:

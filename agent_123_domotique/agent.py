@@ -240,18 +240,19 @@ def publish_pool_reading(supervisor_token: str, reading, captured_at: int) -> No
             "raw_display": reading.ph_text,
         },
     )
-    raw_chlorine = int(reading.orp_text) if str(reading.orp_text or "").isdigit() else None
     set_ha_state(
         supervisor_token,
         "sensor.chlore_piscine",
-        "unavailable" if raw_chlorine is None else str(raw_chlorine),
+        "unavailable" if reading.orp_mv is None else str(reading.orp_mv),
         {
             **common,
             "friendly_name": "Chlore piscine",
             "icon": "mdi:water-check-outline",
             "state_class": "measurement",
+            "unit_of_measurement": "mV",
             "raw_display": reading.orp_text,
             "orp_mv": reading.orp_mv,
+            "display_multiplier": 10,
         },
     )
     set_ha_state(

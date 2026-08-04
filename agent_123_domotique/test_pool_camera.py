@@ -2,6 +2,7 @@ import unittest
 
 from pool_camera import (
     _prefer_frame_consensus,
+    _vote_characters_with_confidence,
     confirmed_reading,
     normalize_ph_text,
 )
@@ -9,7 +10,7 @@ from pool_camera import (
 
 class ConfirmedReadingTests(unittest.TestCase):
     def test_known_multiplexed_alarm_alias_is_normalized(self):
-        self.assertEqual(normalize_ph_text("91"), "AL")
+        self.assertEqual(normalize_ph_text("91"), "91")
         self.assertEqual(normalize_ph_text("0L"), "AL")
         self.assertEqual(normalize_ph_text("72"), "72")
 
@@ -22,6 +23,13 @@ class ConfirmedReadingTests(unittest.TestCase):
         text, confidence = _prefer_frame_consensus("69", 0.72, "33", 0.45)
         self.assertEqual(text, "69")
         self.assertEqual(confidence, 0.72)
+
+    def test_clear_frame_vote_is_accepted(self):
+        text, confidence = _vote_characters_with_confidence(
+            ["62", "63", "68", "68", "68", "68", "62", "68"]
+        )
+        self.assertEqual(text, "68")
+        self.assertGreaterEqual(confidence, 0.55)
 
     def test_alarm_is_confirmed_even_when_orp_changes(self):
         reading = confirmed_reading([

@@ -34,6 +34,13 @@ class PoolCameraConfirmationTests(unittest.TestCase):
         self.assertEqual(value, "43")
         self.assertGreaterEqual(confidence, 0.55)
 
+    def test_trusts_clear_frame_vote_over_six_three_confusion(self):
+        value, confidence = _vote_characters_with_confidence(
+            ["62", "63", "68", "68", "68", "68", "62", "68"]
+        )
+        self.assertEqual(value, "68")
+        self.assertGreaterEqual(confidence, 0.55)
+
     def test_separates_connected_digits_around_the_center_pixel(self):
         self.assertEqual(_connected_digit_ranges(177, 210), ((177, 193), (194, 210)))
 

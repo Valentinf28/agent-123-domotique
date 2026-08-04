@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.46
+
+- Corrige la confusion du lecteur caméra qui pouvait transformer `66` ou `68` en `33`.
+- Publie désormais le chlore sous sa forme normalisée en mV : `66` affiché devient `660 mV`.
+- Conserve la valeur brute de l'afficheur dans les attributs pour le diagnostic.
+
 ## 0.5.45
 
 - Rend la rafale de la caméra piscine adaptative afin de couvrir systématiquement le cycle complet des afficheurs multiplexés.
