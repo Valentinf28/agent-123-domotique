@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.5.33
+
+- Lit désormais chaque afficheur sur une rafale de cinq images afin de neutraliser son multiplexage.
+- Empêche qu'un affichage physique `39` soit capturé suivant la phase comme `86`, `88` ou `29`.
+
 ## 0.5.32
 
 - Corrige la confusion OCR entre le chiffre `9` du Micro Rx et la lettre `A` réservée à l'alarme pH.
