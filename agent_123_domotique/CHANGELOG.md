@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.37
+
+- Lit les deux chiffres Redox sur l'ensemble de la rafale au lieu de traiter chaque image isolément.
+- Compense le balayage lumineux et le halo des petits afficheurs avec un profil sept segments spécialisé.
+- Valide sur les images réelles `36`, `37` puis `43`, soit `360`, `370` et `430 mV`, avec la caméra unique.
+
 ## 0.5.36
 
 - Refuse les correspondances OCR de faible confiance qui pouvaient transformer `37` en `23` lorsque les chiffres sont trop petits dans l'image.

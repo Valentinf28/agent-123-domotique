@@ -35,6 +35,24 @@ SEGMENTS = {
 
 MINIMUM_READING_CONFIDENCE = 0.55
 
+NUMERIC_SEGMENTS = {
+    character: segments
+    for segments, character in SEGMENTS.items()
+    if character.isdigit()
+}
+
+TEMPORAL_PATCHES = {
+    # Les horizontales sont échantillonnées sur leur moitié gauche : à cette
+    # distance, le halo des segments verticaux droits déborde jusqu'au centre.
+    "a": (0.18, 0.08, 0.48, 0.20),
+    "b": (0.80, 0.25, 0.98, 0.42),
+    "c": (0.80, 0.60, 0.98, 0.77),
+    "d": (0.18, 0.82, 0.48, 0.94),
+    "e": (0.02, 0.60, 0.20, 0.77),
+    "f": (0.02, 0.25, 0.20, 0.42),
+    "g": (0.18, 0.46, 0.48, 0.58),
+}
+
 DEFAULT_REGIONS = {
     # Coordonnées normalisées après correction miroir, pour le cadrage validé.
     "ph": (0.20, 0.40, 0.42, 0.58),
@@ -190,6 +208,158 @@ def _decode_two_characters(image: Image.Image) -> tuple[str | None, float]:
     return first[0] + second[0], min(first[1], second[1])
 
 
+def _profile_character(
+    images: list[Image.Image],
+    cell: tuple[int, int, int, int],
+) -> dict[str, float]:
+    """Mesure les sept segments en moyennant toutes les phases de la rafale."""
+    left, right, top, bottom = cell
+    rgb_images = [image.convert("RGB") for image in images]
+    pixels = [image.load() for image in rgb_images]
+    scores: dict[str, float] = {}
+    for name, (x0, y0, x1, y1) in TEMPORAL_PATCHES.items():
+        patch_left = left + int((right - left) * x0)
+        patch_right = max(patch_left + 1, left + int((right - left) * x1))
+        patch_top = top + int((bottom - top) * y0)
+        patch_bottom = max(patch_top + 1, top + int((bottom - top) * y1))
+        strengths = []
+        for image_pixels in pixels:
+            for y in range(patch_top, patch_bottom):
+                for x in range(patch_left, patch_right):
+                    red, green, blue = image_pixels[x, y]
+                    strengths.append(max(0, red - max(green, blue)))
+        scores[name] = sum(strengths) / max(1, len(strengths))
+    strongest = max(scores.values(), default=0.0)
+    if strongest:
+        scores = {name: value / strongest for name, value in scores.items()}
+    return scores
+
+
+def _classify_temporal_profile(scores: dict[str, float]) -> tuple[str | None, float]:
+    """Classe un profil sept segments déformé par le balayage de l'afficheur."""
+    if not scores or max(scores.values(), default=0.0) <= 0:
+        return None, 0.0
+
+    # Cas très caractéristiques observés sur les rafales réelles. Ces règles
+    # utilisent des rapports de segments et restent indépendantes de la valeur.
+    if (
+        scores["a"] > 0.85
+        and scores["d"] < 0.48
+        and scores["e"] < 0.48
+        and scores["c"] < 0.60
+    ):
+        return "7", 0.72
+    if (
+        scores["b"] < 0.25
+        and scores["e"] > 0.65
+        and scores["f"] > 0.65
+        and scores["g"] > 0.75
+    ):
+        return "6", 0.72
+    if (
+        scores["e"] > 0.60
+        and scores["f"] > 0.60
+        and scores["g"] > 0.75
+        and scores["c"] > scores["b"] + 0.20
+    ):
+        return "6", 0.68
+    if (
+        scores["a"] < 0.35
+        and scores["d"] < 0.35
+        and scores["b"] > 0.50
+        and scores["c"] > 0.45
+        and scores["g"] > 0.75
+    ):
+        return "4", 0.72
+    if (
+        scores["g"] > 0.70
+        and scores["b"] + scores["c"] > scores["e"] + scores["f"] + 0.12
+    ):
+        return "3", 0.72
+
+    # Ajuste pour chaque chiffre deux niveaux (segment éteint/allumé), puis
+    # compare l'erreur résiduelle. Cela absorbe les variations de luminosité.
+    candidates = []
+    segment_names = "abcdefg"
+    for character, active in NUMERIC_SEGMENTS.items():
+        on = [scores[name] for name in segment_names if name in active]
+        off = [scores[name] for name in segment_names if name not in active]
+        if not off:
+            continue
+        on_mean = sum(on) / len(on)
+        off_mean = sum(off) / len(off)
+        contrast = on_mean - off_mean
+        if contrast <= 0:
+            continue
+        error = (
+            sum((value - on_mean) ** 2 for value in on)
+            + sum((value - off_mean) ** 2 for value in off)
+        ) / len(segment_names)
+        candidates.append((error, character, contrast))
+    candidates.sort()
+    if not candidates:
+        return None, 0.0
+    best_error, character, contrast = candidates[0]
+    gap = candidates[1][0] - best_error if len(candidates) > 1 else 1.0
+    if best_error > 0.08 or contrast < 0.10 or gap < 0.008:
+        return None, 0.0
+    return character, min(0.70, 0.58 + gap + contrast * 0.15)
+
+
+def _decode_temporal_characters(images: list[Image.Image]) -> tuple[str | None, float]:
+    """Localise et lit deux chiffres sur toutes les phases de neuf images."""
+    if not images:
+        return None, 0.0
+    masks = [_red_mask(image, threshold=165) for image in images]
+    height = len(masks[0])
+    width = len(masks[0][0]) if height else 0
+    columns = [
+        sum(mask[y][x] for mask in masks for y in range(height))
+        for x in range(width)
+    ]
+    # Le voyant ALARM forme un petit groupe à gauche. Les deux chiffres sont
+    # les deux groupes larges et lumineux de la zone d'affichage.
+    groups = [group for group in _runs(columns, minimum=5) if group[1] - group[0] >= 5]
+    groups = sorted(sorted(
+        groups,
+        key=lambda group: sum(columns[group[0]:group[1]]),
+        reverse=True,
+    )[:2])
+    if len(groups) != 2:
+        return None, 0.0
+
+    rows = [
+        sum(
+            mask[y][x]
+            for mask in masks
+            for x in range(groups[0][0], groups[1][1])
+        )
+        for y in range(height)
+    ]
+    row_groups = _runs(rows, minimum=5)
+    if not row_groups:
+        return None, 0.0
+    bright_top, bright_bottom = max(row_groups, key=lambda group: group[1] - group[0])
+    top = max(0, bright_top - 3)
+    bottom = min(height, bright_bottom + 4)
+    centers = [(start + end - 1) / 2 for start, end in groups]
+    pitch = centers[1] - centers[0]
+    half_width = max(6, round(pitch * 0.50))
+
+    decoded = []
+    for center in centers:
+        left = max(0, round(center - half_width))
+        right = min(width, round(center + half_width + 1))
+        decoded.append(_classify_temporal_profile(
+            _profile_character(images, (left, right, top, bottom))
+        ))
+    if not all(character for character, _ in decoded):
+        return None, 0.0
+    return "".join(character for character, _ in decoded), min(
+        confidence for _, confidence in decoded
+    )
+
+
 def _connected_digit_ranges(start: int, end: int) -> tuple[tuple[int, int], tuple[int, int]]:
     """Sépare deux chiffres reliés sans attribuer leur pixel central aux deux."""
     split = (start + end + 1) // 2
@@ -240,6 +410,22 @@ def _vote_characters(values: list[str | None]) -> str | None:
     return "".join(Counter(value[index] for value in candidates).most_common(1)[0][0] for index in range(2))
 
 
+def _vote_characters_with_confidence(values: list[str | None]) -> tuple[str | None, float]:
+    """Vote sur une rafale et exige un accord net avant de lui faire confiance."""
+    candidates = [value for value in values if value and len(value) == 2]
+    if len(candidates) < 5:
+        return None, 0.0
+    winners = [
+        Counter(value[index] for value in candidates).most_common(1)[0]
+        for index in range(2)
+    ]
+    consensus = min(count / len(candidates) for _, count in winners)
+    text = "".join(character for character, _ in winners)
+    if consensus < 0.80:
+        return text, 0.45
+    return text, min(0.85, 0.65 + (consensus - 0.80))
+
+
 def read_pool_images(
     images: list[Image.Image],
     *,
@@ -253,18 +439,22 @@ def read_pool_images(
         for image in images
     ]
     regions = regions or DEFAULT_REGIONS
-    ph_text, ph_confidence = _decode_two_characters(_quantile_image([
-        _crop(image, regions["ph"]) for image in prepared
-    ]))
-    orp_decoded = [
-        _decode_two_characters(_crop(image, regions["orp"]))
-        for image in prepared
-    ]
-    orp_text = _vote_characters([normalize_orp_text(text) for text, _ in orp_decoded])
-    orp_confidence = min(
-        (confidence for _, confidence in orp_decoded if confidence > 0),
-        default=0.0,
-    )
+    ph_crops = [_crop(image, regions["ph"]) for image in prepared]
+    ph_text, ph_confidence = _decode_two_characters(_quantile_image(ph_crops))
+    ph_frames = [_decode_two_characters(image) for image in ph_crops]
+    ph_voted = _vote_characters([text for text, _ in ph_frames])
+    if ph_voted and ph_voted.isdigit() and 40 <= int(ph_voted) <= 100:
+        # Le premier chiffre du pH alterne parfois entre 9 et 8 suivant la
+        # phase, alors que la pluralité des neuf images conserve bien 9.1.
+        ph_text = ph_voted
+        ph_confidence = max(ph_confidence, 0.58)
+    orp_crops = [_crop(image, regions["orp"]) for image in prepared]
+    orp_text, orp_confidence = _decode_temporal_characters(orp_crops)
+    if not orp_text:
+        orp_decoded = [_decode_two_characters(image) for image in orp_crops]
+        orp_text, orp_confidence = _vote_characters_with_confidence(
+            [normalize_orp_text(text) for text, _ in orp_decoded]
+        )
     orp_text = normalize_orp_text(orp_text)
     # À cette distance, le halo peut fermer les deux ouvertures du A et le faire
     # ressembler à 0 ou 8. Un second caractère L rend néanmoins l'état non ambigu.
