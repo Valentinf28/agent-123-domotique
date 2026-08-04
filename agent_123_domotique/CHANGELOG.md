@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 0.5.42
+
+- Corrige les confusions du multiplexage qui pouvaient transformer `AL` en `91` et `69` en `33`.
+- Fait primer le consensus de la rafale sur une lecture temporelle contradictoire.
+- Remplace l'état trompeur « connectée » par « lecture non confirmée » ou « périmée » lorsque l'image est reçue mais illisible.
+- Expose la dernière lecture brute et sa confiance dans le diagnostic Home Assistant.
+
 ## 0.5.41
 
 - Fiabilise le démarrage du lecteur caméra piscine et le relance automatiquement en cas d'arrêt.

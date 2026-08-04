@@ -35,6 +35,12 @@ SEGMENTS = {
 
 MINIMUM_READING_CONFIDENCE = 0.55
 
+# Sur le cadrage définitif de l'AstralPool Micro pH, le balayage de l'afficheur
+# peut remplacer la barre basse du L par les deux segments droits et fermer le
+# A. La rafale montre alors respectivement 1 et 9. Ces variantes ne sont
+# acceptées que sur l'afficheur pH ; la zone ORP reste strictement numérique.
+PH_ALARM_ALIASES = {"AL", "0L", "8L", "A1", "91"}
+
 NUMERIC_SEGMENTS = {
     character: segments
     for segments, character in SEGMENTS.items()
@@ -388,6 +394,32 @@ def normalize_orp_text(value: str | None) -> str | None:
     return value.replace("A", "9")
 
 
+def normalize_ph_text(value: str | None) -> str | None:
+    """Normalise les formes prises par ``AL`` sur l'afficheur pH multiplexé."""
+    if not value:
+        return value
+    return "AL" if value in PH_ALARM_ALIASES else value
+
+
+def _prefer_frame_consensus(
+    primary_text: str | None,
+    primary_confidence: float,
+    voted_text: str | None,
+    voted_confidence: float,
+) -> tuple[str | None, float]:
+    """Préfère un vote net des images à une fusion temporelle contradictoire.
+
+    La fusion est utile lorsque les segments sont multiplexés, mais son profil
+    peut confondre 6/9 avec 3. Un même texte retrouvé sur au moins 80 % des
+    images constitue alors une preuve plus forte.
+    """
+    if voted_text and voted_confidence >= MINIMUM_READING_CONFIDENCE:
+        if not primary_text or voted_text != primary_text:
+            return voted_text, voted_confidence
+        return voted_text, max(primary_confidence, voted_confidence)
+    return primary_text, primary_confidence
+
+
 def _quantile_image(images: list[Image.Image], quantile: float = 0.40) -> Image.Image:
     """Fusionne une rafale en rejetant les phases trop claires du multiplexage."""
     if not images:
@@ -442,7 +474,17 @@ def read_pool_images(
     ph_crops = [_crop(image, regions["ph"]) for image in prepared]
     ph_text, ph_confidence = _decode_two_characters(_quantile_image(ph_crops))
     ph_frames = [_decode_two_characters(image) for image in ph_crops]
-    ph_voted = _vote_characters([text for text, _ in ph_frames])
+    ph_voted, ph_vote_confidence = _vote_characters_with_confidence(
+        [normalize_ph_text(text) for text, _ in ph_frames]
+    )
+    ph_text = normalize_ph_text(ph_text)
+    ph_voted = normalize_ph_text(ph_voted)
+    ph_text, ph_confidence = _prefer_frame_consensus(
+        ph_text,
+        ph_confidence,
+        ph_voted,
+        ph_vote_confidence,
+    )
     if ph_voted and ph_voted.isdigit() and 40 <= int(ph_voted) <= 100:
         # Le premier chiffre du pH alterne parfois entre 9 et 8 suivant la
         # phase, alors que la pluralité des neuf images conserve bien 9.1.
@@ -450,16 +492,20 @@ def read_pool_images(
         ph_confidence = max(ph_confidence, 0.58)
     orp_crops = [_crop(image, regions["orp"]) for image in prepared]
     orp_text, orp_confidence = _decode_temporal_characters(orp_crops)
-    if not orp_text:
-        orp_decoded = [_decode_two_characters(image) for image in orp_crops]
-        orp_text, orp_confidence = _vote_characters_with_confidence(
-            [normalize_orp_text(text) for text, _ in orp_decoded]
-        )
+    orp_decoded = [_decode_two_characters(image) for image in orp_crops]
+    orp_voted, orp_vote_confidence = _vote_characters_with_confidence(
+        [normalize_orp_text(text) for text, _ in orp_decoded]
+    )
+    orp_text, orp_confidence = _prefer_frame_consensus(
+        normalize_orp_text(orp_text),
+        orp_confidence,
+        normalize_orp_text(orp_voted),
+        orp_vote_confidence,
+    )
     orp_text = normalize_orp_text(orp_text)
     # À cette distance, le halo peut fermer les deux ouvertures du A et le faire
     # ressembler à 0 ou 8. Un second caractère L rend néanmoins l'état non ambigu.
-    if ph_text in {"0L", "8L"}:
-        ph_text = "AL"
+    ph_text = normalize_ph_text(ph_text)
     # Une correspondance approximative vaut 0,45. À la distance actuelle, le
     # balayage de l'afficheur peut alors transformer visuellement 37 en 23.
     # Ne publie jamais cette estimation : conserver une ancienne mesure sûre

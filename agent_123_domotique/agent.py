@@ -445,9 +445,31 @@ def pool_camera_forever(
                         payload={"notification_id": "123_home_manque_chlore_piscine"},
                     )
                     state["alarm_notified"] = False
+            else:
+                publish_pool_camera_status(
+                    supervisor_token,
+                    "reading_unconfirmed",
+                    (
+                        "Image reçue mais lecture non confirmée · "
+                        f"pH brut={reading.ph_text or 'illisible'}, "
+                        f"chlore brut={reading.orp_text or 'illisible'}, "
+                        f"confiance={reading.confidence:.2f}"
+                    ),
+                    url=url,
+                )
             last_success = int(state.get("last_success_at", 0) or 0)
             if time.time() - last_success > POOL_READING_STALE_SECONDS:
                 publish_pool_stale(supervisor_token, last_success)
+                publish_pool_camera_status(
+                    supervisor_token,
+                    "stale",
+                    (
+                        "Caméra joignable, mais aucune lecture fiable depuis plus "
+                        "de 15 minutes. Vérifiez le cadrage, les reflets et "
+                        "l'éclairage des afficheurs."
+                    ),
+                    url=url,
+                )
             write_pool_camera_state(state)
         except Exception as error:
             log(f"Caméra piscine indisponible ({error})")
