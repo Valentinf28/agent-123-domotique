@@ -313,6 +313,20 @@ function formatted(item: InventoryItem | null, unit: string, fallback = "—") {
   return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(numeric)}${displayedUnit ? ` ${displayedUnit}` : ""}`;
 }
 
+function formattedPoolReading(item: InventoryItem | null, fallback = "—") {
+  if (!item || ["unknown", "unavailable"].includes(item.state.toLowerCase())) return fallback;
+  if (item.attributes?.stale === true) return fallback;
+  const capturedAt = Number(item.attributes?.captured_at);
+  if (Number.isFinite(capturedAt) && Date.now() - capturedAt * 1000 > 16 * 60 * 1000) {
+    return fallback;
+  }
+  const rawDisplay = typeof item.attributes?.raw_display === "string"
+    ? item.attributes.raw_display.trim()
+    : "";
+  if (rawDisplay.toUpperCase() === "AL") return "AL";
+  return formatted(item, "", fallback);
+}
+
 function inventoryPowerWatts(item: InventoryItem | null, fallbackUnit = "W") {
   if (!item || ["unknown", "unavailable"].includes(item.state.toLowerCase())) return 0;
   const measuredUnit = typeof item.attributes?.unit_of_measurement === "string"
@@ -782,8 +796,8 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
         filtrationToday: formattedEnergy(scopedFind(inventory, valueBindings.filtrationToday, allowShowroomEntities)),
         poolHeatPump: formattedPower(scopedFind(inventory, valueBindings.poolHeatPumpPower, allowShowroomEntities)),
         poolHeatPumpToday: formattedEnergy(scopedFind(inventory, valueBindings.poolHeatPumpToday, allowShowroomEntities)),
-        poolPh: formatted(scopedFind(inventory, valueBindings.poolPh, allowShowroomEntities), ""),
-        poolChlorine: formatted(scopedFind(inventory, valueBindings.poolChlorine, allowShowroomEntities), ""),
+        poolPh: formattedPoolReading(scopedFind(inventory, valueBindings.poolPh, allowShowroomEntities)),
+        poolChlorine: formattedPoolReading(scopedFind(inventory, valueBindings.poolChlorine, allowShowroomEntities)),
         hotWaterToday: formattedEnergy(scopedFind(inventory, valueBindings.hotWaterToday, allowShowroomEntities)),
         teslaRange: formatted(scopedFind(inventory, valueBindings.teslaRange, allowShowroomEntities), "km"),
         teslaCabinTemperature: formatted(scopedFind(inventory, valueBindings.teslaCabinTemperature, allowShowroomEntities), "°C"),
