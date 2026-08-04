@@ -260,8 +260,15 @@ def pool_camera_forever(
             reading = read_pool_image(fetch_pool_image(url), mirror=mirror)
             records = [reading_record(reading)]
             # Un début ou une fin d'alarme est confirmé sans attendre le cycle
-            # normal de cinq minutes.
-            if reading.alarm or state.get("alarm_notified"):
+            # normal de cinq minutes. Même précaution après une forte variation
+            # ORP, notamment pour remplacer rapidement une ancienne erreur OCR.
+            previous_orp = state.get("last_valid_orp_mv")
+            large_orp_change = (
+                reading.orp_mv is not None
+                and isinstance(previous_orp, (int, float))
+                and abs(reading.orp_mv - previous_orp) >= 200
+            )
+            if reading.alarm or state.get("alarm_notified") or large_orp_change:
                 time.sleep(15)
                 records.append(reading_record(read_pool_image(fetch_pool_image(url), mirror=mirror)))
             for record in records:

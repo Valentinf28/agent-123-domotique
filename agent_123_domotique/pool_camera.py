@@ -193,6 +193,20 @@ def _crop(image: Image.Image, region: tuple[float, float, float, float]) -> Imag
     ))
 
 
+def normalize_orp_text(value: str | None) -> str | None:
+    """Corrige les ambiguïtés propres à l'afficheur numérique Micro Rx.
+
+    La zone ORP ne peut afficher que deux chiffres. À longue distance, le halo
+    relie le segment inférieur droit du 9 au segment central : sa géométrie est
+    alors identique au A utilisé par l'afficheur pH pour l'alarme « AL ».
+    Dans cette zone exclusivement numérique, A correspond donc sans ambiguïté
+    à 9. La correction n'est volontairement jamais appliquée au pH.
+    """
+    if not value:
+        return value
+    return value.replace("A", "9")
+
+
 def read_pool_image(
     image: Image.Image,
     *,
@@ -204,6 +218,7 @@ def read_pool_image(
     regions = regions or DEFAULT_REGIONS
     ph_text, ph_confidence = _decode_two_characters(_crop(image, regions["ph"]))
     orp_text, orp_confidence = _decode_two_characters(_crop(image, regions["orp"]))
+    orp_text = normalize_orp_text(orp_text)
     # À cette distance, le halo peut fermer les deux ouvertures du A et le faire
     # ressembler à 0 ou 8. Un second caractère L rend néanmoins l'état non ambigu.
     if ph_text in {"0L", "8L"}:
