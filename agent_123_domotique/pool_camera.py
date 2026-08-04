@@ -39,7 +39,7 @@ MINIMUM_READING_CONFIDENCE = 0.55
 # peut remplacer la barre basse du L par les deux segments droits et fermer le
 # A. La rafale montre alors respectivement 1 et 9. Ces variantes ne sont
 # acceptées que sur l'afficheur pH ; la zone ORP reste strictement numérique.
-PH_ALARM_ALIASES = {"AL", "0L", "8L", "A1", "91"}
+PH_ALARM_ALIASES = {"AL", "0L", "8L", "A1"}
 
 NUMERIC_SEGMENTS = {
     character: segments
@@ -458,6 +458,69 @@ def _vote_characters_with_confidence(values: list[str | None]) -> tuple[str | No
     return text, min(0.85, 0.65 + (consensus - 0.80))
 
 
+def _detect_ph_alarm(images: list[Image.Image]) -> tuple[bool, float]:
+    """Repère ``AL`` dans les phases complètes de l'afficheur multiplexé.
+
+    Sur le Micro pH filmé par l'ESP, plusieurs images de la rafale ne montrent
+    que le point décimal. Les images complètes relient en revanche le A et le L
+    par un léger halo horizontal. Leur séparation n'est pas centrée : le A est
+    sensiblement plus large que le L. On essaie donc plusieurs coupures, puis on
+    exige au moins deux phases concordantes pour éviter un faux positif.
+    """
+    matches = 0
+    checked = 0
+    confidences: list[float] = []
+    for image in images:
+        mask = _red_mask(image, threshold=75)
+        height = len(mask)
+        width = len(mask[0]) if height else 0
+        columns = [sum(mask[y][x] for y in range(height)) for x in range(width)]
+        groups = sorted(
+            _runs(columns, minimum=1),
+            key=lambda group: sum(columns[group[0]:group[1]]),
+            reverse=True,
+        )
+        frame_matched = False
+        for start, end in groups:
+            if end - start < 20:
+                continue
+            lit_rows = [
+                y for y in range(height)
+                if any(mask[y][x] for x in range(start, end))
+            ]
+            if not lit_rows or max(lit_rows) - min(lit_rows) < 12:
+                continue
+            checked += 1
+            top = max(0, min(lit_rows) - 3)
+            bottom = min(height, max(lit_rows) + 4)
+            span = end - start
+            for ratio in (0.62, 0.66, 0.70, 0.74, 0.76, 0.78, 0.80):
+                split = start + round(span * ratio)
+                first = _classify_character(image.crop((
+                    max(0, start - 2), top, min(width, split + 1), bottom,
+                )))
+                second = _classify_character(image.crop((
+                    max(0, split - 1), top, min(width, end + 2), bottom,
+                )))
+                if (
+                    first[0] == "A"
+                    and second[0] == "L"
+                    and first[1] >= MINIMUM_READING_CONFIDENCE
+                    and second[1] >= MINIMUM_READING_CONFIDENCE
+                ):
+                    matches += 1
+                    confidences.append(min(first[1], second[1]))
+                    frame_matched = True
+                    break
+            if frame_matched:
+                break
+    if matches < 2:
+        return False, 0.0
+    agreement = matches / max(2, checked)
+    confidence = min(0.90, max(0.70, min(confidences) + agreement * 0.15))
+    return True, confidence
+
+
 def read_pool_images(
     images: list[Image.Image],
     *,
@@ -490,6 +553,10 @@ def read_pool_images(
         # phase, alors que la pluralité des neuf images conserve bien 9.1.
         ph_text = ph_voted
         ph_confidence = max(ph_confidence, 0.58)
+    ph_alarm, ph_alarm_confidence = _detect_ph_alarm(ph_crops)
+    if ph_alarm:
+        ph_text = "AL"
+        ph_confidence = max(ph_confidence, ph_alarm_confidence)
     orp_crops = [_crop(image, regions["orp"]) for image in prepared]
     orp_text, orp_confidence = _decode_temporal_characters(orp_crops)
     orp_decoded = [_decode_two_characters(image) for image in orp_crops]

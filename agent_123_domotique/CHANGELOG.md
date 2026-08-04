@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.43
+
+- Reconnaît l'alarme pH `AL` sur plusieurs phases complètes de l'afficheur multiplexé.
+- Ignore les images intermédiaires qui ne montrent que le point lumineux.
+- Ne confond plus un pH réel de 9,1 avec l'alarme `AL`.
+
 ## 0.5.42
 
 - Corrige les confusions du multiplexage qui pouvaient transformer `AL` en `91` et `69` en `33`.

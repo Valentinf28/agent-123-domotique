@@ -12,6 +12,7 @@ from agent_123_domotique.pool_camera import (
     _connected_digit_ranges,
     confirmed_reading,
     normalize_orp_text,
+    normalize_ph_text,
     read_pool_images,
     reading_record,
 )
@@ -40,6 +41,26 @@ class PoolCameraConfirmationTests(unittest.TestCase):
         self.assertEqual(normalize_orp_text("3A"), "39")
         self.assertEqual(normalize_orp_text("42"), "42")
         self.assertIsNone(normalize_orp_text(None))
+
+    def test_does_not_confuse_a_real_ph_91_with_an_alarm(self):
+        self.assertEqual(normalize_ph_text("91"), "91")
+
+    def test_ph_alarm_from_multiplexed_burst_has_priority(self):
+        image = Image.new("RGB", (160, 120))
+        decoded = [
+            (None, 0.0),
+            *((None, 0.0) for _ in range(9)),
+            *(("69", 0.72) for _ in range(9)),
+        ]
+        with (
+            patch("agent_123_domotique.pool_camera._decode_two_characters", side_effect=decoded),
+            patch("agent_123_domotique.pool_camera._detect_ph_alarm", return_value=(True, 0.82)),
+            patch("agent_123_domotique.pool_camera._decode_temporal_characters", return_value=("69", 0.72)),
+        ):
+            reading = read_pool_images([image] * 9, mirror=False)
+        self.assertTrue(reading.alarm)
+        self.assertEqual(reading.ph_text, "AL")
+        self.assertIsNone(reading.ph)
 
     def test_requires_two_matching_readings(self):
         first = reading_record(PoolReading(None, 420, True, "AL", "42", 0.72))
