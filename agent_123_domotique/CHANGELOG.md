@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.5.36
+
+- Refuse les correspondances OCR de faible confiance qui pouvaient transformer `37` en `23` lorsque les chiffres sont trop petits dans l'image.
+- Conserve la dernière mesure réellement fiable au lieu de publier une nouvelle valeur chimique douteuse.
+
 ## 0.5.35
 
 - Recalibre les zones pH et ORP pour la position définitive de la caméra.
