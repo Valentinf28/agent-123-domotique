@@ -207,17 +207,39 @@ def normalize_orp_text(value: str | None) -> str | None:
     return value.replace("A", "9")
 
 
-def read_pool_image(
-    image: Image.Image,
+def _quantile_image(images: list[Image.Image], quantile: float = 0.40) -> Image.Image:
+    """Fusionne une rafale en rejetant les phases trop claires du multiplexage."""
+    if not images:
+        raise ValueError("Une image au minimum est requise")
+    rgb_images = [image.convert("RGB") for image in images]
+    size = rgb_images[0].size
+    if any(image.size != size for image in rgb_images):
+        raise ValueError("Toutes les images de la rafale doivent avoir la même taille")
+    rank = max(0, min(len(rgb_images) - 1, round((len(rgb_images) - 1) * quantile)))
+    samples = zip(*(image.tobytes() for image in rgb_images))
+    data = bytes(sorted(values)[rank] for values in samples)
+    return Image.frombytes("RGB", size, data)
+
+
+def read_pool_images(
+    images: list[Image.Image],
     *,
     mirror: bool = True,
     regions: dict[str, tuple[float, float, float, float]] | None = None,
 ) -> PoolReading:
-    if mirror:
-        image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    if not images:
+        raise ValueError("Une image au minimum est requise")
+    prepared = [
+        image.transpose(Image.Transpose.FLIP_LEFT_RIGHT) if mirror else image
+        for image in images
+    ]
     regions = regions or DEFAULT_REGIONS
-    ph_text, ph_confidence = _decode_two_characters(_crop(image, regions["ph"]))
-    orp_text, orp_confidence = _decode_two_characters(_crop(image, regions["orp"]))
+    ph_text, ph_confidence = _decode_two_characters(_quantile_image([
+        _crop(image, regions["ph"]) for image in prepared
+    ]))
+    orp_text, orp_confidence = _decode_two_characters(_quantile_image([
+        _crop(image, regions["orp"]) for image in prepared
+    ]))
     orp_text = normalize_orp_text(orp_text)
     # À cette distance, le halo peut fermer les deux ouvertures du A et le faire
     # ressembler à 0 ou 8. Un second caractère L rend néanmoins l'état non ambigu.
@@ -235,6 +257,15 @@ def read_pool_image(
     valid_confidences = [value for value in (ph_confidence, orp_confidence) if value > 0]
     confidence = min(valid_confidences) if valid_confidences else 0.0
     return PoolReading(ph, orp_mv, alarm, ph_text, orp_text, confidence)
+
+
+def read_pool_image(
+    image: Image.Image,
+    *,
+    mirror: bool = True,
+    regions: dict[str, tuple[float, float, float, float]] | None = None,
+) -> PoolReading:
+    return read_pool_images([image], mirror=mirror, regions=regions)
 
 
 def fetch_pool_image(url: str, timeout: int = 8) -> Image.Image:

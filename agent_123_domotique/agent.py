@@ -248,7 +248,7 @@ def pool_camera_forever(
         confirmed_reading,
         fetch_pool_image,
         load_camera_state,
-        read_pool_image,
+        read_pool_images,
         reading_record,
     )
 
@@ -257,7 +257,13 @@ def pool_camera_forever(
     while True:
         started_at = time.monotonic()
         try:
-            reading = read_pool_image(fetch_pool_image(url), mirror=mirror)
+            # Les afficheurs sept segments sont multiplexés : une photo unique
+            # peut transformer visuellement 39 en 86. Une courte rafale fusionnée
+            # à 40 % restitue les segments stables vus par l'œil humain.
+            reading = read_pool_images(
+                [fetch_pool_image(url) for _ in range(5)],
+                mirror=mirror,
+            )
             records = [reading_record(reading)]
             # Un début ou une fin d'alarme est confirmé sans attendre le cycle
             # normal de cinq minutes. Même précaution après une forte variation
@@ -270,7 +276,10 @@ def pool_camera_forever(
             )
             if reading.alarm or state.get("alarm_notified") or large_orp_change:
                 time.sleep(15)
-                records.append(reading_record(read_pool_image(fetch_pool_image(url), mirror=mirror)))
+                records.append(reading_record(read_pool_images(
+                    [fetch_pool_image(url) for _ in range(5)],
+                    mirror=mirror,
+                )))
             for record in records:
                 history = [*history[-2:], record]
             state["history"] = history
