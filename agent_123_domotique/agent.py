@@ -258,10 +258,10 @@ def pool_camera_forever(
         started_at = time.monotonic()
         try:
             # Les afficheurs sept segments sont multiplexés : une photo unique
-            # peut transformer visuellement 39 en 86. Une courte rafale fusionnée
-            # à 40 % restitue les segments stables vus par l'œil humain.
+            # peut transformer visuellement 39 en 86. Le vote sur neuf captures
+            # restitue les segments stables vus par l'œil humain.
             reading = read_pool_images(
-                [fetch_pool_image(url) for _ in range(5)],
+                [fetch_pool_image(url) for _ in range(9)],
                 mirror=mirror,
             )
             records = [reading_record(reading)]
@@ -277,7 +277,7 @@ def pool_camera_forever(
             if reading.alarm or state.get("alarm_notified") or large_orp_change:
                 time.sleep(15)
                 records.append(reading_record(read_pool_images(
-                    [fetch_pool_image(url) for _ in range(5)],
+                    [fetch_pool_image(url) for _ in range(9)],
                     mirror=mirror,
                 )))
             for record in records:
@@ -286,8 +286,16 @@ def pool_camera_forever(
             confirmed = confirmed_reading(history)
             if confirmed:
                 captured_at = int(records[-1]["at"])
-                if confirmed.ph is not None:
-                    state["last_valid_ph"] = confirmed.ph
+                previous_ph = state.get("last_valid_ph")
+                plausible_ph = confirmed.ph
+                if (
+                    plausible_ph is not None
+                    and isinstance(previous_ph, (int, float))
+                    and abs(plausible_ph - previous_ph) > 0.5
+                ):
+                    plausible_ph = None
+                if plausible_ph is not None:
+                    state["last_valid_ph"] = plausible_ph
                     state["last_valid_ph_text"] = confirmed.ph_text
                     state["last_valid_ph_at"] = captured_at
                 if confirmed.orp_mv is not None:
@@ -298,11 +306,11 @@ def pool_camera_forever(
                 # une mesure précédemment validée. AL reste volontairement sans pH.
                 effective = PoolReading(
                     ph=None if confirmed.alarm else (
-                        confirmed.ph if confirmed.ph is not None else state.get("last_valid_ph")
+                        plausible_ph if plausible_ph is not None else state.get("last_valid_ph")
                     ),
                     orp_mv=confirmed.orp_mv if confirmed.orp_mv is not None else state.get("last_valid_orp_mv"),
                     alarm=confirmed.alarm,
-                    ph_text=confirmed.ph_text if confirmed.alarm or confirmed.ph is not None else state.get("last_valid_ph_text"),
+                    ph_text=confirmed.ph_text if confirmed.alarm or plausible_ph is not None else state.get("last_valid_ph_text"),
                     orp_text=confirmed.orp_text if confirmed.orp_mv is not None else state.get("last_valid_orp_text"),
                     confidence=confirmed.confidence,
                 )

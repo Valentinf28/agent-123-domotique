@@ -10,6 +10,7 @@ import io
 import json
 import time
 import urllib.request
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -221,6 +222,14 @@ def _quantile_image(images: list[Image.Image], quantile: float = 0.40) -> Image.
     return Image.frombytes("RGB", size, data)
 
 
+def _vote_characters(values: list[str | None]) -> str | None:
+    """Vote indépendamment sur chaque position d'un afficheur à deux chiffres."""
+    candidates = [value for value in values if value and len(value) == 2]
+    if not candidates:
+        return None
+    return "".join(Counter(value[index] for value in candidates).most_common(1)[0][0] for index in range(2))
+
+
 def read_pool_images(
     images: list[Image.Image],
     *,
@@ -237,9 +246,15 @@ def read_pool_images(
     ph_text, ph_confidence = _decode_two_characters(_quantile_image([
         _crop(image, regions["ph"]) for image in prepared
     ]))
-    orp_text, orp_confidence = _decode_two_characters(_quantile_image([
-        _crop(image, regions["orp"]) for image in prepared
-    ]))
+    orp_decoded = [
+        _decode_two_characters(_crop(image, regions["orp"]))
+        for image in prepared
+    ]
+    orp_text = _vote_characters([normalize_orp_text(text) for text, _ in orp_decoded])
+    orp_confidence = min(
+        (confidence for _, confidence in orp_decoded if confidence > 0),
+        default=0.0,
+    )
     orp_text = normalize_orp_text(orp_text)
     # À cette distance, le halo peut fermer les deux ouvertures du A et le faire
     # ressembler à 0 ou 8. Un second caractère L rend néanmoins l'état non ambigu.
