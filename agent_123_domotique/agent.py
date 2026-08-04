@@ -348,6 +348,16 @@ def pool_camera_forever(
     log(f"Caméra piscine · initialisation du lecteur ({url}, miroir={mirror})")
     state = load_camera_state(POOL_CAMERA_STATE_PATH)
     history = state.get("history") if isinstance(state.get("history"), list) else []
+
+    def capture_burst() -> list[Any]:
+        """Couvre un cycle complet du balayage lumineux des afficheurs."""
+        images = []
+        for index in range(9):
+            images.append(fetch_pool_image(url))
+            if index < 8:
+                time.sleep(0.15)
+        return images
+
     while True:
         started_at = time.monotonic()
         try:
@@ -355,7 +365,7 @@ def pool_camera_forever(
             # peut transformer visuellement 39 en 86. Le vote sur neuf captures
             # restitue les segments stables vus par l'œil humain.
             reading = read_pool_images(
-                [fetch_pool_image(url) for _ in range(9)],
+                capture_burst(),
                 mirror=mirror,
             )
             records = [reading_record(reading)]
@@ -371,7 +381,7 @@ def pool_camera_forever(
             if reading.alarm or state.get("alarm_notified") or large_orp_change:
                 time.sleep(15)
                 records.append(reading_record(read_pool_images(
-                    [fetch_pool_image(url) for _ in range(9)],
+                    capture_burst(),
                     mirror=mirror,
                 )))
             for record in records:

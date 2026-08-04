@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.5.44
+
+- Espace les neuf captures de la rafale afin de couvrir un cycle complet du balayage des afficheurs.
+- Évite les rafales composées de neuf phases noires identiques qui masquaient l'alarme pH `AL`.
+
 ## 0.5.43
 
 - Reconnaît l'alarme pH `AL` sur plusieurs phases complètes de l'afficheur multiplexé.
