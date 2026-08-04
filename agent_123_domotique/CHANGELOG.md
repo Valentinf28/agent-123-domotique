@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.39
+
+- Supprime la marge d’injection permanente de la recharge solaire Lektrico.
+- Vise l’équilibre réseau avec un arrondi au palier d’ampérage le plus proche.
+- Autorise, après 95 % de batterie domestique, une aide transitoire limitée à un demi-palier, soit environ 115 W en monophasé.
+
 ## 0.5.37
 
 - Lit les deux chiffres Redox sur l'ensemble de la rafale au lieu de traiter chaque image isolément.

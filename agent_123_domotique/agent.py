@@ -1599,7 +1599,7 @@ def relay_command(
             start_button_entity_id = str(payload.get("startButtonEntityId", "")).strip()
             stop_button_entity_id = str(payload.get("stopButtonEntityId", "")).strip()
             fault_entity_ids = payload.get("faultEntityIds", [])
-            reserve_watts = int(payload.get("reserveWatts", 100))
+            reserve_watts = int(payload.get("reserveWatts", 0))
             minimum_battery_percent = int(payload.get("minimumBatteryPercent", 95))
             minimum_amps = int(payload.get("minimumAmps", 6))
             maximum_amps = int(payload.get("maximumAmps", 32))
@@ -1680,6 +1680,7 @@ def relay_command(
                 + str(minimum_battery_percent) + ")"
                 if battery_level_entity_id else "true"
             )
+            target_rounding_method = "common" if reserve_watts == 0 else "floor"
             start_threshold_template = (
                 "{{ " + battery_ready_template + " and "
                 "(0 - (states('" + grid_power_entity_id + "') | float(0)) - ("
@@ -1703,7 +1704,7 @@ def relay_command(
                 "{% set battery_discharge = " + battery_discharge_template + " %} "
                 "{% set desired = (effective_current + ((-grid - battery_discharge - "
                 + str(reserve_watts) + ") / voltage)) "
-                "| round(0, 'floor') | int %} "
+                "| round(0, '" + target_rounding_method + "') | int %} "
                 "{{ [[desired, " + str(minimum_amps) + "] | max, "
                 + str(maximum_amps) + "] | min }}"
             )
@@ -1738,8 +1739,9 @@ def relay_command(
                 "alias": "1.2.3 Home · Recharge solaire Lektrico",
                 "description": (
                     "Ajuste la limite dynamique de la borne Lektrico sur le surplus "
-                    f"solaire sans décharger la batterie, après {minimum_battery_percent} % "
-                    f"de charge et avec une marge réseau de {reserve_watts} W."
+                    f"solaire après {minimum_battery_percent} % de batterie domestique. "
+                    "La régulation vise l’équilibre réseau et tolère au maximum un "
+                    "demi-palier d’ampérage fourni brièvement par la batterie."
                 ),
                 "trigger": [
                     {

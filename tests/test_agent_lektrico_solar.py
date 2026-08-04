@@ -32,6 +32,40 @@ ENTITIES = {
 
 
 class LektricoSolarPlanTests(unittest.TestCase):
+    def test_defaults_to_network_balance_with_nearest_amp_step(self):
+        available = [
+            {"entity_id": entity_id, "state": "off", "attributes": {}}
+            for key, value in ENTITIES.items()
+            for entity_id in (value if key == "faultEntityIds" else [value])
+        ]
+        calls = []
+
+        def fake_request(url, **kwargs):
+            calls.append((url, kwargs))
+            if url.endswith("/states"):
+                return available
+            return {}
+
+        with patch.object(agent, "request_json", side_effect=fake_request):
+            response = agent.relay_command(
+                "token",
+                {
+                    "id": "test",
+                    "action": "ha.ev_charger.solar_plan",
+                    "payload": ENTITIES,
+                },
+            )
+
+        self.assertTrue(response["ok"])
+        automation_call = next(
+            kwargs for url, kwargs in calls
+            if "/config/automation/config/ma_maison_lektrico_solar_charging" in url
+        )
+        serialized = str(automation_call["payload"])
+        self.assertIn("battery_discharge - 0", serialized)
+        self.assertIn("round(0, 'common')", serialized)
+        self.assertIn("demi-palier", serialized)
+
     def test_creates_a_local_dynamic_limit_automation(self):
         available = [
             {"entity_id": entity_id, "state": "off", "attributes": {}}
@@ -70,6 +104,7 @@ class LektricoSolarPlanTests(unittest.TestCase):
         self.assertIn("button.1p7k_501290_charge_start", serialized)
         self.assertIn("button.1p7k_501290_charge_stop", serialized)
         self.assertIn("battery_discharge - 100", serialized)
+        self.assertIn("round(0, 'floor')", serialized)
         self.assertIn("sensor.deye_battery_power", serialized)
         self.assertIn("sensor.deye_battery_state_of_charge", serialized)
         self.assertIn(">= 95", serialized)
