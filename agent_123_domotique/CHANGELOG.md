@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.5.32
+
+- Corrige la confusion OCR entre le chiffre `9` du Micro Rx et la lettre `A` réservée à l'alarme pH.
+- Une lecture visuelle `39` est désormais publiée comme `390 mV`, sans conserver une ancienne valeur erronée.
+
 ## 0.5.31
 
 - Espace les lectures normales de la caméra piscine à cinq minutes.
