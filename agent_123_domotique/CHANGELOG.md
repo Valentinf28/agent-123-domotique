@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.41
+
+- Fiabilise le démarrage du lecteur caméra piscine et le relance automatiquement en cas d'arrêt.
+- Ajoute un diagnostic visible dans Home Assistant avec l'état et l'erreur éventuelle de la caméra.
+- Journalise clairement chaque mesure pH/chlore publiée.
+
 ## 0.5.40
 
 - Confirme séparément l’alarme pH et la valeur chlore afin qu’une variation OCR ne bloque plus `AL`.

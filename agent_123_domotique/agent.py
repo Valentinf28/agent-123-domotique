@@ -188,6 +188,39 @@ def write_pool_camera_state(state: dict[str, Any]) -> None:
     temporary.replace(POOL_CAMERA_STATE_PATH)
 
 
+def option_enabled(value: Any) -> bool:
+    """Accepte les booléens Supervisor et leurs variantes sérialisées."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def publish_pool_camera_status(
+    supervisor_token: str,
+    state: str,
+    message: str,
+    *,
+    url: str,
+) -> None:
+    """Expose le diagnostic caméra directement dans Home Assistant."""
+    set_ha_state(
+        supervisor_token,
+        "sensor.1_2_3_home_pool_camera_status",
+        state,
+        {
+            "friendly_name": "État caméra traitement piscine",
+            "icon": "mdi:cctv" if state == "connected" else "mdi:cctv-off",
+            "managed_by": "Agent 1.2.3 Domotique",
+            "source": "camera-traitement-piscine",
+            "camera_url": url,
+            "message": message[:500],
+            "updated_at": int(time.time()),
+        },
+    )
+
+
 def publish_pool_reading(supervisor_token: str, reading, captured_at: int) -> None:
     common = {
         "managed_by": "Agent 1.2.3 Domotique",
@@ -312,6 +345,7 @@ def pool_camera_forever(
         reading_record,
     )
 
+    log(f"Caméra piscine · initialisation du lecteur ({url}, miroir={mirror})")
     state = load_camera_state(POOL_CAMERA_STATE_PATH)
     history = state.get("history") if isinstance(state.get("history"), list) else []
     while True:
@@ -375,7 +409,18 @@ def pool_camera_forever(
                     confidence=confirmed.confidence,
                 )
                 publish_pool_reading(supervisor_token, effective, captured_at)
+                publish_pool_camera_status(
+                    supervisor_token,
+                    "connected",
+                    f"Lecture reçue : pH={effective.ph_text or effective.ph}, chlore={effective.orp_text}",
+                    url=url,
+                )
                 state["last_success_at"] = captured_at
+                log(
+                    "Caméra piscine · mesure publiée "
+                    f"(pH={effective.ph_text or effective.ph}, chlore={effective.orp_text}, "
+                    f"alarme={'oui' if effective.alarm else 'non'})"
+                )
                 if confirmed.alarm and not state.get("alarm_notified"):
                     request_json(
                         f"{SUPERVISOR_API}/services/persistent_notification/create",
@@ -406,6 +451,15 @@ def pool_camera_forever(
             write_pool_camera_state(state)
         except Exception as error:
             log(f"Caméra piscine indisponible ({error})")
+            try:
+                publish_pool_camera_status(
+                    supervisor_token,
+                    "error",
+                    str(error),
+                    url=url,
+                )
+            except Exception:
+                pass
             last_success = int(state.get("last_success_at", 0) or 0)
             if time.time() - last_success > POOL_READING_STALE_SECONDS:
                 try:
@@ -414,6 +468,29 @@ def pool_camera_forever(
                     pass
         elapsed = time.monotonic() - started_at
         time.sleep(max(1, interval - elapsed))
+
+
+def supervise_pool_camera(
+    supervisor_token: str,
+    url: str,
+    mirror: bool,
+) -> None:
+    """Relance le lecteur si une erreur survient avant sa boucle principale."""
+    while True:
+        try:
+            pool_camera_forever(supervisor_token, url, mirror)
+        except Exception as error:
+            log(f"Lecteur caméra piscine arrêté ({error}), nouvelle tentative dans 15 s")
+            try:
+                publish_pool_camera_status(
+                    supervisor_token,
+                    "error",
+                    str(error),
+                    url=url,
+                )
+            except Exception:
+                pass
+            time.sleep(15)
 
 
 def log(message: str) -> None:
@@ -2197,14 +2274,19 @@ def main() -> None:
     if not enrollment_code and not (relay_url and relay_house_id and relay_token):
         raise SystemExit("Configuration incomplète : code d'installation ou liaison VPS requis")
 
-    if bool(options.get("pool_camera_enabled", False)):
+    pool_camera_enabled = option_enabled(options.get("pool_camera_enabled", False))
+    log(
+        "Configuration caméra piscine · "
+        f"activée={'oui' if pool_camera_enabled else 'non'}"
+    )
+    if pool_camera_enabled:
         pool_camera_url = str(options.get(
             "pool_camera_url",
             "http://camera-traitement-piscine.local:8081/",
         )).strip()
-        pool_camera_mirror = bool(options.get("pool_camera_mirror", True))
+        pool_camera_mirror = option_enabled(options.get("pool_camera_mirror", True))
         threading.Thread(
-            target=pool_camera_forever,
+            target=supervise_pool_camera,
             args=(supervisor_token, pool_camera_url, pool_camera_mirror),
             daemon=True,
         ).start()
