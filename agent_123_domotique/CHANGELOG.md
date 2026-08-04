@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.35
+
+- Recalibre les zones pH et ORP pour la position définitive de la caméra.
+- Sépare les chiffres reliés par le halo sans partager leur pixel central, ce qui corrige `36` en `360 mV`.
+- Reconnaît les segments orange saturés du nouveau cadrage plus lumineux.
+
 ## 0.5.34
 
 - Vote séparément sur chaque chiffre ORP à partir de neuf captures pour éliminer les phases parasites du multiplexage.
