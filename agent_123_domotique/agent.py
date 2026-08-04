@@ -350,11 +350,22 @@ def pool_camera_forever(
     history = state.get("history") if isinstance(state.get("history"), list) else []
 
     def capture_burst() -> list[Any]:
-        """Couvre un cycle complet du balayage lumineux des afficheurs."""
+        """Capture jusqu'à couvrir un cycle complet des deux afficheurs."""
         images = []
-        for index in range(9):
+        minimum_size = 9
+        maximum_size = 24
+        # La caméra ESP peut mettre plusieurs secondes à livrer une image et
+        # l'afficheur AL reste parfois noir pendant plus d'une minute. Après la
+        # rafale minimale, on s'arrête dès que les deux afficheurs sont lisibles
+        # au lieu de dépendre d'un nombre fixe de captures.
+        for index in range(maximum_size):
             images.append(fetch_pool_image(url))
-            if index < 8:
+            if len(images) >= minimum_size:
+                provisional = read_pool_images(images, mirror=mirror)
+                ph_complete = provisional.alarm or provisional.ph is not None
+                if ph_complete and provisional.orp_mv is not None:
+                    break
+            if index < maximum_size - 1:
                 time.sleep(0.15)
         return images
 
@@ -362,7 +373,7 @@ def pool_camera_forever(
         started_at = time.monotonic()
         try:
             # Les afficheurs sept segments sont multiplexés : une photo unique
-            # peut transformer visuellement 39 en 86. Le vote sur neuf captures
+            # peut transformer visuellement 39 en 86. Le vote sur la rafale
             # restitue les segments stables vus par l'œil humain.
             reading = read_pool_images(
                 capture_burst(),
@@ -378,7 +389,7 @@ def pool_camera_forever(
                 and isinstance(previous_orp, (int, float))
                 and abs(reading.orp_mv - previous_orp) >= 200
             )
-            if reading.alarm or state.get("alarm_notified") or large_orp_change:
+            if (not reading.alarm and state.get("alarm_notified")) or large_orp_change:
                 time.sleep(15)
                 records.append(reading_record(read_pool_images(
                     capture_burst(),
@@ -387,7 +398,14 @@ def pool_camera_forever(
             for record in records:
                 history = [*history[-2:], record]
             state["history"] = history
-            confirmed = confirmed_reading(history)
+            # Le détecteur AL exige déjà plusieurs phases concordantes au sein
+            # de la même rafale. Une seconde rafale de plusieurs minutes ne
+            # renforce pas ce diagnostic et retardait inutilement l'alerte.
+            confirmed = (
+                reading
+                if reading.alarm and reading.confidence >= 0.65
+                else confirmed_reading(history)
+            )
             if confirmed:
                 captured_at = int(records[-1]["at"])
                 previous_ph = state.get("last_valid_ph")

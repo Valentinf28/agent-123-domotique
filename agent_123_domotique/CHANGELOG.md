@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.45
+
+- Rend la rafale de la caméra piscine adaptative afin de couvrir systématiquement le cycle complet des afficheurs multiplexés.
+- Fiabilise la lecture simultanée de l'alarme pH `AL` et de la valeur chlore affichée.
+- Publie immédiatement une alarme déjà confirmée par plusieurs images de la même rafale.
+
 ## 0.5.44
 
 - Espace les neuf captures de la rafale afin de couvrir un cycle complet du balayage des afficheurs.
