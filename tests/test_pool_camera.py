@@ -1,7 +1,10 @@
 import unittest
 
+from PIL import Image
+
 from agent_123_domotique.pool_camera import (
     PoolReading,
+    _quantile_image,
     confirmed_reading,
     normalize_orp_text,
     reading_record,
@@ -9,6 +12,10 @@ from agent_123_domotique.pool_camera import (
 
 
 class PoolCameraConfirmationTests(unittest.TestCase):
+    def test_uses_the_40_percentile_for_a_multiplexed_burst(self):
+        images = [Image.new("RGB", (1, 1), (value, value, value)) for value in (10, 20, 30, 200, 250)]
+        self.assertEqual(_quantile_image(images).getpixel((0, 0)), (30, 30, 30))
+
     def test_normalizes_micro_rx_nine_without_touching_other_digits(self):
         self.assertEqual(normalize_orp_text("3A"), "39")
         self.assertEqual(normalize_orp_text("42"), "42")
