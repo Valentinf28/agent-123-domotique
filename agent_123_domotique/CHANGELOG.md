@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 0.5.29
+
+- Supprime la marge d'injection permanente de la recharge solaire Lektrico.
+- Vise désormais l'équilibre avec le réseau lorsque la batterie domestique atteint 95 %.
+- Autorise la batterie domestique à compenser uniquement l'écart d'arrondi d'un demi-palier d'intensité.
+- Conserve l'arrondi inférieur lorsqu'une marge réseau explicite est configurée.
+
 ## 0.5.28
 
 - Limite chaque demande d'historique à la journée sélectionnée dans l'application.
