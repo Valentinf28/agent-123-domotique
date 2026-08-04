@@ -33,6 +33,8 @@ SEGMENTS = {
     frozenset("def"): "L",
 }
 
+MINIMUM_READING_CONFIDENCE = 0.55
+
 DEFAULT_REGIONS = {
     # Coordonnées normalisées après correction miroir, pour le cadrage validé.
     "ph": (0.20, 0.40, 0.42, 0.58),
@@ -268,6 +270,16 @@ def read_pool_images(
     # ressembler à 0 ou 8. Un second caractère L rend néanmoins l'état non ambigu.
     if ph_text in {"0L", "8L"}:
         ph_text = "AL"
+    # Une correspondance approximative vaut 0,45. À la distance actuelle, le
+    # balayage de l'afficheur peut alors transformer visuellement 37 en 23.
+    # Ne publie jamais cette estimation : conserver une ancienne mesure sûre
+    # ou afficher « indisponible » est préférable à une valeur chimique fausse.
+    if ph_text != "AL" and ph_confidence < MINIMUM_READING_CONFIDENCE:
+        ph_text = None
+        ph_confidence = 0.0
+    if orp_confidence < MINIMUM_READING_CONFIDENCE:
+        orp_text = None
+        orp_confidence = 0.0
     ph = None
     if ph_text and ph_text.isdigit():
         value = int(ph_text) / 10

@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -9,6 +10,7 @@ from agent_123_domotique.pool_camera import (
     _connected_digit_ranges,
     confirmed_reading,
     normalize_orp_text,
+    read_pool_images,
     reading_record,
 )
 
@@ -45,6 +47,15 @@ class PoolCameraConfirmationTests(unittest.TestCase):
             reading_record(PoolReading(7.3, 430, False, "73", "43", 0.8)),
         ]
         self.assertIsNone(confirmed_reading(history))
+
+    def test_rejects_low_confidence_real_camera_misread(self):
+        image = Image.new("RGB", (160, 120))
+        decoded = [("91", 0.72), *[("23", 0.45)] * 9]
+        with patch("agent_123_domotique.pool_camera._decode_two_characters", side_effect=decoded):
+            reading = read_pool_images([image] * 9, mirror=False)
+        self.assertEqual(reading.ph, 9.1)
+        self.assertIsNone(reading.orp_mv)
+        self.assertIsNone(reading.orp_text)
 
 
 if __name__ == "__main__":
