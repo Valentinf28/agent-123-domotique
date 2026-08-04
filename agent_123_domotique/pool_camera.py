@@ -508,21 +508,47 @@ def load_camera_state(path: Path) -> dict[str, Any]:
 
 
 def confirmed_reading(history: list[dict[str, Any]], minimum: int = 2) -> PoolReading | None:
+    """Confirme séparément les deux afficheurs et l'état d'alarme.
+
+    Les afficheurs sont multiplexés et une valeur ORP peut varier pendant que
+    l'afficheur pH montre nettement ``AL``. Confirmer le triplet complet
+    (pH, ORP, alarme) bloquait alors l'alarme et conservait des valeurs anciennes.
+    """
     recent = history[-3:]
     if len(recent) < minimum:
         return None
-    keys = [(row.get("ph"), row.get("orp_mv"), row.get("alarm")) for row in recent]
-    winner = max(set(keys), key=keys.count)
-    if keys.count(winner) < minimum:
+
+    alarm_values = [bool(row.get("alarm")) for row in recent]
+    alarm = Counter(alarm_values).most_common(1)[0]
+    if alarm[1] < minimum:
         return None
-    matching = [row for row in recent if (row.get("ph"), row.get("orp_mv"), row.get("alarm")) == winner]
-    latest = matching[-1]
+
+    def confirmed_value(key: str) -> Any:
+        values = [row.get(key) for row in recent if row.get(key) is not None]
+        if not values:
+            return None
+        value, count = Counter(values).most_common(1)[0]
+        return value if count >= minimum else None
+
+    ph = None if alarm[0] else confirmed_value("ph")
+    orp_mv = confirmed_value("orp_mv")
+    if not alarm[0] and ph is None and orp_mv is None:
+        return None
+
+    matching_alarm = [row for row in recent if bool(row.get("alarm")) == alarm[0]]
+    latest = matching_alarm[-1]
     return PoolReading(
-        ph=latest.get("ph"),
-        orp_mv=latest.get("orp_mv"),
-        alarm=bool(latest.get("alarm")),
-        ph_text=latest.get("ph_text"),
-        orp_text=latest.get("orp_text"),
+        ph=ph,
+        orp_mv=orp_mv,
+        alarm=alarm[0],
+        ph_text="AL" if alarm[0] else (
+            latest.get("ph_text") if latest.get("ph") == ph else None
+        ),
+        orp_text=next((
+            row.get("orp_text")
+            for row in reversed(recent)
+            if row.get("orp_mv") == orp_mv
+        ), None),
         confidence=float(latest.get("confidence", 0)),
     )
 

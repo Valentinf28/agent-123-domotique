@@ -30,6 +30,7 @@ POOL_CAMERA_STATE_PATH = Path("/data/pool-camera-state.json")
 SUPERVISOR_API = "http://supervisor/core/api"
 HOME_ASSISTANT_FRONTEND = "http://homeassistant:8123"
 FULL_INVENTORY_SECONDS = 60
+POOL_READING_STALE_SECONDS = 15 * 60
 SOLAR_FORECAST_REFRESH_SECONDS = 15 * 60
 SOLAR_FORECAST_PREFIX = "sensor.1_2_3_home_solar_forecast_"
 SOLAR_FORECAST_CACHE: list[dict[str, Any]] = []
@@ -46,11 +47,17 @@ FAST_ENTITY_PREFIXES = (
     "sensor.pac_",
     "sensor.piscine_",
     "sensor.pool_",
+    "sensor.ph_piscine",
+    "sensor.orp_piscine",
+    "sensor.chlore_piscine",
     "sensor.tesla_",
     "sensor.model_x_",
     "sensor.lektrico_",
     "binary_sensor.tesla_",
     "binary_sensor.model_x_",
+    "binary_sensor.alarme_traitement_piscine",
+    "binary_sensor.manque_chlore_piscine",
+    "binary_sensor.communication_traitement_piscine",
     "switch.tesla_",
     "switch.model_x_",
     "button.tesla_",
@@ -88,6 +95,13 @@ SAFE_ATTRIBUTE_KEYS = (
     "charging_state",
     "door_lock",
     "date",
+    "raw_display",
+    "captured_at",
+    "confidence",
+    "display_multiplier",
+    "stale",
+    "last_success_at",
+    "orp_mv",
 )
 DEVICE_DAILY_ENERGY_BINDINGS = (
     (
@@ -193,6 +207,20 @@ def publish_pool_reading(supervisor_token: str, reading, captured_at: int) -> No
             "raw_display": reading.ph_text,
         },
     )
+    raw_chlorine = int(reading.orp_text) if str(reading.orp_text or "").isdigit() else None
+    set_ha_state(
+        supervisor_token,
+        "sensor.chlore_piscine",
+        "unavailable" if raw_chlorine is None else str(raw_chlorine),
+        {
+            **common,
+            "friendly_name": "Chlore piscine",
+            "icon": "mdi:water-check-outline",
+            "state_class": "measurement",
+            "raw_display": reading.orp_text,
+            "orp_mv": reading.orp_mv,
+        },
+    )
     set_ha_state(
         supervisor_token,
         "sensor.orp_piscine",
@@ -208,25 +236,57 @@ def publish_pool_reading(supervisor_token: str, reading, captured_at: int) -> No
             "display_multiplier": 10,
         },
     )
-    for entity_id, friendly_name in (
-        ("binary_sensor.alarme_traitement_piscine", "Alarme traitement piscine"),
-        ("binary_sensor.manque_chlore_piscine", "Manque de chlore piscine"),
+    for entity_id, friendly_name, active in (
+        ("binary_sensor.alarme_traitement_piscine", "Alarme traitement piscine", reading.alarm),
+        # L'affichage AL provient ici du régulateur pH. Il ne permet pas de
+        # conclure que le bidon de chlore est vide.
+        ("binary_sensor.manque_chlore_piscine", "Manque de chlore piscine", False),
     ):
         set_ha_state(
             supervisor_token,
             entity_id,
-            "on" if reading.alarm else "off",
+            "on" if active else "off",
             {
                 **common,
                 "friendly_name": friendly_name,
                 "device_class": "problem",
-                "icon": "mdi:flask-empty-outline" if reading.alarm else "mdi:flask-check-outline",
+                "icon": "mdi:flask-empty-outline" if active else "mdi:flask-check-outline",
             },
         )
     set_ha_state(
         supervisor_token,
         "binary_sensor.communication_traitement_piscine",
         "on",
+        {
+            **common,
+            "friendly_name": "Communication traitement piscine",
+            "device_class": "connectivity",
+        },
+    )
+
+
+def publish_pool_stale(supervisor_token: str, last_success_at: int) -> None:
+    common = {
+        "managed_by": "Agent 1.2.3 Domotique",
+        "source": "camera-traitement-piscine",
+        "last_success_at": last_success_at or None,
+        "stale": True,
+    }
+    for entity_id, friendly_name, icon in (
+        ("sensor.ph_piscine", "pH piscine", "mdi:ph"),
+        ("sensor.orp_piscine", "ORP piscine", "mdi:flash-outline"),
+        ("sensor.chlore_piscine", "Chlore piscine", "mdi:water-alert-outline"),
+    ):
+        set_ha_state(
+            supervisor_token,
+            entity_id,
+            "unavailable",
+            {**common, "friendly_name": friendly_name, "icon": icon},
+        )
+    set_ha_state(
+        supervisor_token,
+        "binary_sensor.communication_traitement_piscine",
+        "off",
         {
             **common,
             "friendly_name": "Communication traitement piscine",
@@ -323,11 +383,11 @@ def pool_camera_forever(
                         token=supervisor_token,
                         payload={
                             "notification_id": "123_home_manque_chlore_piscine",
-                            "title": "Piscine · manque de chlore",
+                            "title": "Piscine · alarme pH",
                             "message": (
-                                "L’afficheur AstralPool signale AL. Vérifiez le bidon de "
-                                "chlore et le circuit d’aspiration. Aucune injection n’a été "
-                                "commandée par 1.2.3 Home."
+                                "Le régulateur pH AstralPool affiche AL. Vérifiez le produit "
+                                "correcteur, le circuit d’aspiration et la sonde. Aucune "
+                                "injection n’a été commandée par 1.2.3 Home."
                             ),
                         },
                     )
@@ -340,22 +400,16 @@ def pool_camera_forever(
                         payload={"notification_id": "123_home_manque_chlore_piscine"},
                     )
                     state["alarm_notified"] = False
+            last_success = int(state.get("last_success_at", 0) or 0)
+            if time.time() - last_success > POOL_READING_STALE_SECONDS:
+                publish_pool_stale(supervisor_token, last_success)
             write_pool_camera_state(state)
         except Exception as error:
             log(f"Caméra piscine indisponible ({error})")
             last_success = int(state.get("last_success_at", 0) or 0)
-            if time.time() - last_success > 15 * 60:
+            if time.time() - last_success > POOL_READING_STALE_SECONDS:
                 try:
-                    set_ha_state(
-                        supervisor_token,
-                        "binary_sensor.communication_traitement_piscine",
-                        "off",
-                        {
-                            "friendly_name": "Communication traitement piscine",
-                            "device_class": "connectivity",
-                            "managed_by": "Agent 1.2.3 Domotique",
-                        },
-                    )
+                    publish_pool_stale(supervisor_token, last_success)
                 except Exception:
                     pass
         elapsed = time.monotonic() - started_at

@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 0.5.40
+
+- Confirme séparément l’alarme pH et la valeur chlore afin qu’une variation OCR ne bloque plus `AL`.
+- Publie la valeur visible du chlore dans `sensor.chlore_piscine` tout en conservant l’ORP en mV.
+- Rend les mesures indisponibles après quinze minutes sans lecture validée au lieu d’afficher d’anciennes valeurs.
+- Signale `AL` comme une alarme pH sans l’interpréter à tort comme un manque de chlore.
+
 ## 0.5.39
 
 - Supprime la marge d’injection permanente de la recharge solaire Lektrico.
