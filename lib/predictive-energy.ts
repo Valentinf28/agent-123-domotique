@@ -25,7 +25,7 @@ export type AdaptiveSolarForecast = {
   prudentRemainingWh: number;
   correctionPercent: number;
   confidence: SolarForecastConfidence;
-  explanation: string;
+  explanation: string | null;
 };
 
 export type PredictiveEnergySettings = {
@@ -192,9 +192,11 @@ export function buildAdaptiveSolarForecast(
   const observedGap = observedRatio === null
     ? null
     : Math.max(0, Math.round((1 - observedRatio) * 100));
-  const explanation = observedGap !== null
-    ? `${cloudCover !== null && cloudCover >= 85 ? "Le ciel est très couvert et " : ""}la production réelle est ${observedGap} % sous la puissance attendue. La prévision prudente est recalculée à chaque actualisation.`
-    : "La prévision prudente applique les pertes habituelles de l’installation jusqu’à disposer de suffisamment de mesures réelles.";
+  const explanation = observedGap === null
+    ? "La prévision prudente applique les pertes habituelles de l’installation jusqu’à disposer de suffisamment de mesures réelles."
+    : observedGap >= 10
+      ? `${cloudCover !== null && cloudCover >= 85 ? "Le ciel est très couvert et " : ""}la production réelle est ${observedGap} % sous la puissance attendue. La prévision prudente est recalculée à chaque actualisation.`
+      : null;
 
   return {
     rawSlots,

@@ -27,7 +27,7 @@ test("n’expose aucun secret ni identifiant technique dans le rendu", async () 
 
 test("inclut le parcours de préparation réservé aux installateurs", async () => {
   const source = await readFile(new URL("../app/portal.tsx", import.meta.url), "utf8");
-  assert.match(source, /Préparer les objets à connecter/);
+  assert.match(source, /Configurer une nouvelle maison/);
   assert.match(source, /Catalogue validé/);
   assert.match(source, /Recherche automatique sur place/);
   assert.match(source, /Recette de la maison/i);
@@ -126,7 +126,7 @@ test("rafraîchit les mesures importantes toutes les cinq secondes sans renvoyer
   assert.match(agent, /FULL_INVENTORY_SECONDS = 60/);
   assert.match(agent, /FAST_ENTITY_PREFIXES/);
   assert.match(agent, /interval - cycle_duration/);
-  assert.match(config, /version: "0\.5\.27"/);
+  assert.match(config, /version: "0\.5\.28"/);
   assert.match(config, /heartbeat_seconds: "int\(5,300\)"/);
   assert.match(agentHome, /resolveEntityCandidate\(inventory\.map/);
 });

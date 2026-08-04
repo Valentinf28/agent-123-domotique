@@ -7,6 +7,12 @@ export const ENERGY_PROFILE = {
     "phase de la lune",
     "moon phase"
   ],
+  "weatherCondition": [
+    "weather.forecast_maison",
+    "weather.escorpain",
+    "météo maison",
+    "forecast maison"
+  ],
   "solarPower": [
     "sensor.onduleur_pv_power",
     "sensor.inverter_pv_power",

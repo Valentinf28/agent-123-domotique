@@ -78,8 +78,17 @@ export const HOUSE_BINDINGS = {
   "poolChlorine": [
     "sensor.chlore_piscine",
     "chlore piscine",
-    "pool chlorine",
-    "orp piscine"
+    "pool chlorine"
+  ],
+  "poolOrp": [
+    "sensor.orp_piscine",
+    "orp piscine",
+    "redox piscine"
+  ],
+  "poolTreatmentAlarm": [
+    "binary_sensor.alarme_traitement_piscine",
+    "binary_sensor.manque_chlore_piscine",
+    "alarme traitement piscine"
   ],
   "poolLight": [
     "light.piscine",

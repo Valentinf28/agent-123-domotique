@@ -286,7 +286,7 @@ def request_json(
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.27",
+        "User-Agent": "Agent-123-Domotique/0.5.28",
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -1727,12 +1727,32 @@ def relay_command(
                 timeout=60,
             )
         elif action == "ha.history":
-            start = urllib.parse.quote(str(payload.get("start", "")), safe=":TZ+-")
-            entity_id = urllib.parse.quote(str(payload.get("entityId", "")), safe="._")
-            if not start or not entity_id:
+            raw_start = str(payload.get("start", "")).strip()
+            raw_end = str(payload.get("end", "")).strip()
+            raw_entity_id = str(payload.get("entityId", "")).strip()
+            if not raw_start or not raw_entity_id:
                 raise ValueError("Période ou entité manquante")
+            try:
+                start_time = datetime.fromisoformat(raw_start.replace("Z", "+00:00"))
+                end_time = (
+                    datetime.fromisoformat(raw_end.replace("Z", "+00:00"))
+                    if raw_end else None
+                )
+            except ValueError as error:
+                raise ValueError("Période d'historique invalide") from error
+            if end_time is not None:
+                if end_time <= start_time:
+                    raise ValueError("La fin de l'historique doit suivre le début")
+                if end_time - start_time > timedelta(days=2):
+                    raise ValueError("Période d'historique trop longue")
+            start = urllib.parse.quote(raw_start, safe=":TZ+-")
+            entity_id = urllib.parse.quote(raw_entity_id, safe="._")
+            query = f"filter_entity_id={entity_id}&minimal_response&no_attributes"
+            if raw_end:
+                end = urllib.parse.quote(raw_end, safe=":TZ+-")
+                query += f"&end_time={end}"
             result = request_json(
-                f"{SUPERVISOR_API}/history/period/{start}?filter_entity_id={entity_id}&minimal_response",
+                f"{SUPERVISOR_API}/history/period/{start}?{query}",
                 token=supervisor_token,
             )
         elif action == "ha.proxy":

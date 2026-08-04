@@ -21,7 +21,11 @@ export const installationDossiers = sqliteTable("installation_dossiers", {
   stripeSubscriptionId: text("stripe_subscription_id"),
   stripeCurrentPeriodEndsAt: text("stripe_current_period_ends_at"),
   solarPeakWatts: integer("solar_peak_watts").notNull().default(0),
+  solarArraysJson: text("solar_arrays_json").notNull().default("[]"),
   batteryCapacityWh: integer("battery_capacity_wh").notNull().default(0),
+  erpDossierId: integer("erp_dossier_id"),
+  erpImportedAt: text("erp_imported_at"),
+  customerAddress: text("customer_address"),
   batteryReservePercent: integer("battery_reserve_percent").notNull().default(25),
   flexibleLoadsJson: text("flexible_loads_json").notNull().default("[]"),
   tariffPlan: text("tariff_plan").notNull().default("base"),
@@ -33,6 +37,7 @@ export const installationDossiers = sqliteTable("installation_dossiers", {
 }, (table) => [
   uniqueIndex("installation_dossiers_public_id_idx").on(table.publicId),
   uniqueIndex("installation_dossiers_relay_house_id_idx").on(table.relayHouseId),
+  uniqueIndex("installation_dossiers_erp_dossier_id_idx").on(table.erpDossierId),
 ]);
 
 export const plannedDevices = sqliteTable("planned_devices", {
