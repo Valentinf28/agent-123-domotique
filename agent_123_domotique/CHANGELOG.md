@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.5.34
+
+- Vote séparément sur chaque chiffre ORP à partir de neuf captures pour éliminer les phases parasites du multiplexage.
+- Ignore une variation de pH supérieure à 0,5 entre deux cycles et conserve la dernière mesure cohérente.
+
 ## 0.5.33
 
 - Lit désormais chaque afficheur sur une rafale de cinq images afin de neutraliser son multiplexage.
