@@ -35,8 +35,8 @@ SEGMENTS = {
 
 DEFAULT_REGIONS = {
     # Coordonnées normalisées après correction miroir, pour le cadrage validé.
-    "ph": (0.34, 0.45, 0.54, 0.66),
-    "orp": (0.50, 0.43, 0.76, 0.64),
+    "ph": (0.20, 0.40, 0.42, 0.58),
+    "orp": (0.52, 0.40, 0.72, 0.58),
 }
 
 
@@ -59,7 +59,9 @@ def _red_mask(image: Image.Image, threshold: int = 145) -> list[list[bool]]:
         row = []
         for x in range(width):
             red, green, blue = pixels[x, y]
-            row.append(red >= threshold and red >= green * 1.45 and red >= blue * 1.25)
+            strongly_red = red >= green * 1.45 and red >= blue * 1.25
+            saturated_orange = red >= 220 and red - green >= 20 and red - blue >= 40
+            row.append(red >= threshold and (strongly_red or saturated_orange))
         mask.append(row)
     return mask
 
@@ -108,12 +110,12 @@ def _classify_character(image: Image.Image) -> tuple[str | None, float]:
         "g": (0.20, 0.41, 0.80, 0.61),
     }
     scores = {name: _sample(mask, *box) for name, box in patches.items()}
-    active = frozenset(name for name, score in scores.items() if score >= 0.16)
+    active = frozenset(name for name, score in scores.items() if score >= 0.20)
     exact = SEGMENTS.get(active)
     if exact:
         margin = min(
-            [scores[name] - 0.16 for name in active]
-            + [0.16 - scores[name] for name in patches if name not in active]
+            [scores[name] - 0.20 for name in active]
+            + [0.20 - scores[name] for name in patches if name not in active]
         )
         return exact, max(0.55, min(0.99, 0.7 + margin))
     best_char = None
@@ -157,7 +159,7 @@ def _decode_two_characters(image: Image.Image) -> tuple[str | None, float]:
         *,
         allow_skinny_one: bool = True,
     ) -> tuple[str | None, float]:
-        if allow_skinny_one and (right - left) / max(1, bottom - top) <= 0.48:
+        if allow_skinny_one and (right - left) / max(1, bottom - top) <= 0.75:
             return "1", 0.8
         return _classify_character(image.crop((max(0, left - 1), max(0, top - 2), min(width, right + 1), min(height, bottom + 2))))
 
@@ -174,16 +176,22 @@ def _decode_two_characters(image: Image.Image) -> tuple[str | None, float]:
     start, end, top, bottom, _ = max(digit_groups or groups, key=lambda group: group[4])
     if end - start < 8:
         return None, 0.0
-    possibilities = []
-    for split in range(start + int((end - start) * 0.35), start + int((end - start) * 0.66) + 1):
-        first = classify_range(start, split, top, bottom, allow_skinny_one=False)
-        second = classify_range(split, end, top, bottom, allow_skinny_one=False)
-        if first[0] and second[0]:
-            possibilities.append((min(first[1], second[1]), first[0] + second[0]))
-    if not possibilities:
+    # Quand le halo relie deux chiffres de même matrice, le découpage le plus
+    # fiable est leur milieu géométrique. Choisir la séparation ayant la plus
+    # forte confiance favorisait une portion du premier chiffre et transformait
+    # clairement « 36 » en « 3A », puis en « 39 ».
+    (first_start, first_end), (second_start, second_end) = _connected_digit_ranges(start, end)
+    first = classify_range(first_start, first_end, top, bottom, allow_skinny_one=False)
+    second = classify_range(second_start, second_end, top, bottom, allow_skinny_one=False)
+    if not first[0] or not second[0]:
         return None, 0.0
-    confidence, text = max(possibilities)
-    return text, confidence
+    return first[0] + second[0], min(first[1], second[1])
+
+
+def _connected_digit_ranges(start: int, end: int) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Sépare deux chiffres reliés sans attribuer leur pixel central aux deux."""
+    split = (start + end + 1) // 2
+    return (start, split - 1), (split, end)
 
 
 def _crop(image: Image.Image, region: tuple[float, float, float, float]) -> Image.Image:
