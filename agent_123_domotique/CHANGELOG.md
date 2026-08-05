@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.47
+
+- Corrige la confusion résiduelle qui pouvait lire `69` comme `33` sur l'afficheur chlore multiplexé.
+- Empêche la règle rapide du chiffre `3` de masquer les segments gauches réellement allumés des chiffres `6` et `9`.
+- Fait primer le vote des images individuelles sur l'artefact temporel connu `33`.
+
 ## 0.5.46
 
 - Corrige la confusion du lecteur caméra qui pouvait transformer `66` ou `68` en `33`.

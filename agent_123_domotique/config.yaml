@@ -1,6 +1,6 @@
 name: "Agent 1.2.3 Domotique"
 description: "Prépare, diagnostique et rattache cette maison au portail technicien."
-version: "0.5.46"
+version: "0.5.47"
 slug: "agent_123_domotique"
 url: "https://123panneaux-solaires.fr"
 init: false
