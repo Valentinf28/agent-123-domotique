@@ -1434,6 +1434,188 @@ def lektrico_off_peak_automation(payload: dict[str, Any]) -> dict[str, Any]:
         }],
         "mode": "restart",
     }
+
+
+def _valid_entity_id(entity_id: str, expected_domain: str) -> bool:
+    parts = entity_id.split(".", 1)
+    return (
+        len(parts) == 2
+        and parts[0] == expected_domain
+        and all(part.replace("_", "").isalnum() for part in parts)
+    )
+
+
+def _entity_state(
+    states: list[dict[str, Any]],
+    entity_id: str,
+) -> dict[str, Any] | None:
+    return next(
+        (
+            state for state in states
+            if isinstance(state, dict) and state.get("entity_id") == entity_id
+        ),
+        None,
+    )
+
+
+def _normalized_label(value: Any) -> str:
+    return " ".join(
+        str(value or "").lower().replace("_", " ").replace("-", " ").split()
+    )
+
+
+def deye_vehicle_export_automation(
+    payload: dict[str, Any],
+    states: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Lie Solar Sell Deye à la connexion physique de la voiture.
+
+    La fonction ne devine jamais de registre Modbus et ne change pas le mode
+    général de l'onduleur. Elle accepte uniquement le switch Solar Sell exposé
+    par le profil SolarMAN contrôlé.
+    """
+    if payload.get("manageInverterExport") is not True:
+        return None
+
+    charger_state_entity_id = str(payload.get("chargerStateEntityId", "")).strip()
+    export_switch_entity_id = str(payload.get("inverterExportSwitchEntityId", "")).strip()
+    if not _valid_entity_id(charger_state_entity_id, "sensor"):
+        raise ValueError("État de connexion du véhicule invalide")
+    if not _valid_entity_id(export_switch_entity_id, "switch"):
+        raise ValueError("La commande Deye Solar Sell est indispensable")
+
+    charger_state = _entity_state(states, charger_state_entity_id)
+    export_switch_state = _entity_state(states, export_switch_entity_id)
+    missing = [
+        entity_id for entity_id, state in (
+            (charger_state_entity_id, charger_state),
+            (export_switch_entity_id, export_switch_state),
+        )
+        if state is None
+    ]
+    if missing:
+        raise ValueError("Commande Deye introuvable : " + ", ".join(missing))
+
+    attributes = export_switch_state.get("attributes")
+    if not isinstance(attributes, dict):
+        attributes = {}
+    trusted_text = _normalized_label(
+        f"{export_switch_entity_id} {attributes.get('friendly_name', '')}"
+    )
+    if not any(
+        term in trusted_text
+        for term in (
+            "solar sell", "export surplus", "vente solaire", "grid export",
+            "injection reseau", "injection réseau",
+        )
+    ):
+        raise ValueError("La commande fournie n’est pas identifiée comme Solar Sell")
+
+    plugged_states = (
+        "starting", "finishing", "stopped", "complete", "no_power", "need_auth",
+        "locked", "suspended_ev", "suspended_evse", "charging", "connected",
+        "paused", "paused_by_scheduler",
+    )
+    unplugged_states = ("available", "disconnected", "unplugged")
+    plugged_template = (
+        "{{ states('" + charger_state_entity_id + "') | lower in "
+        + str(list(plugged_states)) + " }}"
+    )
+    unplugged_template = (
+        "{{ states('" + charger_state_entity_id + "') | lower in "
+        + str(list(unplugged_states)) + " }}"
+    )
+
+    return {
+        "id": "ma_maison_deye_vehicle_export_policy",
+        "alias": "1.2.3 Home · Injection Deye selon véhicule",
+        "description": (
+            "Bloque l’injection lorsque la voiture est débranchée et la réactive "
+            "lorsqu’elle est branchée. Ne modifie que Solar Sell."
+        ),
+        "initial_state": True,
+        "trigger": [
+            {"platform": "homeassistant", "event": "start", "id": "synchronisation"},
+            {
+                "platform": "template",
+                "value_template": plugged_template,
+                "for": {"hours": 0, "minutes": 0, "seconds": 10},
+                "id": "voiture_branchee",
+            },
+            {
+                "platform": "template",
+                "value_template": unplugged_template,
+                "for": {"hours": 0, "minutes": 0, "seconds": 30},
+                "id": "voiture_debranchee",
+            },
+        ],
+        "condition": [],
+        "action": [{
+            "choose": [
+                {
+                    "conditions": [{
+                        "condition": "template",
+                        "value_template": (
+                            "{{ trigger.id == 'voiture_branchee' or "
+                            "(trigger.id == 'synchronisation' and "
+                            "states('" + charger_state_entity_id + "') | lower in "
+                            + str(list(plugged_states)) + ") }}"
+                        ),
+                    }],
+                    "sequence": [{
+                        "service": "switch.turn_on",
+                        "target": {"entity_id": export_switch_entity_id},
+                    }],
+                },
+                {
+                    "conditions": [{
+                        "condition": "template",
+                        "value_template": (
+                            "{{ trigger.id == 'voiture_debranchee' or "
+                            "(trigger.id == 'synchronisation' and "
+                            "states('" + charger_state_entity_id + "') | lower in "
+                            + str(list(unplugged_states)) + ") }}"
+                        ),
+                    }],
+                    "sequence": [{
+                        "service": "switch.turn_off",
+                        "target": {"entity_id": export_switch_entity_id},
+                    }],
+                },
+            ],
+        }],
+        "mode": "restart",
+        "max_exceeded": "silent",
+    }
+
+
+def deye_vehicle_export_sync_service(
+    payload: dict[str, Any],
+    states: list[dict[str, Any]],
+) -> str | None:
+    """Retourne la commande initiale sans agir sur un état indéterminé."""
+    if payload.get("manageInverterExport") is not True:
+        return None
+
+    charger_state_entity_id = str(payload.get("chargerStateEntityId", "")).strip()
+    charger_state = _entity_state(states, charger_state_entity_id)
+    if not charger_state:
+        return None
+
+    state = _normalized_label(charger_state.get("state")).replace(" ", "_")
+    plugged_states = {
+        "starting", "finishing", "stopped", "complete", "no_power", "need_auth",
+        "locked", "suspended_ev", "suspended_evse", "charging", "connected",
+        "paused", "paused_by_scheduler",
+    }
+    unplugged_states = {"available", "disconnected", "unplugged"}
+    if state in plugged_states:
+        return "turn_on"
+    if state in unplugged_states:
+        return "turn_off"
+    return None
+
+
 def _refresh_solar_forecast_inventory(
     supervisor_token: str,
     states: list[dict[str, Any]],
@@ -1916,6 +2098,8 @@ def relay_command(
                 + str(minimum_amps) + " }}"
             )
 
+            inverter_export_automation = deye_vehicle_export_automation(payload, states)
+
             automation_payload = {
                 "id": automation_id,
                 "alias": "1.2.3 Home · Recharge solaire Lektrico",
@@ -2071,6 +2255,28 @@ def relay_command(
                 payload=automation_payload,
                 timeout=60,
             )
+            if inverter_export_automation:
+                request_json(
+                    f"{SUPERVISOR_API}/config/automation/config/"
+                    "ma_maison_deye_vehicle_export_policy",
+                    method="POST",
+                    token=supervisor_token,
+                    payload=inverter_export_automation,
+                    timeout=60,
+                )
+                sync_service = deye_vehicle_export_sync_service(payload, states)
+                if sync_service:
+                    request_json(
+                        f"{SUPERVISOR_API}/services/switch/{sync_service}",
+                        method="POST",
+                        token=supervisor_token,
+                        payload={
+                            "entity_id": str(
+                                payload.get("inverterExportSwitchEntityId", "")
+                            ).strip(),
+                        },
+                        timeout=60,
+                    )
             request_json(
                 f"{SUPERVISOR_API}/services/automation/reload",
                 method="POST",
