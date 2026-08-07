@@ -1,5 +1,19 @@
 # Journal des versions
 
+## 0.5.48
+
+- Ajoute une politique Deye optionnelle liée au branchement physique du véhicule.
+- Coupe uniquement `Solar Sell` après 30 secondes de débranchement et le réactive après 10 secondes de branchement.
+- Synchronise immédiatement `Solar Sell` avec l’état actuel de la prise lors de l’installation de la règle.
+- Ne change jamais le mode général de l'onduleur et n'écrit directement dans aucun registre Modbus.
+- Restaure l'injection normale lorsque le mode de recharge solaire est désactivé depuis l'application.
+
+## 0.5.47
+
+- Corrige la confusion résiduelle qui pouvait lire `69` comme `33` sur l'afficheur chlore multiplexé.
+- Empêche la règle rapide du chiffre `3` de masquer les segments gauches réellement allumés des chiffres `6` et `9`.
+- Fait primer le vote des images individuelles sur l'artefact temporel connu `33`.
+
 ## 0.5.46
 
 - Corrige la confusion du lecteur caméra qui pouvait transformer `66` ou `68` en `33`.

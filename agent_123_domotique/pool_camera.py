@@ -280,6 +280,11 @@ def _classify_temporal_profile(scores: dict[str, float]) -> tuple[str | None, fl
     if (
         scores["g"] > 0.70
         and scores["b"] + scores["c"] > scores["e"] + scores["f"] + 0.12
+        # Un vrai 3 n'allume aucun segment vertical gauche. Sans ce garde-fou,
+        # le halo du Micro Rx faisait passer 6 et 9 pour 3, jusqu'à reconstruire
+        # « 33 » alors que l'afficheur montrait clairement « 69 ».
+        and scores["e"] < 0.45
+        and scores["f"] < 0.45
     ):
         return "3", 0.72
 
@@ -418,6 +423,38 @@ def _prefer_frame_consensus(
             return voted_text, voted_confidence
         return voted_text, max(primary_confidence, voted_confidence)
     return primary_text, primary_confidence
+
+
+def _prefer_orp_consensus(
+    primary_text: str | None,
+    primary_confidence: float,
+    voted_text: str | None,
+    voted_confidence: float,
+) -> tuple[str | None, float]:
+    """Arbitre la confusion propre au Micro Rx entre ``69`` et ``33``.
+
+    La fusion temporelle additionne tous les halos de l'afficheur multiplexé.
+    Elle peut ainsi éteindre visuellement les segments gauches et reconstruire
+    deux ``3``. Quand les images individuelles voient un autre nombre avec au
+    moins cinq lectures exploitables, leur vote reste la meilleure preuve,
+    même si son accord n'atteint pas les 60 % exigés dans le cas général.
+    """
+    normalized_primary = normalize_orp_text(primary_text)
+    normalized_vote = normalize_orp_text(voted_text)
+    if (
+        normalized_primary == "33"
+        and normalized_vote
+        and normalized_vote != "33"
+        and normalized_vote.isdigit()
+        and voted_confidence >= 0.45
+    ):
+        return normalized_vote, max(MINIMUM_READING_CONFIDENCE, voted_confidence)
+    return _prefer_frame_consensus(
+        normalized_primary,
+        primary_confidence,
+        normalized_vote,
+        voted_confidence,
+    )
 
 
 def _quantile_image(images: list[Image.Image], quantile: float = 0.40) -> Image.Image:
@@ -566,10 +603,10 @@ def read_pool_images(
     orp_voted, orp_vote_confidence = _vote_characters_with_confidence(
         [normalize_orp_text(text) for text, _ in orp_decoded]
     )
-    orp_text, orp_confidence = _prefer_frame_consensus(
-        normalize_orp_text(orp_text),
+    orp_text, orp_confidence = _prefer_orp_consensus(
+        orp_text,
         orp_confidence,
-        normalize_orp_text(orp_voted),
+        orp_voted,
         orp_vote_confidence,
     )
     orp_text = normalize_orp_text(orp_text)

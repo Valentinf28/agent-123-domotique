@@ -1,7 +1,9 @@
 import unittest
 
 from pool_camera import (
+    _classify_temporal_profile,
     _prefer_frame_consensus,
+    _prefer_orp_consensus,
     _vote_characters_with_confidence,
     confirmed_reading,
     normalize_ph_text,
@@ -23,6 +25,37 @@ class ConfirmedReadingTests(unittest.TestCase):
         text, confidence = _prefer_frame_consensus("69", 0.72, "33", 0.45)
         self.assertEqual(text, "69")
         self.assertEqual(confidence, 0.72)
+
+    def test_weak_orp_vote_replaces_known_33_multiplexing_artifact(self):
+        text, confidence = _prefer_orp_consensus("33", 0.72, "69", 0.45)
+        self.assertEqual(text, "69")
+        self.assertGreaterEqual(confidence, 0.55)
+
+    def test_temporal_nine_is_not_forced_to_three_when_left_top_is_lit(self):
+        text, confidence = _classify_temporal_profile({
+            "a": 1.0,
+            "b": 0.90,
+            "c": 0.86,
+            "d": 0.82,
+            "e": 0.20,
+            "f": 0.78,
+            "g": 1.0,
+        })
+        self.assertEqual(text, "9")
+        self.assertGreaterEqual(confidence, 0.55)
+
+    def test_temporal_three_still_uses_fast_path(self):
+        text, confidence = _classify_temporal_profile({
+            "a": 1.0,
+            "b": 0.92,
+            "c": 0.88,
+            "d": 0.84,
+            "e": 0.12,
+            "f": 0.18,
+            "g": 1.0,
+        })
+        self.assertEqual(text, "3")
+        self.assertGreaterEqual(confidence, 0.70)
 
     def test_clear_frame_vote_is_accepted(self):
         text, confidence = _vote_characters_with_confidence(
