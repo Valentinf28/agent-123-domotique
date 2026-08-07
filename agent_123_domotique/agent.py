@@ -1468,11 +1468,13 @@ def deye_vehicle_export_automation(
     payload: dict[str, Any],
     states: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
-    """Lie Solar Sell Deye à la connexion physique de la voiture.
+    """Lie Solar Sell Deye à la charge réelle de la voiture.
 
     La fonction ne devine jamais de registre Modbus et ne change pas le mode
     général de l'onduleur. Elle accepte uniquement le switch Solar Sell exposé
-    par le profil SolarMAN contrôlé.
+    par le profil SolarMAN contrôlé. Quand la voiture attend, l'export reste
+    coupé hors d'une courte fenêtre de mesure périodique nécessaire pour savoir
+    si les 6 A minimaux sont devenus disponibles.
     """
     if payload.get("manageInverterExport") is not True:
         return None
@@ -1511,42 +1513,60 @@ def deye_vehicle_export_automation(
     ):
         raise ValueError("La commande fournie n’est pas identifiée comme Solar Sell")
 
-    plugged_states = (
-        "starting", "finishing", "stopped", "complete", "no_power", "need_auth",
-        "locked", "suspended_ev", "suspended_evse", "charging", "connected",
-        "paused", "paused_by_scheduler",
+    charging_states = ("charging",)
+    waiting_states = (
+        "connected", "paused", "paused_by_scheduler", "need_auth", "locked",
+        "suspended_ev", "suspended_evse",
     )
-    unplugged_states = ("available", "disconnected", "unplugged")
-    plugged_template = (
+    charging_template = (
         "{{ states('" + charger_state_entity_id + "') | lower in "
-        + str(list(plugged_states)) + " }}"
+        + str(list(charging_states)) + " }}"
     )
-    unplugged_template = (
+    not_charging_template = (
+        "{{ states('" + charger_state_entity_id + "') | lower not in "
+        + str(list(charging_states)) + " }}"
+    )
+    inactive_template = not_charging_template
+    waiting_template = (
         "{{ states('" + charger_state_entity_id + "') | lower in "
-        + str(list(unplugged_states)) + " }}"
+        + str(list(waiting_states)) + " }}"
+    )
+    battery_level_entity_id = str(payload.get("batteryLevelEntityId", "")).strip()
+    minimum_battery_percent = int(payload.get("minimumBatteryPercent", 95))
+    battery_ready_template = (
+        "(states('" + battery_level_entity_id + "') | float(0) >= "
+        + str(minimum_battery_percent) + ")"
+        if _valid_entity_id(battery_level_entity_id, "sensor") else "true"
     )
 
     return {
         "id": "ma_maison_deye_vehicle_export_policy",
         "alias": "1.2.3 Home · Injection Deye selon véhicule",
         "description": (
-            "Bloque l’injection lorsque la voiture est débranchée et la réactive "
-            "lorsqu’elle est branchée. Ne modifie que Solar Sell."
+            "Bloque l’injection tant que la voiture ne charge pas. Une fenêtre de "
+            "mesure de 35 secondes toutes les 5 minutes permet à Lektrico de "
+            "détecter un nouveau surplus. Ne modifie que Solar Sell."
         ),
         "initial_state": True,
         "trigger": [
             {"platform": "homeassistant", "event": "start", "id": "synchronisation"},
             {
                 "platform": "template",
-                "value_template": plugged_template,
-                "for": {"hours": 0, "minutes": 0, "seconds": 10},
-                "id": "voiture_branchee",
+                "value_template": charging_template,
+                "for": {"hours": 0, "minutes": 0, "seconds": 3},
+                "id": "charge_active",
             },
             {
                 "platform": "template",
-                "value_template": unplugged_template,
-                "for": {"hours": 0, "minutes": 0, "seconds": 30},
-                "id": "voiture_debranchee",
+                "value_template": inactive_template,
+                "for": {"hours": 0, "minutes": 0, "seconds": 10},
+                "id": "charge_inactive",
+            },
+            {
+                "platform": "time_pattern",
+                "minutes": "/5",
+                "seconds": "0",
+                "id": "mesure_surplus",
             },
         ],
         "condition": [],
@@ -1556,10 +1576,10 @@ def deye_vehicle_export_automation(
                     "conditions": [{
                         "condition": "template",
                         "value_template": (
-                            "{{ trigger.id == 'voiture_branchee' or "
+                            "{{ trigger.id == 'charge_active' or "
                             "(trigger.id == 'synchronisation' and "
                             "states('" + charger_state_entity_id + "') | lower in "
-                            + str(list(plugged_states)) + ") }}"
+                            + str(list(charging_states)) + ") }}"
                         ),
                     }],
                     "sequence": [{
@@ -1571,16 +1591,47 @@ def deye_vehicle_export_automation(
                     "conditions": [{
                         "condition": "template",
                         "value_template": (
-                            "{{ trigger.id == 'voiture_debranchee' or "
+                            "{{ trigger.id == 'charge_inactive' or "
                             "(trigger.id == 'synchronisation' and "
-                            "states('" + charger_state_entity_id + "') | lower in "
-                            + str(list(unplugged_states)) + ") }}"
+                            "states('" + charger_state_entity_id + "') | lower not in "
+                            + str(list(charging_states)) + ") }}"
                         ),
                     }],
                     "sequence": [{
                         "service": "switch.turn_off",
                         "target": {"entity_id": export_switch_entity_id},
                     }],
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": ["mesure_surplus"],
+                        },
+                        {
+                            "condition": "template",
+                            "value_template": waiting_template,
+                        },
+                        {
+                            "condition": "template",
+                            "value_template": "{{ " + battery_ready_template + " }}",
+                        },
+                    ],
+                    "sequence": [
+                        {
+                            "service": "switch.turn_on",
+                            "target": {"entity_id": export_switch_entity_id},
+                        },
+                        {"delay": {"hours": 0, "minutes": 0, "seconds": 35}},
+                        {
+                            "condition": "template",
+                            "value_template": not_charging_template,
+                        },
+                        {
+                            "service": "switch.turn_off",
+                            "target": {"entity_id": export_switch_entity_id},
+                        },
+                    ],
                 },
             ],
         }],
@@ -1603,17 +1654,9 @@ def deye_vehicle_export_sync_service(
         return None
 
     state = _normalized_label(charger_state.get("state")).replace(" ", "_")
-    plugged_states = {
-        "starting", "finishing", "stopped", "complete", "no_power", "need_auth",
-        "locked", "suspended_ev", "suspended_evse", "charging", "connected",
-        "paused", "paused_by_scheduler",
-    }
-    unplugged_states = {"available", "disconnected", "unplugged"}
-    if state in plugged_states:
+    if state == "charging":
         return "turn_on"
-    if state in unplugged_states:
-        return "turn_off"
-    return None
+    return "turn_off"
 
 
 def _refresh_solar_forecast_inventory(
@@ -1964,6 +2007,7 @@ def relay_command(
             stop_button_entity_id = str(payload.get("stopButtonEntityId", "")).strip()
             fault_entity_ids = payload.get("faultEntityIds", [])
             reserve_watts = int(payload.get("reserveWatts", 0))
+            battery_assist_watts = int(payload.get("batteryAssistWatts", 600))
             minimum_battery_percent = int(payload.get("minimumBatteryPercent", 95))
             minimum_amps = int(payload.get("minimumAmps", 6))
             maximum_amps = int(payload.get("maximumAmps", 32))
@@ -1975,6 +2019,8 @@ def relay_command(
                 raise ValueError("Identifiant d’automatisation invalide")
             if not 0 <= reserve_watts <= 1000:
                 raise ValueError("Marge réseau invalide")
+            if not 0 <= battery_assist_watts <= 1500:
+                raise ValueError("Aide batterie invalide")
             if not 0 <= minimum_battery_percent <= 100:
                 raise ValueError("Seuil de batterie invalide")
             if not 6 <= minimum_amps <= maximum_amps <= 80:
@@ -2044,11 +2090,17 @@ def relay_command(
                 + str(minimum_battery_percent) + ")"
                 if battery_level_entity_id else "true"
             )
+            battery_assist_template = (
+                "(" + str(battery_assist_watts) + " if "
+                + battery_ready_template + " else 0)"
+                if battery_level_entity_id else "0"
+            )
             target_rounding_method = "common" if reserve_watts == 0 else "floor"
             start_threshold_template = (
                 "{{ " + battery_ready_template + " and "
                 "(0 - (states('" + grid_power_entity_id + "') | float(0)) - ("
-                + battery_discharge_template + ")) >= ((" + str(minimum_amps) + " * "
+                + battery_discharge_template + ") + " + battery_assist_template
+                + ") >= ((" + str(minimum_amps) + " * "
                 "([states('" + charger_voltage_entity_id + "') | float(230), 210] | max))"
                 " + " + str(reserve_watts) + ") }}"
             )
@@ -2066,7 +2118,8 @@ def relay_command(
                 "if is_state('" + charger_state_entity_id + "', 'charging') else current %} "
                 "{% set voltage = [states('" + charger_voltage_entity_id + "') | float(230), 210] | max %} "
                 "{% set battery_discharge = " + battery_discharge_template + " %} "
-                "{% set desired = (effective_current + ((-grid - battery_discharge - "
+                "{% set battery_assist = " + battery_assist_template + " %} "
+                "{% set desired = (effective_current + ((-grid - battery_discharge + battery_assist - "
                 + str(reserve_watts) + ") / voltage)) "
                 "| round(0, '" + target_rounding_method + "') | int %} "
                 "{{ [[desired, " + str(minimum_amps) + "] | max, "
@@ -2081,7 +2134,7 @@ def relay_command(
                 "states('" + dynamic_limit_entity_id + "') | float("
                 + str(minimum_amps) + ")] | max + "
                 "((0 - (states('" + grid_power_entity_id + "') | float(0)) - ("
-                + battery_discharge_template + ") - "
+                + battery_discharge_template + ") + " + battery_assist_template + " - "
                 + str(reserve_watts) + ") / "
                 "([states('" + charger_voltage_entity_id + "') | float(230), 210] | max))) < "
                 + str(minimum_amps) + ") }}"
@@ -2092,7 +2145,7 @@ def relay_command(
                 "states('" + dynamic_limit_entity_id + "') | float("
                 + str(minimum_amps) + ")] | max + "
                 "((0 - (states('" + grid_power_entity_id + "') | float(0)) - ("
-                + battery_discharge_template + ") - "
+                + battery_discharge_template + ") + " + battery_assist_template + " - "
                 + str(reserve_watts) + ") / "
                 "([states('" + charger_voltage_entity_id + "') | float(230), 210] | max))) >= "
                 + str(minimum_amps) + " }}"
@@ -2106,8 +2159,9 @@ def relay_command(
                 "description": (
                     "Ajuste la limite dynamique de la borne Lektrico sur le surplus "
                     f"solaire après {minimum_battery_percent} % de batterie domestique. "
-                    "La régulation vise l’équilibre réseau et tolère au maximum un "
-                    "demi-palier d’ampérage fourni brièvement par la batterie."
+                    "La régulation vise l’équilibre réseau et peut utiliser jusqu’à "
+                    f"{battery_assist_watts} W de batterie domestique pour franchir "
+                    "le minimum de charge sans maintenir d’injection réseau."
                 ),
                 "trigger": [
                     {
@@ -2118,7 +2172,7 @@ def relay_command(
                     {
                         "platform": "template",
                         "value_template": start_threshold_template,
-                        "for": {"hours": 0, "minutes": 0, "seconds": 30},
+                        "for": {"hours": 0, "minutes": 0, "seconds": 15},
                         "id": "demarrage",
                     },
                     {

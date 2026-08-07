@@ -62,9 +62,10 @@ class LektricoSolarPlanTests(unittest.TestCase):
             if "/config/automation/config/ma_maison_lektrico_solar_charging" in url
         )
         serialized = str(automation_call["payload"])
-        self.assertIn("battery_discharge - 0", serialized)
+        self.assertIn("battery_discharge + battery_assist - 0", serialized)
+        self.assertIn("600 if", serialized)
         self.assertIn("round(0, 'common')", serialized)
-        self.assertIn("demi-palier", serialized)
+        self.assertIn("600 W de batterie", serialized)
 
     def test_creates_a_local_dynamic_limit_automation(self):
         available = [
@@ -103,7 +104,7 @@ class LektricoSolarPlanTests(unittest.TestCase):
         self.assertIn("number.1p7k_501290_dynamic_limit", serialized)
         self.assertIn("button.1p7k_501290_charge_start", serialized)
         self.assertIn("button.1p7k_501290_charge_stop", serialized)
-        self.assertIn("battery_discharge - 100", serialized)
+        self.assertIn("battery_discharge + battery_assist - 100", serialized)
         self.assertIn("round(0, 'floor')", serialized)
         self.assertIn("sensor.deye_battery_power", serialized)
         self.assertIn("sensor.deye_battery_state_of_charge", serialized)
@@ -114,6 +115,7 @@ class LektricoSolarPlanTests(unittest.TestCase):
         self.assertIn("'need_auth'", serialized)
         self.assertIn("'paused_by_scheduler'", serialized)
         self.assertEqual(automation["trigger"][2]["for"]["seconds"], 45)
+        self.assertEqual(automation["trigger"][1]["for"]["seconds"], 15)
         stop_choice = automation["action"][0]["choose"][0]
         self.assertEqual(
             stop_choice["sequence"],
