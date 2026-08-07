@@ -43,12 +43,13 @@ class DeyeExportControlTests(unittest.TestCase):
     def test_policy_is_strictly_opt_in(self) -> None:
         self.assertIsNone(agent.deye_vehicle_export_automation(payload(False), states()))
 
-    def test_policy_switches_solar_sell_on_plug_and_off_on_unplug(self) -> None:
+    def test_policy_exports_only_while_charging_and_probes_briefly(self) -> None:
         automation = agent.deye_vehicle_export_automation(payload(), states())
         self.assertIsNotNone(automation)
         self.assertTrue(automation["initial_state"])
-        self.assertEqual(automation["trigger"][1]["for"]["seconds"], 10)
-        self.assertEqual(automation["trigger"][2]["for"]["seconds"], 30)
+        self.assertEqual(automation["trigger"][1]["for"]["seconds"], 3)
+        self.assertEqual(automation["trigger"][2]["for"]["seconds"], 10)
+        self.assertEqual(automation["trigger"][3]["minutes"], "/5")
         choices = automation["action"][0]["choose"]
         self.assertEqual(choices[0]["sequence"][0], {
             "service": "switch.turn_on",
@@ -58,6 +59,9 @@ class DeyeExportControlTests(unittest.TestCase):
             "service": "switch.turn_off",
             "target": {"entity_id": "switch.onduleur_solar_sell"},
         })
+        self.assertEqual(choices[2]["sequence"][0]["service"], "switch.turn_on")
+        self.assertEqual(choices[2]["sequence"][1]["delay"]["seconds"], 35)
+        self.assertEqual(choices[2]["sequence"][-1]["service"], "switch.turn_off")
 
     def test_policy_rejects_an_unrelated_switch(self) -> None:
         current_payload = payload()
@@ -73,9 +77,17 @@ class DeyeExportControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "indispensable"):
             agent.deye_vehicle_export_automation(current_payload, states())
 
-    def test_initial_sync_enables_export_for_a_plugged_vehicle(self) -> None:
+    def test_initial_sync_blocks_export_for_a_waiting_vehicle(self) -> None:
         self.assertEqual(
             agent.deye_vehicle_export_sync_service(payload(), states()),
+            "turn_off",
+        )
+
+    def test_initial_sync_enables_export_during_active_charge(self) -> None:
+        current_states = states()
+        current_states[0]["state"] = "charging"
+        self.assertEqual(
+            agent.deye_vehicle_export_sync_service(payload(), current_states),
             "turn_on",
         )
 
@@ -87,9 +99,10 @@ class DeyeExportControlTests(unittest.TestCase):
             "turn_off",
         )
 
-    def test_initial_sync_does_nothing_for_an_unknown_state(self) -> None:
+    def test_initial_sync_blocks_export_for_an_unknown_state(self) -> None:
         current_states = states()
         current_states[0]["state"] = "unavailable"
-        self.assertIsNone(
-            agent.deye_vehicle_export_sync_service(payload(), current_states)
+        self.assertEqual(
+            agent.deye_vehicle_export_sync_service(payload(), current_states),
+            "turn_off",
         )

@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 0.5.49
+
+- Coupe `Solar Sell` dès que la voiture ne charge pas, même lorsqu’elle reste branchée.
+- Ouvre une fenêtre de mesure de 35 secondes toutes les 5 minutes pour détecter le retour du surplus, puis recoupe automatiquement l’injection si la charge ne démarre pas.
+- Conserve l’injection uniquement pendant une charge réellement active.
+- Autorise jusqu’à 600 W d’aide de la batterie domestique au-dessus de 95 % pour franchir le minimum de 6 A sans maintenir un surplus injecté.
+
 ## 0.5.48
 
 - Ajoute une politique Deye optionnelle liée au branchement physique du véhicule.
