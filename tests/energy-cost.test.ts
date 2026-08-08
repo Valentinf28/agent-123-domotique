@@ -21,10 +21,14 @@ test("chiffre uniquement les achats réseau et déduit l’injection rémunéré
     ],
   });
   assert.equal(result.importedWh, 500);
+  assert.equal(result.peakImportedWh, 500);
+  assert.equal(result.offPeakImportedWh, 0);
   assert.equal(result.exportedWh, 250);
   assert.equal(result.importCostEuros, 0.125);
   assert.equal(result.exportRevenueEuros, 0.0125);
   assert.equal(result.netEnergyCostEuros, 0.1125);
+  assert.equal(result.shiftableToSolarWh, 250);
+  assert.equal(result.shiftableSavingsEuros, 0.05);
 });
 
 test("applique réellement les heures creuses, y compris après minuit", () => {
@@ -39,6 +43,8 @@ test("applique réellement les heures creuses, y compris après minuit", () => {
     ],
   });
   assert.equal(result.importedWh, 500);
+  assert.equal(result.peakImportedWh, 0);
+  assert.equal(result.offPeakImportedWh, 500);
   assert.equal(result.importCostEuros, 0.1);
 });
 

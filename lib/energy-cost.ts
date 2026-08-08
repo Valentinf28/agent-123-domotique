@@ -35,6 +35,8 @@ export function measuredGridCost(input: {
   const samples = [...input.samples].sort((left, right) =>
     Date.parse(left.capturedAt) - Date.parse(right.capturedAt));
   let importedWh = 0;
+  let peakImportedWh = 0;
+  let offPeakImportedWh = 0;
   let exportedWh = 0;
   let importCostEuros = 0;
   let exportRevenueEuros = 0;
@@ -50,11 +52,17 @@ export function measuredGridCost(input: {
     const exported = Math.max(0, -sample.gridWatts) * elapsedHours;
     importedWh += imported;
     exportedWh += exported;
+    const isOffPeak = input.plan === "hp_hc" &&
+      input.periods.some((period) => inPeriod(parisMinutes(new Date(sample.capturedAt)), period));
+    if (input.plan === "hp_hc") {
+      if (isOffPeak) offPeakImportedWh += imported;
+      else peakImportedWh += imported;
+    } else {
+      peakImportedWh += imported;
+    }
     const importPrice = input.plan === "base"
       ? input.prices.baseMilliEurosPerKwh
-      : input.periods.some((period) => inPeriod(parisMinutes(new Date(sample.capturedAt)), period))
-        ? input.prices.offPeakMilliEurosPerKwh
-        : input.prices.peakMilliEurosPerKwh;
+      : isOffPeak ? input.prices.offPeakMilliEurosPerKwh : input.prices.peakMilliEurosPerKwh;
     if (imported > 0 && importPrice == null) importPriceComplete = false;
     if (importPrice != null) importCostEuros += imported / 1000 * importPrice / 1000;
     if (exported > 0 && input.prices.exportMilliEurosPerKwh == null) exportPriceComplete = false;
@@ -65,11 +73,22 @@ export function measuredGridCost(input: {
 
   return {
     importedWh,
+    peakImportedWh,
+    offPeakImportedWh,
     exportedWh,
     importCostEuros: importPriceComplete ? importCostEuros : null,
     exportRevenueEuros: exportPriceComplete ? exportRevenueEuros : null,
     netEnergyCostEuros: importPriceComplete && (exportedWh === 0 || exportPriceComplete)
       ? importCostEuros - exportRevenueEuros
       : null,
+    shiftableToSolarWh: Math.min(peakImportedWh, exportedWh),
+    shiftableSavingsEuros: (() => {
+      const purchasePrice = input.plan === "base"
+        ? input.prices.baseMilliEurosPerKwh
+        : input.prices.peakMilliEurosPerKwh;
+      const exportPrice = exportedWh > 0 ? input.prices.exportMilliEurosPerKwh : 0;
+      if (purchasePrice == null || exportPrice == null) return null;
+      return Math.max(0, Math.min(peakImportedWh, exportedWh) / 1000 * (purchasePrice - exportPrice) / 1000);
+    })(),
   };
 }

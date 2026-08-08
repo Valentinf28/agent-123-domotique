@@ -108,6 +108,10 @@ test('projette uniquement les achats réseau et déduit la vente du surplus', ()
     importCostEuros: 12,
     exportRevenueEuros: 2,
     netEnergyCostEuros: 10,
+    peakImportedWh: 30_000,
+    offPeakImportedWh: 20_000,
+    shiftableToSolarWh: 20_000,
+    shiftableSavingsEuros: 3,
     plan: 'base',
     tariffGuidance: 'Option Base configurée.',
   });
@@ -115,6 +119,8 @@ test('projette uniquement les achats réseau et déduit la vente du surplus', ()
   assert.match(answer, /injecté 20 kWh/i);
   assert.match(answer, /30\s*€/);
   assert.match(answer, /6\s*€ de rémunération/i);
+  assert.match(answer, /60 kWh d’achats en journée/i);
+  assert.match(answer, /9\s*€ par mois/i);
   assert.match(answer, /flux réseau mesurés/i);
 });
 
@@ -126,6 +132,10 @@ test('ne déduit pas une injection dont le tarif de rachat manque', () => {
     importCostEuros: 12,
     exportRevenueEuros: null,
     netEnergyCostEuros: null,
+    peakImportedWh: 30_000,
+    offPeakImportedWh: 20_000,
+    shiftableToSolarWh: 20_000,
+    shiftableSavingsEuros: null,
     plan: 'hp_hc',
     tariffGuidance: 'Tarif HP/HC configuré.',
   });
@@ -142,6 +152,10 @@ test('refuse tout montant si le prix d’achat manque', () => {
     importCostEuros: null,
     exportRevenueEuros: 0,
     netEnergyCostEuros: null,
+    peakImportedWh: 12_000,
+    offPeakImportedWh: 0,
+    shiftableToSolarWh: 0,
+    shiftableSavingsEuros: null,
     plan: 'base',
     tariffGuidance: 'Prix manquant.',
   });

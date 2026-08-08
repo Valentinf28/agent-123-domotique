@@ -24,6 +24,10 @@ export function financialCoachGuidance(input: {
   importCostEuros: number | null;
   exportRevenueEuros: number | null;
   netEnergyCostEuros: number | null;
+  peakImportedWh: number;
+  offPeakImportedWh: number;
+  shiftableToSolarWh: number;
+  shiftableSavingsEuros: number | null;
   plan: 'base' | 'hp_hc';
   tariffGuidance: string;
 }) {
@@ -35,16 +39,23 @@ export function financialCoachGuidance(input: {
     return `${flows} Le prix d’achat correspondant n’est pas entièrement renseigné : le Coach ne fabrique donc aucun montant. ${input.tariffGuidance}`;
   }
   const purchase = `À rythme identique, les achats d’énergie représenteraient environ ${euros(input.importCostEuros * factor)} par mois`;
+  const action = input.shiftableToSolarWh > 100
+    ? input.shiftableSavingsEuros == null
+      ? ` Priorité : déplacer jusqu’à ${kwh(input.shiftableToSolarWh * factor)} d’achats en journée vers le surplus chaque mois. Le tarif de rachat manque pour chiffrer honnêtement le gain net.`
+      : ` Priorité : déplacer jusqu’à ${kwh(input.shiftableToSolarWh * factor)} d’achats en journée vers le surplus chaque mois, pour un gain net maximal estimé à ${euros(input.shiftableSavingsEuros * factor)} par mois.`
+    : input.plan === 'hp_hc' && input.offPeakImportedWh > 0
+      ? " Les achats en heures pleines sont déjà faibles ; conservez les heures creuses comme repli et priorisez le surplus solaire."
+      : '';
   if (input.exportedWh > 0 && input.exportRevenueEuros == null) {
-    return `${flows} ${purchase}, hors abonnement et taxes fixes. Le tarif de rachat n’est pas renseigné : l’injection n’est pas déduite de ce montant. ${input.tariffGuidance}`;
+    return `${flows} ${purchase}, hors abonnement et taxes fixes. Le tarif de rachat n’est pas renseigné : l’injection n’est pas déduite de ce montant.${action} ${input.tariffGuidance}`;
   }
   if (input.netEnergyCostEuros != null) {
     const revenue = input.exportRevenueEuros && input.exportRevenueEuros > 0
       ? `, après environ ${euros(input.exportRevenueEuros * factor)} de rémunération de l’injection`
       : '';
-    return `${flows} La part énergie nette projetée est d’environ ${euros(input.netEnergyCostEuros * factor)} par mois${revenue}, hors abonnement et taxes fixes. C’est une projection fondée sur les flux réseau mesurés, pas une facture. ${input.tariffGuidance}`;
+    return `${flows} La part énergie nette projetée est d’environ ${euros(input.netEnergyCostEuros * factor)} par mois${revenue}, hors abonnement et taxes fixes.${action} C’est une projection fondée sur les flux réseau mesurés, pas une facture. ${input.tariffGuidance}`;
   }
-  return `${flows} ${purchase}, hors abonnement et taxes fixes. C’est une projection fondée sur les achats réseau mesurés, pas sur toute la consommation de la maison. ${input.tariffGuidance}`;
+  return `${flows} ${purchase}, hors abonnement et taxes fixes.${action} C’est une projection fondée sur les achats réseau mesurés, pas sur toute la consommation de la maison. ${input.tariffGuidance}`;
 }
 
 export function solarCoachGuidance(input: {
