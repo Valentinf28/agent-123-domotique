@@ -344,6 +344,11 @@ export default function Portal({
   const [creatingDossier, setCreatingDossier] = useState(false);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "coach") setView("Automatisations");
+  }, []);
+
+  useEffect(() => {
     if (customerOnly && !allowHouseSwitch) return;
     fetch("/api/dossiers", { headers: { Accept: "application/json" } })
       .then((response) => response.ok ? response.json() : Promise.reject())
@@ -2338,6 +2343,14 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
     "Allume la lumière piscine au coucher du soleil le week-end",
     "Coupe le ballon d’eau chaude tous les jours à 16h",
   ];
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") !== "coach") return;
+    const question = params.get("coachQuestion")?.trim().slice(0, 600) ?? "";
+    setCoachOpen(true);
+    if (question) setCoachQuestion(question);
+  }, []);
 
   useEffect(() => {
     let active = true;
