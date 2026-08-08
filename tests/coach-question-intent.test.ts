@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { asksForCoachActionPlan, coachQuestionIntent, needsDeterministicFinancialAnswer } from '../lib/coach-question-intent';
+import { asksForBatteryEndurance, asksForCoachActionPlan, coachQuestionIntent, needsDeterministicFinancialAnswer } from '../lib/coach-question-intent';
 
 test('distingue économiser la batterie d’une économie financière', () => {
   assert.equal(coachQuestionIntent('Comment économiser ma batterie ce soir ?'), 'battery');
@@ -12,6 +12,12 @@ test('reconnaît une demande de plan issue des deux semaines d’analyse', () =>
   assert.equal(asksForCoachActionPlan('Quel plan me proposes-tu après 14 jours ?'), true);
   assert.equal(asksForCoachActionPlan('Quelles sont les trois actions prioritaires à faire ?'), true);
   assert.equal(asksForCoachActionPlan('Allume la terrasse à 22 h'), false);
+});
+
+test('reconnaît les questions d’autonomie de la batterie', () => {
+  assert.equal(asksForBatteryEndurance('La batterie va tenir toute la nuit ?'), true);
+  assert.equal(asksForBatteryEndurance('Combien d’heures d’autonomie reste-t-il à la batterie ?'), true);
+  assert.equal(asksForBatteryEndurance('Comment économiser ma batterie ?'), false);
 });
 
 test('reconnaît les demandes liées à la facture et au contrat', () => {

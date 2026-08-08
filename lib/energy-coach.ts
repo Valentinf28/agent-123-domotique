@@ -28,6 +28,7 @@ import { buildEnergyInsights as buildPrioritizedEnergyInsights } from "./energy-
 import { buildCoachActionPlan } from "./energy-insights";
 import type { OffPeakPeriod } from "./energy-insights";
 import { equipmentCapabilitiesFromInventory } from "./equipment-capabilities";
+import { buildBatteryNightOutlook } from "./battery-night-outlook";
 export {
   ASSISTANT_MONTHLY_LIMIT,
   assistantQuotaAllows,
@@ -531,11 +532,24 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     batteryReservePercent: selected.dossier.batteryReservePercent,
     tariffPlan: selected.dossier.tariffPlan === "hp_hc" ? "hp_hc" : "base",
   });
+  const nextSolarAt = adaptiveForecast.prudentSlots.find((slot) =>
+    Date.parse(slot.startsAt) > now.getTime() && slot.estimatedWh >= 100)?.startsAt ?? null;
+  const batteryOutlook = buildBatteryNightOutlook({
+    now,
+    batteryCapacityWh: selected.dossier.batteryCapacityWh,
+    batteryPercent: current.batteryPercent,
+    reservePercent: selected.dossier.batteryReservePercent,
+    currentDischargeWatts: current.batteryWatts,
+    history,
+    nextSolarAt,
+  });
   return {
     dossier: {
       id: selected.dossier.id,
       publicId: selected.dossier.publicId,
       name: selected.dossier.customerName,
+      batteryCapacityWh: selected.dossier.batteryCapacityWh,
+      batteryReservePercent: selected.dossier.batteryReservePercent,
     },
     tariff: {
       plan: selected.dossier.tariffPlan === "hp_hc" ? "hp_hc" as const : "base" as const,
@@ -555,6 +569,7 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     historySamples: history.length,
     week,
     actionPlan,
+    batteryOutlook,
     solarForecast: {
       available: forecast.length > 0,
       source: "Prévision météo locale",

@@ -12,7 +12,7 @@ import {
 import { tariffGuidance } from "../../../../lib/energy-insights";
 import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../../lib/coach-guardrails";
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
-import { asksForCoachActionPlan, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
+import { asksForBatteryEndurance, asksForCoachActionPlan, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
 import { batterySavingsGuidance, observedPeriodLabel, solarCoachGuidance, unavailableEquipmentGuidance } from "../../../../lib/coach-local-advice";
 
 type AutomationProposal = {
@@ -75,7 +75,26 @@ function localReply(
     .filter((item) => item.id !== "other-home" && item.watts > 0)
     .slice(0, 3);
   let answer: string;
-  if (asksForCoachActionPlan(message)) {
+  if (asksForBatteryEndurance(message)) {
+    const outlook = context.batteryOutlook;
+    if (!outlook.available) {
+      answer = "Je connais le niveau actuel de la batterie, mais sa capacité utile n’est pas renseignée pour cette maison. Je ne peux donc pas calculer honnêtement si elle tiendra jusqu’au retour du solaire.";
+    } else {
+      const capacityKwh = context.dossier.batteryCapacityWh / 1000;
+      const usableKwh = outlook.usableWh / 1000;
+      const expectedKwh = outlook.expectedWh / 1000;
+      const marginKwh = Math.abs(outlook.marginWh) / 1000;
+      const solarTime = outlook.nextSolarAt
+        ? new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(new Date(outlook.nextSolarAt))
+        : `dans environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(outlook.horizonHours)} h`;
+      const basis = outlook.confidence === "measured"
+        ? `le profil mesuré sur ${outlook.observedNights} nuits`
+        : "la consommation actuellement disponible, faute d’un historique nocturne assez complet";
+      answer = outlook.holdsUntilSolar
+        ? `Oui, selon ${basis}. La batterie configurée fait ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(capacityKwh)} kWh : à ${context.current.batteryPercent} % avec une réserve à ${context.dossier.batteryReservePercent} %, environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(usableKwh)} kWh restent utilisables. Le besoin estimé jusqu’au retour du solaire vers ${solarTime} est de ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(expectedKwh)} kWh, soit une marge d’environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(marginKwh)} kWh. Les ${watts(context.current.batteryWatts)} actuels ne sont pas prolongés artificiellement sur toute la nuit.`
+        : `Non, pas avec la marge configurée si ${basis} se répète. Sur ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(capacityKwh)} kWh, environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(usableKwh)} kWh sont utilisables avant la réserve de ${context.dossier.batteryReservePercent} %, contre ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(expectedKwh)} kWh estimés jusqu’au solaire vers ${solarTime}. Il manquerait environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(marginKwh)} kWh.`;
+    }
+  } else if (asksForCoachActionPlan(message)) {
     if (context.actionPlan.status === "ready") {
       const actions = context.actionPlan.actions
         .map((action) => `${action.priority}. ${action.title} — ${action.impact}`)
@@ -359,6 +378,7 @@ export async function POST(request: Request) {
     const equipmentMissing = (intent === "vehicle" && !context.equipmentCapabilities.vehicle) ||
       (intent === "hot-water" && !context.equipmentCapabilities.hotWater);
     const reply = poolHeatPumpCoachReply(message) ??
+      (asksForBatteryEndurance(message) ? localReply(message, context) : null) ??
       (asksForCoachActionPlan(message) ? localReply(message, context) : null) ??
       (equipmentMissing ? localReply(message, context) : null) ??
       (needsDeterministicFinancialAnswer(message) ? localReply(message, context) : null) ??

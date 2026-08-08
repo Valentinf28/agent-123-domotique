@@ -20,3 +20,9 @@ export function asksForCoachActionPlan(message: string) {
   return /(?:plan|priorit[ée]s?|recommandations?|actions?)/.test(normalized) &&
     /(?:14\s*jours|deux\s+semaines|analyse|prochain|propose|conseille|faire)/.test(normalized);
 }
+
+export function asksForBatteryEndurance(message: string) {
+  const normalized = message.toLowerCase();
+  return /batterie/.test(normalized) &&
+    /(?:tenir|autonomie|jusqu|toute\s+la\s+nuit|passer\s+la\s+nuit|combien\s+d['’]?heures?)/.test(normalized);
+}
