@@ -458,6 +458,29 @@ export default function Portal({
     }
   }
 
+  async function startPremiumTrial() {
+    if (!selectedDossierId) return notify("Maison en cours d’association");
+    setPremiumSaving(true);
+    try {
+      const response = await fetch(`/api/subscriptions/${encodeURIComponent(selectedDossierId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ action: "start_trial" }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.subscription) {
+        throw new Error(payload?.error || "Essai indisponible");
+      }
+      setSubscription(payload.subscription as SubscriptionSummary);
+      setModal(null);
+      notify("Votre mois Premium offert est activé");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Essai indisponible");
+    } finally {
+      setPremiumSaving(false);
+    }
+  }
+
   async function createDossier(fromErp = false) {
     const reference = fromErp
       ? `IMPORT-${Date.now().toString().slice(-8)}`
@@ -727,6 +750,7 @@ export default function Portal({
         subscription={subscription}
         saving={premiumSaving}
         close={() => setModal(null)}
+        startTrial={startPremiumTrial}
         checkout={openPremiumCheckout}
         manage={openBillingPortal}
       />}
@@ -1521,10 +1545,11 @@ function SubscriptionCard({ subscription, saving, update }: {
   </section>;
 }
 
-function PremiumModal({ subscription, saving, close, checkout, manage }: {
+function PremiumModal({ subscription, saving, close, startTrial, checkout, manage }: {
   subscription: SubscriptionSummary | null;
   saving: boolean;
   close: () => void;
+  startTrial: () => Promise<void>;
   checkout: (interval: "monthly" | "yearly") => Promise<void>;
   manage: () => Promise<void>;
 }) {
@@ -1543,7 +1568,10 @@ function PremiumModal({ subscription, saving, close, checkout, manage }: {
         <span><i>✦</i><b>Assistant domotique</b><small>Règles en langage naturel</small></span>
         <span><i>⌁</i><b>Coach énergie</b><small>Conseils personnalisés</small></span>
       </div>
-      {active ? <button className="primary full" disabled={saving} onClick={() => void manage()}>{saving ? "Ouverture…" : "Gérer mon abonnement"}</button> : <div className="premium-offers">
+      {active ? <button className="primary full" disabled={saving} onClick={() => void manage()}>{saving ? "Ouverture…" : "Gérer mon abonnement"}</button> : subscription?.status === "not_started" ? <div className="premium-start-trial">
+        <button className="primary full" disabled={saving} onClick={() => void startTrial()}>{saving ? "Activation…" : "Démarrer mon mois offert"}</button>
+        <small>Sans prélèvement aujourd’hui · vous choisirez votre formule ensuite.</small>
+      </div> : <div className="premium-offers">
         <button disabled={saving} onClick={() => void checkout("monthly")}><b>9,90 €</b><span>par mois</span></button>
         <button className="recommended" disabled={saving} onClick={() => void checkout("yearly")}><em>2 mois offerts</em><b>99 €</b><span>par an</span></button>
       </div>}
