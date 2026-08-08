@@ -458,7 +458,7 @@ test("inclut les assistants et le nouveau tarif dans le forfait client", async (
   assert.match(route, /OPENAI_API_KEY/);
   assert.match(route, /safety_identifier/);
   assert.match(route, /Toute automatisation reste un brouillon/);
-  assert.match(route, /Sur les sept derniers jours disponibles/);
+  assert.match(route, /observedPeriodLabel\(observedDays\)/);
   assert.match(route, /context\.week\.observedDays/);
   assert.match(route, /C’est une projection, pas une facture/);
   assert.match(route, /Le reste de la maison est regroupé séparément pour éviter tout double comptage/);

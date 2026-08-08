@@ -12,6 +12,8 @@ import {
 import { tariffGuidance } from "../../../../lib/energy-insights";
 import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../../lib/coach-guardrails";
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
+import { coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
+import { batterySavingsGuidance, observedPeriodLabel, solarCoachGuidance } from "../../../../lib/coach-local-advice";
 
 type AutomationProposal = {
   name: string;
@@ -60,6 +62,7 @@ function localReply(
   context: Awaited<ReturnType<typeof getEnergyCoachContext>>,
 ): CoachReply {
   const normalized = message.toLowerCase();
+  const intent = coachQuestionIntent(message);
   const matching = context.insights.find((insight) => {
     if (/nuit|veille/.test(normalized)) return insight.id === "night-base";
     if (/solaire|surplus|autoconsomm/.test(normalized)) return insight.id === "solar-surplus";
@@ -77,21 +80,23 @@ function localReply(
       .map((item) => `${item.name} : ${watts(item.watts)} (${item.sharePercent} %)`)
       .join(", ");
     answer = `En ce moment, les principaux appareils mesurés sont ${list}. Le reste de la maison est regroupé séparément pour éviter tout double comptage.`;
-  } else if (/mois|économ|econom|bilan/.test(normalized) && context.historySamples >= 4) {
+  } else if (intent === "money" && /batterie/.test(normalized)) {
+    answer = batterySavingsGuidance(context.tariff.pricesConfigured);
+  } else if (intent === "money" && context.historySamples >= 4) {
     const observedDays = Math.max(1, context.week.observedDays);
     const projectedConsumption = context.week.consumptionWh * 30 / observedDays;
-    const period = observedDays >= 7
-      ? "Sur les sept derniers jours disponibles"
-      : `Sur les ${observedDays} jours disponibles`;
+    const period = observedPeriodLabel(observedDays);
     answer = `${period}, la maison a consommé ${kilowattHours(context.week.consumptionWh)} et produit ${kilowattHours(context.week.productionWh)}. À rythme identique, la consommation mensuelle serait d’environ ${kilowattHours(projectedConsumption)}. C’est une projection, pas une facture. ${tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods)}`;
   } else if (/heures?\s+creuses?|tarif|facture|prix/.test(normalized)) {
     answer = tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods);
   } else if (/solaire|surplus|autoconsomm/.test(normalized)) {
     const exportWatts = Math.max(0, -context.current.gridWatts);
     const remaining = context.solarForecast.prudentRemainingWh;
-    answer = exportWatts > 100
-      ? `La maison exporte actuellement environ ${watts(exportWatts)}. La prévision prudente estime encore ${kilowattHours(remaining)} à produire aujourd’hui ; un appareil flexible peut être déplacé sur ce créneau si ses garde-fous le permettent.`
-      : `Il n’y a pas de surplus significatif mesuré maintenant. La prévision prudente estime encore ${kilowattHours(remaining)} à produire aujourd’hui ; mieux vaut conserver les garde-fous batterie avant de déplacer un appareil.`;
+    answer = solarCoachGuidance({
+      forecastAvailable: context.solarForecast.available,
+      exportWatts,
+      prudentRemainingKwh: kilowattHours(remaining),
+    });
   } else if (/voiture|tesla|recharge/.test(normalized)) {
     const exportWatts = Math.max(0, -context.current.gridWatts);
     answer = context.current.vehicleWatts > 100
@@ -318,9 +323,8 @@ export async function POST(request: Request) {
           : []
       ) as ConversationMessage[]
       : [];
-    const needsDeterministicFinancialAnswer = /mois|économ|econom|bilan|heures?\s+creuses?|tarif|facture|prix/i.test(message);
     const reply = poolHeatPumpCoachReply(message) ??
-      (needsDeterministicFinancialAnswer ? localReply(message, context) : null) ??
+      (needsDeterministicFinancialAnswer(message) ? localReply(message, context) : null) ??
       await openAiReply(message, context, conversation) ??
       localReply(message, context);
     return Response.json({ reply: safeReply(reply) }, { headers: { "Cache-Control": "no-store" } });
