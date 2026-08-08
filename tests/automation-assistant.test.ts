@@ -57,6 +57,20 @@ test("demande une précision lorsque piscine est ambigu", () => {
   assert.equal(proposeSafeAutomation("Allume la piscine à 9h", devices).status, "needs_clarification");
 });
 
+test("transforme un constat clair sur la PAC piscine en règle de protection", () => {
+  const result = proposeSafeAutomation(
+    "La PAC de la piscine a tourné jusqu'à 21h alors qu'il n'y avait plus de production solaire, ça a vidé la batterie. L'eau était à 32°, comment améliorer ça ?",
+    devices,
+  );
+  assert.equal(result.status, "ready");
+  if (result.status !== "ready") return;
+  assert.equal(result.proposal.publicDeviceId, "pac");
+  assert.equal(result.proposal.triggerType, "sunset");
+  assert.equal(result.proposal.time, null);
+  assert.equal(result.proposal.desiredActive, false);
+  assert.match(result.summary, /coucher du soleil.*éteindre.*PAC piscine/i);
+});
+
 test("refuse les actions dangereuses et les accès sensibles", () => {
   assert.equal(proposeSafeAutomation("Ouvre le portail tous les jours à 8h", devices).status, "refused");
   assert.equal(proposeSafeAutomation("Désactive l'alarme à 23h", devices).status, "refused");

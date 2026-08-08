@@ -90,12 +90,18 @@ function desiredActive(message: string) {
   return !/(?:etein|étein|arrete|arrête|stoppe|coupe|desactive|désactive)/i.test(message);
 }
 
+function poolEnergyOptimization(message: string) {
+  const normalized = normalize(message);
+  return /\bpac (?:de )?(?:la )?piscine\b|pompe a chaleur (?:de )?(?:la )?piscine/.test(normalized) &&
+    /plus de production solaire|batterie|eau.{0,12}\d{2}\s*c|trop longtemps|pas d interet|ameliorer/.test(normalized);
+}
+
 function intendedDevice(message: string, devices: AssistantDevice[]) {
   const normalized = normalize(message);
   const aliasPatterns: Array<[RegExp, RegExp]> = [
     [/ballon|chauffe eau|eau chaude/, /ballon|chauffe eau/],
     [/filtration/, /filtration/],
-    [/pac piscine|pompe a chaleur piscine/, /pac piscine|pompe a chaleur/],
+    [/pac (?:de )?(?:la )?piscine|pompe a chaleur (?:de )?(?:la )?piscine/, /pac piscine|pompe a chaleur/],
     [/lumiere piscine|eclairage piscine/, /eclairage piscine|lumiere piscine/],
     [/terrasse/, /terrasse/],
     [/chauffage/, /chauffage/],
@@ -134,7 +140,10 @@ export function proposeSafeAutomation(
       message: "Cette demande touche à la sécurité ou à un accès sensible. Elle ne peut pas être automatisée par l’assistant.",
     };
   }
-  const trigger = requestedTrigger(request);
+  const poolOptimization = poolEnergyOptimization(request);
+  const trigger = poolOptimization
+    ? { type: "sunset" as const, time: null }
+    : requestedTrigger(request);
   if (trigger.type === "time" && !trigger.time) {
     return {
       status: "needs_clarification",
@@ -154,7 +163,7 @@ export function proposeSafeAutomation(
       message: "Je ne trouve pas d’appareil pilotable correspondant dans cette maison. Vérifiez son association ou demandez l’aide du support.",
     };
   }
-  const active = desiredActive(request);
+  const active = poolOptimization ? false : desiredActive(request);
   const verb = active ? "Allumer" : "Éteindre";
   const weekdays = requestedWeekdays(request);
   const triggerLabel = scheduleLabel(trigger.type, trigger.time, weekdays);
