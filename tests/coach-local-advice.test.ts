@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { batterySavingsGuidance, financialCoachGuidance, observedPeriodLabel, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance } from '../lib/coach-local-advice';
+import { batterySavingsGuidance, financialCoachGuidance, observedPeriodLabel, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from '../lib/coach-local-advice';
 
 test('annonce exactement la période réellement observée', () => {
   assert.equal(observedPeriodLabel(1), 'Sur la journée disponible');
@@ -45,6 +45,52 @@ test('transforme le surplus historique en priorités limitées aux appareils con
   assert.match(answer, /PAC piscine, Borne Lektrico/);
   assert.match(answer, /aucun démarrage immédiat/i);
   assert.doesNotMatch(answer, /chauffe-eau/i);
+});
+
+test('date correctement le créneau de recharge et refuse de confondre aujourd’hui avec demain', () => {
+  const answer = vehicleChargingGuidance({
+    now: new Date('2026-08-09T00:30:00+02:00'),
+    vehicleWatts: 0,
+    currentExportWatts: 0,
+    forecastSlots: [
+      { startsAt: '2026-08-09T12:00:00+02:00', estimatedWh: 3200 },
+      { startsAt: '2026-08-10T12:00:00+02:00', estimatedWh: 4100 },
+    ],
+    forecastConfidence: 'low',
+    reservePercent: 20,
+    offPeakPeriods: [{ start: '00:00', end: '08:00' }],
+  });
+  assert.match(answer, /demain vers 12:00/);
+  assert.match(answer, /confiance est faible/i);
+  assert.match(answer, /attendez que le surplus soit réellement mesuré/i);
+  assert.match(answer, /00:00–08:00/);
+  assert.match(answer, /20 %/);
+
+  const today = vehicleChargingGuidance({
+    now: new Date('2026-08-09T00:30:00+02:00'),
+    vehicleWatts: 0,
+    currentExportWatts: 0,
+    forecastSlots: [{ startsAt: '2026-08-09T12:00:00+02:00', estimatedWh: 3200 }],
+    forecastConfidence: 'medium',
+    reservePercent: 20,
+    offPeakPeriods: [],
+  });
+  assert.match(today, /aujourd’hui vers 12:00/);
+  assert.doesNotMatch(today, /demain/);
+});
+
+test('conseille immédiatement la recharge seulement sur un surplus réellement mesuré', () => {
+  const answer = vehicleChargingGuidance({
+    now: new Date('2026-08-09T12:00:00+02:00'),
+    vehicleWatts: 0,
+    currentExportWatts: 1800,
+    forecastSlots: [],
+    forecastConfidence: 'low',
+    reservePercent: 20,
+    offPeakPeriods: [],
+  });
+  assert.match(answer, /1[  ]800 W sont actuellement injectés/);
+  assert.match(answer, /démarrez progressivement/i);
 });
 
 test('n’invente pas le gain financier de la batterie', () => {

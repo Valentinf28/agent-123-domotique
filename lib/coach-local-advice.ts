@@ -86,6 +86,57 @@ export function solarAutoconsumptionGuidance(input: {
   return `${measured} ${priority} ${now} Pour préserver la batterie, un appareil ne doit démarrer que lorsque sa puissance est couverte ; la PAC piscine doit aussi être arrêtée au coucher du soleil si elle n’a plus besoin de chauffer.`;
 }
 
+function parisDay(value: string | Date) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(value));
+}
+
+function relativeDayLabel(now: Date, target: Date) {
+  const nowDay = parisDay(now);
+  const targetDay = parisDay(target);
+  if (targetDay === nowDay) return "aujourd’hui";
+  const difference = Math.round((Date.parse(`${targetDay}T12:00:00Z`) - Date.parse(`${nowDay}T12:00:00Z`)) / 86_400_000);
+  if (difference === 1) return 'demain';
+  return `le ${new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric', month: 'long' }).format(target)}`;
+}
+
+export function vehicleChargingGuidance(input: {
+  now: Date;
+  vehicleWatts: number;
+  currentExportWatts: number;
+  forecastSlots: Array<{ startsAt: string; estimatedWh: number }>;
+  forecastConfidence: 'high' | 'medium' | 'low';
+  reservePercent: number;
+  offPeakPeriods: Array<{ start: string; end: string }>;
+}) {
+  if (input.vehicleWatts > 100) {
+    return `La voiture charge actuellement à ${new Intl.NumberFormat('fr-FR').format(Math.round(input.vehicleWatts))} W. Conservez une intensité ajustée au surplus et la réserve batterie à ${input.reservePercent} %.`;
+  }
+  if (input.currentExportWatts > 300) {
+    return `La voiture ne charge pas et ${new Intl.NumberFormat('fr-FR').format(Math.round(input.currentExportWatts))} W sont actuellement injectés. Si elle est branchée, démarrez progressivement sur ce surplus sans faire passer la batterie sous ${input.reservePercent} %.`;
+  }
+  const future = input.forecastSlots.filter((slot) => Date.parse(slot.startsAt) > input.now.getTime());
+  const peak = [...future].sort((left, right) => right.estimatedWh - left.estimatedWh)[0];
+  if (peak && peak.estimatedWh >= 300) {
+    const target = new Date(peak.startsAt);
+    const time = new Intl.DateTimeFormat('fr-FR', {
+      timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit',
+    }).format(target);
+    const confidence = input.forecastConfidence === 'low'
+      ? "La confiance est faible : attendez que le surplus soit réellement mesuré avant de lancer ou d’augmenter la charge."
+      : "La borne peut augmenter progressivement la charge lorsque le surplus est réellement mesuré.";
+    const fallback = input.offPeakPeriods.length
+      ? ` Si la voiture doit être prête avant, utilisez en repli les heures creuses ${input.offPeakPeriods.map((period) => `${period.start}–${period.end}`).join(', ')}.`
+      : '';
+    return `Le meilleur point de la prévision est ${relativeDayLabel(input.now, target)} vers ${time}. ${confidence} La réserve batterie reste fixée à ${input.reservePercent} %.${fallback}`;
+  }
+  const fallback = input.offPeakPeriods.length
+    ? `Utilisez en repli les heures creuses ${input.offPeakPeriods.map((period) => `${period.start}–${period.end}`).join(', ')} si la voiture doit être prête.`
+    : "Choisissez une recharge manuelle selon l’heure de départ souhaitée.";
+  return `Aucun créneau solaire suffisamment fiable n’est disponible pour le moment. ${fallback} Ne sollicitez pas la batterie sous sa réserve de ${input.reservePercent} %.`;
+}
+
 export function batterySavingsGuidance(pricesConfigured: boolean) {
   const price = pricesConfigured
     ? 'Le tarif est configuré, mais il manque encore le bilan dédié des cycles de batterie pour isoler ce gain.'

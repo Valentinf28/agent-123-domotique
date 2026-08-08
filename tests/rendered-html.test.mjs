@@ -479,7 +479,9 @@ test("inclut les assistants et le nouveau tarif dans le forfait client", async (
   assert.match(localAdvice, /flux réseau mesurés/);
   assert.match(localAdvice, /pas une facture/);
   assert.match(route, /Le reste de la maison est regroupé séparément pour éviter tout double comptage/);
-  assert.match(route, /La voiture ne charge pas actuellement/);
+  assert.match(route, /vehicleChargingGuidance/);
+  assert.match(localAdvice, /relativeDayLabel/);
+  assert.match(localAdvice, /attendez que le surplus soit réellement mesuré/);
   assert.doesNotMatch(route, /agentCommands|ha\.services\.call/);
   assert.match(coach, /consumeAssistantRequest/);
   assert.match(heartbeat, /fiveMinuteBucket/);

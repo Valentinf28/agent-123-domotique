@@ -13,7 +13,7 @@ import { tariffGuidance } from "../../../../lib/energy-insights";
 import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../../lib/coach-guardrails";
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
 import { asksForBatteryEndurance, asksForCoachActionPlan, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
-import { batterySavingsGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance } from "../../../../lib/coach-local-advice";
+import { batterySavingsGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from "../../../../lib/coach-local-advice";
 
 type AutomationProposal = {
   name: string;
@@ -121,11 +121,15 @@ function localReply(
       answer = unavailable;
     } else {
       const exportWatts = Math.max(0, -context.current.gridWatts);
-      answer = context.current.vehicleWatts > 100
-        ? `La voiture charge actuellement à ${watts(context.current.vehicleWatts)}. Le Coach recommande de laisser la borne ajuster l’intensité et de conserver la réserve batterie configurée.`
-        : exportWatts > 100
-          ? `La voiture ne charge pas actuellement et environ ${watts(exportWatts)} sont exportés. Vérifiez qu’elle est branchée ; la borne pourra ensuite ajuster la charge au surplus.`
-          : "La voiture ne charge pas actuellement et aucun surplus significatif n’est mesuré. Le démarrage doit attendre un créneau plus favorable ou un mode choisi par le client.";
+      answer = vehicleChargingGuidance({
+        now: new Date(),
+        vehicleWatts: context.current.vehicleWatts,
+        currentExportWatts: exportWatts,
+        forecastSlots: context.solarForecast.slots,
+        forecastConfidence: context.solarForecast.confidence,
+        reservePercent: context.dossier.batteryReservePercent,
+        offPeakPeriods: context.tariff.plan === "hp_hc" ? context.tariff.offPeakPeriods : [],
+      });
     }
   } else if (/quoi|appareil|équipement|equipement|consomm/.test(normalized) && topConsumers.length) {
     const list = topConsumers
@@ -405,6 +409,7 @@ export async function POST(request: Request) {
       (asksForBatteryEndurance(message) ? localReply(message, context) : null) ??
       (asksForCoachActionPlan(message) ? localReply(message, context) : null) ??
       (equipmentMissing ? localReply(message, context) : null) ??
+      (intent === "vehicle" ? localReply(message, context) : null) ??
       (needsDeterministicFinancialAnswer(message) ? localReply(message, context) : null) ??
       (intent === "solar" ? localReply(message, context) : null) ??
       await openAiReply(message, context, conversation) ??
