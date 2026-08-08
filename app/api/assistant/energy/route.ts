@@ -12,7 +12,7 @@ import {
 import { tariffGuidance } from "../../../../lib/energy-insights";
 import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../../lib/coach-guardrails";
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
-import { coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
+import { asksForCoachActionPlan, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
 import { batterySavingsGuidance, observedPeriodLabel, solarCoachGuidance, unavailableEquipmentGuidance } from "../../../../lib/coach-local-advice";
 
 type AutomationProposal = {
@@ -75,7 +75,16 @@ function localReply(
     .filter((item) => item.id !== "other-home" && item.watts > 0)
     .slice(0, 3);
   let answer: string;
-  if (intent === "hot-water") {
+  if (asksForCoachActionPlan(message)) {
+    if (context.actionPlan.status === "ready") {
+      const actions = context.actionPlan.actions
+        .map((action) => `${action.priority}. ${action.title} — ${action.impact}`)
+        .join(" ; ");
+      answer = `Après ${context.actionPlan.learningDays} jours de mesures, voici les trois priorités : ${actions}. Ouvrez une action pour obtenir le conseil détaillé ou préparer une automatisation applicable.`;
+    } else {
+      answer = `Le plan personnalisé est encore en préparation : ${context.actionPlan.daysRemaining} jour${context.actionPlan.daysRemaining > 1 ? "s" : ""} d’analyse reste${context.actionPlan.daysRemaining > 1 ? "nt" : ""}. Le Coach continue néanmoins de donner des conseils avec les mesures déjà disponibles.`;
+    }
+  } else if (intent === "hot-water") {
     const unavailable = unavailableEquipmentGuidance("hot-water", context.equipmentCapabilities);
     if (unavailable) {
       answer = unavailable;
@@ -344,6 +353,7 @@ export async function POST(request: Request) {
     const equipmentMissing = (intent === "vehicle" && !context.equipmentCapabilities.vehicle) ||
       (intent === "hot-water" && !context.equipmentCapabilities.hotWater);
     const reply = poolHeatPumpCoachReply(message) ??
+      (asksForCoachActionPlan(message) ? localReply(message, context) : null) ??
       (equipmentMissing ? localReply(message, context) : null) ??
       (needsDeterministicFinancialAnswer(message) ? localReply(message, context) : null) ??
       await openAiReply(message, context, conversation) ??

@@ -14,3 +14,9 @@ export function coachQuestionIntent(message: string): CoachQuestionIntent {
 export function needsDeterministicFinancialAnswer(message: string) {
   return coachQuestionIntent(message) === 'money';
 }
+
+export function asksForCoachActionPlan(message: string) {
+  const normalized = message.toLowerCase();
+  return /(?:plan|priorit[ée]s?|recommandations?|actions?)/.test(normalized) &&
+    /(?:14\s*jours|deux\s+semaines|analyse|prochain|propose|conseille|faire)/.test(normalized);
+}
