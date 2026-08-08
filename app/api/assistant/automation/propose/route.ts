@@ -7,7 +7,11 @@ import {
 } from "../../../../../lib/automation-assistant";
 import { consumeAssistantRequest } from "../../../../../lib/energy-coach";
 import { getAgentPortalHome } from "../../../../../lib/agent-home";
-import { portalApiAuthorized, portalHouseAuthorized } from "../../../../../lib/portal-api-auth";
+import {
+  portalApiAdminAuthorized,
+  portalApiAuthorized,
+  portalHouseAuthorized,
+} from "../../../../../lib/portal-api-auth";
 import { subscriptionSummary } from "../../../../../lib/subscription";
 
 const help = {
@@ -48,9 +52,11 @@ export async function POST(request: Request) {
     if (!await portalHouseAuthorized(dossierPublicId)) {
       return Response.json({ error: "Accès refusé pour cette maison" }, { status: 403 });
     }
-    if (!subscriptionSummary(dossier).remoteAccessAllowed) {
+    const premiumAllowed = subscriptionSummary(dossier).remoteAccessAllowed ||
+      await portalApiAdminAuthorized();
+    if (!premiumAllowed) {
       return Response.json({
-        error: "L’assistant domotique est inclus dans le forfait Premium actif.",
+        error: "Activez ou renouvelez le forfait Premium pour utiliser l’assistant domotique.",
         code: "PREMIUM_REQUIRED",
       }, { status: 402 });
     }

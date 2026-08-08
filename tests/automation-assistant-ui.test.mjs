@@ -21,6 +21,12 @@ test("propose la documentation puis le support en dernier recours", () => {
   assert.match(proposeRoute, /PREMIUM_REQUIRED/);
 });
 
+test("permet à l’installateur de présenter l’assistant sans modifier le forfait client", () => {
+  assert.match(proposeRoute, /portalApiAdminAuthorized/);
+  assert.match(proposeRoute, /remoteAccessAllowed\s*\|\|/);
+  assert.match(proposeRoute, /Activez ou renouvelez le forfait Premium/);
+});
+
 test("présente des exemples de règles réellement prises en charge", () => {
   assert.match(portal, /Allume la filtration en semaine à 10h30/);
   assert.match(portal, /coucher du soleil le week-end/);
