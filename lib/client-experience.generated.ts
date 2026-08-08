@@ -17,6 +17,13 @@ export const CLIENT_EXPERIENCE = {
       "eyebrow": "Énergie"
     },
     {
+      "key": "coach",
+      "label": "Coach",
+      "mobileIcon": "creation",
+      "portalIcon": "✦",
+      "eyebrow": "Conseils"
+    },
+    {
       "key": "heating",
       "label": "Chauffage",
       "mobileIcon": "home-thermometer-outline",

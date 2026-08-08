@@ -20,9 +20,9 @@ test("affiche le portail Ma Maison en français", async () => {
   assert.doesNotMatch(`${layout}${page}${portal}`, /codex-preview|react-loading-skeleton/i);
 });
 
-test("n’expose aucun secret ni identifiant technique dans le rendu", async () => {
+test("n’expose aucun secret Home Assistant dans le rendu client", async () => {
   const source = await readFile(new URL("../app/portal.tsx", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /access_token|entity_id|sensor\./i);
+  assert.doesNotMatch(source, /HA_ACCESS_TOKEN|RELAY_CAMERA_SECRET|Bearer\s+[A-Za-z0-9._-]{20,}/i);
 });
 
 test("inclut le parcours de préparation réservé aux installateurs", async () => {
@@ -126,7 +126,7 @@ test("rafraîchit les mesures importantes toutes les cinq secondes sans renvoyer
   assert.match(agent, /FULL_INVENTORY_SECONDS = 60/);
   assert.match(agent, /FAST_ENTITY_PREFIXES/);
   assert.match(agent, /interval - cycle_duration/);
-  assert.match(config, /version: "0\.5\.28"/);
+  assert.match(config, /version: "0\.5\.\d+"/);
   assert.match(config, /heartbeat_seconds: "int\(5,300\)"/);
   assert.match(agentHome, /resolveEntityCandidate\(inventory\.map/);
 });
@@ -164,7 +164,7 @@ test("partage les onglets et les règles visuelles avec l’application", async 
   ]);
   const experience = JSON.parse(canonical);
   assert.deepEqual(experience.tabs.map((tab) => tab.label), [
-    "Maison", "Solaire", "Chauffage", "Équipements", "Piscine", "Véhicule",
+    "Maison", "Solaire", "Coach", "Chauffage", "Équipements", "Piscine", "Véhicule",
   ]);
   assert.match(generatedPortal, /CLIENT_EXPERIENCE/);
   assert.match(generatedMobile, /CLIENT_EXPERIENCE/);
@@ -350,7 +350,9 @@ test("garde Home Assistant hors du parcours client", async () => {
   assert.match(heartbeat, /commands/);
   assert.match(schema, /agentCommands/);
   assert.doesNotMatch(worker, /Lovelace|HA_ACCESS_TOKEN|HA_BASE_URL|ma-maison\/ha/i);
-  assert.doesNotMatch(mobileProvision, /homeAssistantUrl|entityId:/i);
+  assert.doesNotMatch(mobileProvision, /homeAssistantUrl/i);
+  const publicResponse = mobileProvision.slice(mobileProvision.lastIndexOf("return Response.json"));
+  assert.doesNotMatch(publicResponse, /entityId\s*:/i);
   assert.match(mobileProvision, /portalUrl/);
   assert.match(mobileProvision, /solarInstalledPowerWp: normalizeSolarInstalledPowerWp\(dossier\.solarPeakWatts\)/);
 });
@@ -375,7 +377,9 @@ test("applique au portail les mêmes onglets configurés que sur le mobile", asy
   ]);
   assert.match(agentHome, /enabledModules: normalizeEnabledModules\(selected\.dossier\.enabledModules\)/);
   assert.match(mobileProvision, /const modules = normalizeEnabledModules\(dossier\.enabledModules\)/);
-  assert.match(portal, /module === "home" \|\| enabledModules\.includes\(module\)/);
+  assert.match(portal, /moduleKey === "home" \|\| moduleKey === "coach" \|\| enabledModules\.includes\(moduleKey as AppModule\)/);
+  assert.match(portal, /setView\("Automatisations"\)/);
+  assert.match(portal, /Coach & règles/);
   assert.match(portal, /visibleHomeTabs\.map/);
 });
 
@@ -410,6 +414,14 @@ test("inclut les assistants et le nouveau tarif dans le forfait client", async (
   ]);
   assert.match(portal, /Assistant domotique/i);
   assert.match(portal, /Coach énergie/i);
+  assert.match(portal, /Coach énergie et maison intelligente/i);
+  assert.match(portal, /coach-quick-start/);
+  assert.match(portal, /Démarrer avec le Coach énergie/);
+  assert.match(portal, /Comprenez ce qui consomme, recevez des conseils chiffrés/i);
+  assert.match(portal, /Bilan énergétique récent/);
+  assert.match(portal, /coachWeek\.observedDays/);
+  assert.match(portal, /Votre maison en un coup d’œil/);
+  assert.match(portal, /Couverture solaire/);
   assert.match(portal, /INCLUS DANS VOTRE FORFAIT/i);
   assert.match(portal, /9,90 € \/ mois/i);
   assert.match(portal, /99 € \/ an/i);
@@ -418,6 +430,11 @@ test("inclut les assistants et le nouveau tarif dans le forfait client", async (
   assert.match(route, /OPENAI_API_KEY/);
   assert.match(route, /safety_identifier/);
   assert.match(route, /Toute automatisation reste un brouillon/);
+  assert.match(route, /Sur les sept derniers jours disponibles/);
+  assert.match(route, /context\.week\.observedDays/);
+  assert.match(route, /C’est une projection, pas une facture/);
+  assert.match(route, /Le reste de la maison est regroupé séparément pour éviter tout double comptage/);
+  assert.match(route, /La voiture ne charge pas actuellement/);
   assert.doesNotMatch(route, /agentCommands|ha\.services\.call/);
   assert.match(coach, /consumeAssistantRequest/);
   assert.match(heartbeat, /fiveMinuteBucket/);

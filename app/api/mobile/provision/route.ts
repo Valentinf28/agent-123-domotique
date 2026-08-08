@@ -57,6 +57,26 @@ function bindingsFrom(value: string) {
   }
 }
 
+function measuredLoadsFrom(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed
+      .filter((load) => load?.enabled !== false
+        && load?.showInConsumption !== false
+        && typeof load?.powerEntityId === "string"
+        && load.powerEntityId.includes("."))
+      .map((load) => ({
+        id: String(load.id || load.powerEntityId),
+        name: String(load.name || "Équipement"),
+        category: String(load.category || "other"),
+        icon: String(load.icon || "ϟ"),
+        powerEntityId: load.powerEntityId,
+      })) : [];
+  } catch {
+    return [];
+  }
+}
+
 async function mobileRelayCredential(dossier: typeof installationDossiers.$inferSelect) {
   const relayBaseUrl = process.env.RELAY_BASE_URL?.trim().replace(/\/+$/, "");
   const relaySecret = process.env.RELAY_CAMERA_SECRET?.trim();
@@ -126,10 +146,12 @@ export async function POST(request: Request) {
       subscription: subscriptionSummary(dossier),
       tariffPlan: dossier.tariffPlan === "hp_hc" ? "hp_hc" : "base",
       offPeakPeriods: offPeakPeriodsFromDossier(dossier.offPeakPeriodsJson),
+      allowGridExport: dossier.allowGridExport,
       solarInstalledPowerWp: normalizeSolarInstalledPowerWp(dossier.solarPeakWatts),
       modules,
       views,
       bindings: bindingReport.bindings,
+      measuredLoads: measuredLoadsFrom(dossier.flexibleLoadsJson),
       configuredDevices: configuredDevices
         .filter((device) => Boolean(device.matchedEntityId))
         .map((device) => ({

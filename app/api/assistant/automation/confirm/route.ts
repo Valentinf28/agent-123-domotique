@@ -37,7 +37,9 @@ export async function POST(request: Request) {
     }
     const result = await queueAgentAutomationCreate({
       name: payload.rule.name,
+      triggerType: payload.rule.triggerType,
       time: payload.rule.time,
+      weekdays: payload.rule.weekdays,
       publicDeviceId: payload.rule.publicDeviceId,
       desiredActive: payload.rule.desiredActive,
     }, payload.dossierPublicId);

@@ -964,7 +964,9 @@ function automationService(domain: string, desiredActive: boolean) {
 export async function queueAgentAutomationCreate(
   input: {
     name: string;
-    time: string;
+    triggerType?: "time" | "sunrise" | "sunset";
+    time: string | null;
+    weekdays?: string[];
     publicDeviceId: string;
     desiredActive: boolean;
   },
@@ -972,9 +974,12 @@ export async function queueAgentAutomationCreate(
 ) {
   const name = input.name.trim();
   if (name.length < 3 || name.length > 80) throw new Error("INVALID_NAME");
-  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input.time)) {
+  const triggerType = input.triggerType ?? "time";
+  if (triggerType === "time" && (typeof input.time !== "string" || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input.time))) {
     throw new Error("INVALID_TIME");
   }
+  if (!["time", "sunrise", "sunset"].includes(triggerType)) throw new Error("INVALID_TRIGGER");
+  const weekdays = (input.weekdays ?? []).filter((day) => ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].includes(day));
   const { selected, item } = await automationTarget(
     input.publicDeviceId,
     dossierPublicId,
@@ -987,7 +992,9 @@ export async function queueAgentAutomationCreate(
     action: "ha.automation.create",
     payloadJson: JSON.stringify({
       name,
+      triggerType,
       time: input.time,
+      weekdays,
       entityId: item.entityId,
       domain,
       service: automationService(domain, input.desiredActive),

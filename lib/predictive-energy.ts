@@ -94,6 +94,13 @@ function finite(value: number, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function formatEnergyKwh(valueWh: number) {
+  return new Intl.NumberFormat("fr-FR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(valueWh / 1_000);
+}
+
 export function buildAdaptiveSolarForecast(
   input: AdaptiveSolarForecastInput,
 ): AdaptiveSolarForecast {
@@ -188,14 +195,20 @@ export function buildAdaptiveSolarForecast(
     confidence = "medium";
   }
 
-  const observedRatio = liveRatio ?? elapsedRatio;
+  // The card presents daily energy values, so the comparison must use the
+  // cumulative production expected at the same time of day. Instantaneous
+  // power remains only as a fallback when Forecast.Solar has not provided a
+  // usable elapsed-energy value yet (typically around sunrise).
+  const observedRatio = elapsedRatio ?? liveRatio;
   const observedGap = observedRatio === null
     ? null
     : Math.max(0, Math.round((1 - observedRatio) * 100));
   const explanation = observedGap === null
     ? "La prévision prudente applique les pertes habituelles de l’installation jusqu’à disposer de suffisamment de mesures réelles."
     : observedGap >= 10
-      ? `${cloudCover !== null && cloudCover >= 85 ? "Le ciel est très couvert et " : ""}la production réelle est ${observedGap} % sous la puissance attendue. La prévision prudente est recalculée à chaque actualisation.`
+      ? elapsedRatio !== null
+        ? `${cloudCover !== null && cloudCover >= 85 ? "Ciel très couvert : " : ""}${formatEnergyKwh(actualTodayWh)} kWh produits pour ${formatEnergyKwh(expectedElapsedWh)} kWh initialement prévus à cette heure (${observedGap} % de moins).`
+        : `${cloudCover !== null && cloudCover >= 85 ? "Ciel très couvert : " : ""}${Math.round(actualSolarWatts)} W produits pour ${Math.round(forecastSolarWatts)} W attendus à cet instant (${observedGap} % de moins).`
       : null;
 
   return {

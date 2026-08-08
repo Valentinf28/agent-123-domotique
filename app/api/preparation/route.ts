@@ -29,6 +29,7 @@ type EnergyConfigurationPayload = {
   flexibleLoads?: FlexibleLoadPayload[];
   tariffPlan?: string;
   offPeakPeriods?: OffPeakPeriodPayload[];
+  allowGridExport?: boolean;
 };
 
 type SolarArrayPayload = {
@@ -55,6 +56,8 @@ type FlexibleLoadPayload = {
   minimumRunMinutes?: number;
   priority?: number;
   enabled?: boolean;
+  powerEntityId?: string;
+  showInConsumption?: boolean;
 };
 
 const allowedLevels = new Set(["Automatique", "Assistée", "Expert"]);
@@ -155,6 +158,8 @@ function sanitizeFlexibleLoads(value: unknown) {
       minimumRunMinutes: boundedInteger(item.minimumRunMinutes, 60, 15, 720),
       priority: boundedInteger(item.priority, 3, 1, 5),
       enabled: item.enabled === true,
+      powerEntityId: String(item.powerEntityId ?? "").trim().toLowerCase().slice(0, 160),
+      showInConsumption: item.showInConsumption !== false,
     };
   });
 }
@@ -207,6 +212,7 @@ export async function GET(request: Request) {
           flexibleLoads: flexibleLoadsFrom(dossier.flexibleLoadsJson),
           tariffPlan: dossier.tariffPlan === "hp_hc" ? "hp_hc" : "base",
           offPeakPeriods: offPeakPeriodsFrom(dossier.offPeakPeriodsJson),
+          allowGridExport: dossier.allowGridExport,
         },
       },
       items: items.map((item) => ({
@@ -290,6 +296,9 @@ export async function PUT(request: Request) {
       offPeakPeriods: requestedEnergy.offPeakPeriods === undefined
         ? offPeakPeriodsFrom(dossier.offPeakPeriodsJson)
         : sanitizeOffPeakPeriods(requestedEnergy.offPeakPeriods),
+      allowGridExport: requestedEnergy.allowGridExport === undefined
+        ? dossier.allowGridExport
+        : requestedEnergy.allowGridExport === true,
     };
     const persistedItems = items.map((item) => ({
       ...item, publicId: publicId("planned"), dossierId: dossier.id,
@@ -309,6 +318,7 @@ export async function PUT(request: Request) {
       flexibleLoadsJson: JSON.stringify(energyConfiguration.flexibleLoads),
       tariffPlan: energyConfiguration.tariffPlan,
       offPeakPeriodsJson: JSON.stringify(energyConfiguration.offPeakPeriods),
+      allowGridExport: energyConfiguration.allowGridExport,
       updatedAt: new Date().toISOString(),
     })
       .where(and(eq(installationDossiers.id, dossier.id), eq(installationDossiers.status, "preparation")));

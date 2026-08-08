@@ -10,7 +10,9 @@ export type AssistantDevice = {
 export type SafeAutomationRule = {
   version: 1;
   name: string;
-  time: string;
+  triggerType: "time" | "sunrise" | "sunset";
+  time: string | null;
+  weekdays: string[];
   publicDeviceId: string;
   deviceName: string;
   desiredActive: boolean;
@@ -47,6 +49,41 @@ function requestedTime(message: string) {
   const match = normalized.match(/(?:^|\s)([01]?\d|2[0-3])\s*(?:h|:)\s*([0-5]\d)?(?:\s|$)/);
   if (!match) return null;
   return `${match[1].padStart(2, "0")}:${(match[2] ?? "00").padStart(2, "0")}`;
+}
+
+const weekdayAliases: Array<[string, RegExp]> = [
+  ["mon", /\blundi\b/], ["tue", /\bmardi\b/], ["wed", /\bmercredi\b/],
+  ["thu", /\bjeudi\b/], ["fri", /\bvendredi\b/], ["sat", /\bsamedi\b/],
+  ["sun", /\bdimanche\b/],
+];
+
+function requestedWeekdays(message: string) {
+  const normalized = normalize(message);
+  if (/\b(?:semaine|jours ouvrables|du lundi au vendredi)\b/.test(normalized)) {
+    return ["mon", "tue", "wed", "thu", "fri"];
+  }
+  if (/\bweek ?end\b/.test(normalized)) return ["sat", "sun"];
+  return weekdayAliases.filter(([, pattern]) => pattern.test(normalized)).map(([day]) => day);
+}
+
+function requestedTrigger(message: string) {
+  const normalized = normalize(message);
+  if (/\b(?:coucher du soleil|a la tombee de la nuit)\b/.test(normalized)) {
+    return { type: "sunset" as const, time: null };
+  }
+  if (/\b(?:lever du soleil|au lever du jour)\b/.test(normalized)) {
+    return { type: "sunrise" as const, time: null };
+  }
+  return { type: "time" as const, time: requestedTime(message) };
+}
+
+function scheduleLabel(triggerType: SafeAutomationRule["triggerType"], time: string | null, weekdays: string[]) {
+  const days = weekdays.length === 0 ? "Tous les jours" : weekdays.length === 5 && !weekdays.includes("sat")
+    ? "Du lundi au vendredi" : weekdays.length === 2 && weekdays.includes("sat") && weekdays.includes("sun")
+      ? "Le week-end" : `Les ${weekdayAliases.filter(([day]) => weekdays.includes(day)).map(([, pattern]) => pattern.source.replace(/\\b/g, "")).join(", ")}`;
+  if (triggerType === "sunset") return `${days}, au coucher du soleil`;
+  if (triggerType === "sunrise") return `${days}, au lever du soleil`;
+  return `${days} à ${time}`;
 }
 
 function desiredActive(message: string) {
@@ -97,14 +134,8 @@ export function proposeSafeAutomation(
       message: "Cette demande touche à la sécurité ou à un accès sensible. Elle ne peut pas être automatisée par l’assistant.",
     };
   }
-  if (/\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|semaine|week end|weekend)\b/i.test(normalize(request))) {
-    return {
-      status: "unsupported",
-      message: "Les calendriers hebdomadaires complexes ne sont pas encore créés automatiquement. Le support peut vous aider à les préparer.",
-    };
-  }
-  const time = requestedTime(request);
-  if (!time) {
+  const trigger = requestedTrigger(request);
+  if (trigger.type === "time" && !trigger.time) {
     return {
       status: "needs_clarification",
       message: "À quelle heure cette action doit-elle avoir lieu chaque jour ?",
@@ -125,14 +156,18 @@ export function proposeSafeAutomation(
   }
   const active = desiredActive(request);
   const verb = active ? "Allumer" : "Éteindre";
+  const weekdays = requestedWeekdays(request);
+  const triggerLabel = scheduleLabel(trigger.type, trigger.time, weekdays);
   const rule: SafeAutomationRule = {
     version: 1,
-    name: `${verb} ${target.device.name} à ${time}`,
-    time,
+    name: `${verb} ${target.device.name} · ${triggerLabel.toLowerCase()}`,
+    triggerType: trigger.type,
+    time: trigger.time,
+    weekdays,
     publicDeviceId: target.device.publicId,
     deviceName: target.device.name,
     desiredActive: active,
-    triggerLabel: `Tous les jours à ${time}`,
+    triggerLabel,
     actionLabel: `${verb} « ${target.device.name} »`,
   };
   return {

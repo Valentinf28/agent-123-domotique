@@ -1,9 +1,10 @@
 {
   "moonPhase": ["sensor.moon_phase", "sensor.phase_de_la_lune", "sensor.moon", "phase de la lune", "moon phase"],
   "weatherCondition": ["weather.forecast_maison", "weather.escorpain", "météo maison", "forecast maison"],
+  "currentPrecipitation": ["sensor.escorpain_precipitation", "sensor.precipitation", "sensor.rain_rate", "binary_sensor.rain", "précipitations actuelles", "pluie actuelle"],
   "solarPower": ["sensor.onduleur_pv_power", "sensor.inverter_pv_power", "puissance solaire", "production solaire", "solar power", "pv power"],
   "homePower": ["sensor.shellyem3_483fdac38616_channel_b_power", "sensor.onduleur_load_power", "sensor.inverter_load_power", "consommation maison", "puissance maison", "home power"],
-  "gridPower": ["sensor.shellyem3_483fdac38616_channel_c_power", "sensor.onduleur_grid_power", "sensor.inverter_grid_power", "sensor.1_2_3_home_puissance_reseau", "puissance reseau", "grid power"],
+  "gridPower": ["sensor.onduleur_grid_power", "sensor.inverter_grid_power", "sensor.1_2_3_home_puissance_reseau", "sensor.shellyem3_483fdac38616_channel_c_power", "puissance reseau", "grid power"],
   "gridImport": ["sensor.onduleur_today_energy_import", "grid import", "energie achetee"],
   "gridExport": ["sensor.onduleur_today_energy_export", "injection reseau", "grid export", "energie exportee"],
   "batteryLevel": ["sensor.onduleur_battery", "sensor.batterie_deye_soc", "sensor.inverter_battery", "niveau batterie", "batterie soc"],

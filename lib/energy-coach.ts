@@ -18,6 +18,12 @@ import {
   assistantQuotaBucket,
   type AssistantQuotaKind,
 } from "./assistant-quota";
+import {
+  consumptionBreakdownFromInventory,
+  type ConsumptionBreakdownItem,
+} from "./consumption-breakdown";
+import { HOUSE_BINDINGS } from "./house-bindings.generated";
+import { resolveEntityCandidate } from "./entity-resolution.generated.js";
 export {
   ASSISTANT_MONTHLY_LIMIT,
   assistantQuotaAllows,
@@ -46,6 +52,8 @@ type FlexibleLoadConfiguration = {
   minimumRunMinutes: number;
   priority: number;
   enabled: boolean;
+  powerEntityId?: string;
+  showInConsumption?: boolean;
 };
 
 const bindings = {
@@ -65,9 +73,8 @@ const bindings = {
     "sensor.escorpain_cloud_cover",
     "sensor.cloud_cover",
   ],
-  poolTemperature: ["input_number.demo_pool_temperature"],
-  poolSetpoint: ["input_number.demo_pool_setpoint"],
-  poolHeatPump: ["input_boolean.demo_pool_heat_pump"],
+  poolTemperature: [...HOUSE_BINDINGS.poolWaterTemperature, "input_number.demo_pool_temperature"],
+  poolHeatPump: [...HOUSE_BINDINGS.poolHeatPump, "input_boolean.demo_pool_heat_pump"],
 } as const;
 
 function parseInventory(value: string): EnergyInventoryItem[] {
@@ -82,23 +89,40 @@ function parseInventory(value: string): EnergyInventoryItem[] {
 }
 
 function numberFrom(inventory: EnergyInventoryItem[], ids: readonly string[]) {
-  const item = ids.map((id) => inventory.find((candidate) => candidate.entityId === id))
-    .find(Boolean);
+  const item = inventoryItemFrom(inventory, ids);
   const value = Number(item?.state);
   return Number.isFinite(value) ? value : 0;
 }
 
 function nullableNumberFrom(inventory: EnergyInventoryItem[], ids: readonly string[]) {
-  const item = ids.map((id) => inventory.find((candidate) => candidate.entityId === id))
-    .find(Boolean);
+  const item = inventoryItemFrom(inventory, ids);
   const value = Number(item?.state);
   return Number.isFinite(value) ? value : null;
 }
 
 function activeFrom(inventory: EnergyInventoryItem[], ids: readonly string[]) {
-  const item = ids.map((id) => inventory.find((candidate) => candidate.entityId === id))
-    .find(Boolean);
+  const item = inventoryItemFrom(inventory, ids);
   return Boolean(item && ["on", "heat", "heating"].includes(item.state.toLowerCase()));
+}
+
+function inventoryItemFrom(inventory: EnergyInventoryItem[], ids: readonly string[]) {
+  const candidate = resolveEntityCandidate(inventory.map((item) => ({
+    item,
+    entityId: item.entityId,
+    name: item.name,
+    deviceClass: item.deviceClass ?? "",
+    state: item.state,
+  })), ids);
+  return candidate?.item ?? null;
+}
+
+function attributeNumberFrom(
+  inventory: EnergyInventoryItem[],
+  ids: readonly string[],
+  key: string,
+) {
+  const parsed = Number(inventoryItemFrom(inventory, ids)?.attributes?.[key]);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function flexibleLoadsFrom(value: string): FlexibleLoadConfiguration[] {
@@ -127,7 +151,7 @@ function loadState(
 ) {
   if (load.category === "pool") {
     const temperature = nullableNumberFrom(inventory, bindings.poolTemperature);
-    const setpoint = nullableNumberFrom(inventory, bindings.poolSetpoint);
+    const setpoint = attributeNumberFrom(inventory, bindings.poolHeatPump, "temperature");
     const needed = temperature === null || setpoint === null || temperature < setpoint - 0.2;
     return {
       alreadyRunning: activeFrom(inventory, bindings.poolHeatPump),
@@ -205,10 +229,28 @@ function euro(value: number) {
 function energyInsights(
   current: EnergySnapshotValues,
   history: Array<typeof energySnapshots.$inferSelect>,
+  consumptionBreakdown: ConsumptionBreakdownItem[] = [],
 ): EnergyInsight[] {
   const insights: EnergyInsight[] = [];
+  const dominant = consumptionBreakdown.find((item) => item.id !== "other-home" && item.sharePercent >= 25);
+  if (dominant) {
+    insights.push({
+      id: `dominant-${dominant.id}`,
+      icon: dominant.icon || "ϟ",
+      tone: "tip",
+      title: `${dominant.name} domine la consommation`,
+      description: `${dominant.watts} W, soit environ ${dominant.sharePercent} % de la puissance mesurée de la maison actuellement.`,
+      impact: "Premier poste à examiner maintenant",
+      action: `Comment réduire la consommation de ${dominant.name} ?`,
+    });
+  }
+  const nightHour = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris",
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
   const nightSamples = history.filter((sample) => {
-    const hour = new Date(sample.capturedAt).getUTCHours();
+    const hour = Number(nightHour.format(new Date(sample.capturedAt)));
     return hour >= 0 && hour < 5;
   });
   const nightBase = average(nightSamples.map((sample) => sample.homeWatts));
@@ -226,7 +268,10 @@ function energyInsights(
     });
   }
 
-  const likelySurplus = Math.max(0, current.solarWatts - current.homeWatts);
+  // Le réseau négatif correspond à un export. Utiliser la mesure réelle évite
+  // d'annoncer un surplus lorsque la batterie absorbe l'écart ou que l'onduleur
+  // bride volontairement la production en zéro injection.
+  const likelySurplus = Math.max(0, -current.gridWatts);
   if (likelySurplus >= 500 && current.batteryPercent >= 85) {
     insights.push({
       id: "solar-surplus",
@@ -316,7 +361,8 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
       gte(energySnapshots.capturedAt, since),
     ))
     .orderBy(desc(energySnapshots.capturedAt))
-    .limit(700);
+    // 7 jours complets à raison d'un échantillon toutes les 5 minutes.
+    .limit(7 * 24 * 12 + 12);
   const forecast = solarForecastFromInventory(inventory);
   const adaptiveForecast = buildAdaptiveSolarForecast({
     now: new Date(),
@@ -349,6 +395,11 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
   const configuredLoads = flexibleLoadsFrom(selected.dossier.flexibleLoadsJson)
     .filter((load) => load.enabled)
     .sort((left, right) => left.priority - right.priority);
+  const consumptionBreakdown = consumptionBreakdownFromInventory(
+    inventory,
+    configuredLoads,
+    current.homeWatts,
+  );
   const loadsForPlanning = configuredLoads.length ? configuredLoads : [{
     id: "configuration",
     name: "Appareils flexibles",
@@ -385,8 +436,14 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
   });
   const predictivePlan = predictivePlans[0];
   const daily = new Map<string, { productionWh: number; consumptionWh: number }>();
+  const parisDay = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
   for (const sample of history) {
-    const day = sample.capturedAt.slice(0, 10);
+    const day = parisDay.format(new Date(sample.capturedAt));
     const previous = daily.get(day) ?? { productionWh: 0, consumptionWh: 0 };
     daily.set(day, {
       productionWh: Math.max(previous.productionWh, sample.dailyProductionWh),
@@ -396,7 +453,8 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
   const week = Array.from(daily.values()).reduce((total, day) => ({
     productionWh: total.productionWh + day.productionWh,
     consumptionWh: total.consumptionWh + day.consumptionWh,
-  }), { productionWh: 0, consumptionWh: 0 });
+    observedDays: total.observedDays,
+  }), { productionWh: 0, consumptionWh: 0, observedDays: Math.max(1, daily.size) });
   return {
     dossier: {
       id: selected.dossier.id,
@@ -421,7 +479,8 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     },
     predictivePlan,
     predictivePlans,
-    insights: energyInsights(current, history),
+    consumptionBreakdown,
+    insights: energyInsights(current, history, consumptionBreakdown),
   };
 }
 

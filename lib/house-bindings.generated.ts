@@ -41,12 +41,18 @@ export const HOUSE_BINDINGS = {
     "pac piscine"
   ],
   "poolHeatPumpPower": [
+    "sensor.shellyem3_483fdac38616_channel_a_power",
+    "sensor.shellyem3_483fdac38616_phase_a_active_power",
+    "sensor.shellyem3_483fdac38616_em0_act_power",
     "sensor.pompe_a_chaleur_piscine_puissance",
     "sensor.pac_piscine_puissance",
     "puissance pac piscine",
     "pool heat pump power"
   ],
   "poolHeatPumpEnergy": [
+    "sensor.shellyem3_483fdac38616_channel_a_energy",
+    "sensor.shellyem3_483fdac38616_phase_a_energy",
+    "sensor.shellyem3_483fdac38616_em0_total_act_energy",
     "sensor.pompe_a_chaleur_piscine_energie_totale",
     "sensor.pac_piscine_energie_totale",
     "energie pac piscine",
@@ -225,6 +231,15 @@ export const HOUSE_BINDINGS = {
   "lektricoOffPeakAutomation": [
     "automation.1_2_3_home_recharge_heures_creuses_lektrico",
     "recharge heures creuses lektrico"
+  ],
+  "deyeSolarSell": [
+    "switch.onduleur_solar_sell",
+    "switch.inverter_solar_sell",
+    "switch.solarman_solar_sell",
+    "deye solar sell",
+    "solarman solar sell",
+    "export surplus",
+    "vente solaire"
   ],
   "lektricoFaultEv": [
     "binary_sensor.1p7k_501290_ev_error"

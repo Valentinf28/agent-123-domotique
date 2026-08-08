@@ -96,6 +96,7 @@ DEVICE_DAILY_ENERGY_BINDINGS = (
     ),
     (
         (
+            "sensor.shellyem3_483fdac38616_channel_a_energy",
             "sensor.pac_piscine_energie_totale",
             "sensor.piscine_pac_energie_totale",
             "sensor.pool_heat_pump_energy_total",
@@ -1042,6 +1043,152 @@ def lektrico_off_peak_automation(payload: dict[str, Any]) -> dict[str, Any]:
         }],
         "mode": "restart",
     }
+
+
+def _valid_entity_id(entity_id: str, expected_domain: str) -> bool:
+    parts = entity_id.split(".", 1)
+    return (
+        len(parts) == 2
+        and parts[0] == expected_domain
+        and all(part.replace("_", "").isalnum() for part in parts)
+    )
+
+
+def _entity_state(
+    states: list[dict[str, Any]],
+    entity_id: str,
+) -> dict[str, Any] | None:
+    return next(
+        (
+            state for state in states
+            if isinstance(state, dict) and state.get("entity_id") == entity_id
+        ),
+        None,
+    )
+
+
+def _normalized_label(value: Any) -> str:
+    return " ".join(
+        str(value or "").lower().replace("_", " ").replace("-", " ").split()
+    )
+
+
+def deye_vehicle_export_automation(
+    payload: dict[str, Any],
+    states: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Build the opt-in Deye export policy tied to the physical EV connection.
+
+    The function never guesses Modbus registers and never writes directly to the
+    inverter. It only accepts the dedicated Home Assistant Solar Sell switch
+    exposed by a trusted SolarMAN profile, then lets Home Assistant execute the
+    transitions.
+    """
+    if payload.get("manageInverterExport") is not True:
+        return None
+
+    charger_state_entity_id = str(payload.get("chargerStateEntityId", "")).strip()
+    export_switch_entity_id = str(payload.get("inverterExportSwitchEntityId", "")).strip()
+    if not _valid_entity_id(charger_state_entity_id, "sensor"):
+        raise ValueError("État de connexion du véhicule invalide")
+    if export_switch_entity_id and not _valid_entity_id(export_switch_entity_id, "switch"):
+        raise ValueError("Commande d’injection Deye invalide")
+    if not export_switch_entity_id:
+        raise ValueError("La commande Deye Solar Sell est indispensable")
+
+    charger_state = _entity_state(states, charger_state_entity_id)
+    export_switch_state = _entity_state(states, export_switch_entity_id)
+    missing = [
+        entity_id for entity_id, state in (
+            (charger_state_entity_id, charger_state),
+            (export_switch_entity_id, export_switch_state),
+        )
+        if entity_id and state is None
+    ]
+    if missing:
+        raise ValueError("Commande Deye introuvable : " + ", ".join(missing))
+
+    attributes = export_switch_state.get("attributes")
+    if not isinstance(attributes, dict):
+        attributes = {}
+    trusted_text = _normalized_label(
+        f"{export_switch_entity_id} {attributes.get('friendly_name', '')}"
+    )
+    if not any(
+        term in trusted_text
+        for term in ("solar sell", "export surplus", "vente solaire", "injection")
+    ):
+        raise ValueError("La commande fournie n’est pas identifiée comme Solar Sell")
+
+    plugged_states = (
+        "starting", "finishing", "stopped", "complete", "no_power", "need_auth",
+        "locked", "suspended_ev", "suspended_evse", "charging", "connected",
+        "paused", "paused_by_scheduler",
+    )
+    plugged_template = (
+        "{{ states('" + charger_state_entity_id + "') | lower in "
+        + str(list(plugged_states)) + " }}"
+    )
+    unplugged_template = (
+        "{{ states('" + charger_state_entity_id + "') | lower not in "
+        + str(list(plugged_states)) + " }}"
+    )
+
+    enable_export_sequence = [{
+        "service": "switch.turn_on",
+        "target": {"entity_id": export_switch_entity_id},
+    }]
+    disable_export_sequence = [{
+        "service": "switch.turn_off",
+        "target": {"entity_id": export_switch_entity_id},
+    }]
+
+    return {
+        "id": "ma_maison_deye_vehicle_export_policy",
+        "alias": "1.2.3 Home · Injection Deye selon véhicule",
+        "description": (
+            "Bloque l’injection lorsque la voiture est débranchée et la réactive "
+            "lorsqu’elle est branchée. Politique installée uniquement après validation "
+            "explicite des commandes SolarMAN Deye."
+        ),
+        "trigger": [
+            {"platform": "homeassistant", "event": "start", "id": "synchronisation"},
+            {
+                "platform": "time_pattern",
+                "seconds": "/15",
+                "id": "reconciliation",
+            },
+            {
+                "platform": "template",
+                "value_template": plugged_template,
+                "for": {"hours": 0, "minutes": 0, "seconds": 10},
+                "id": "voiture_branchee",
+            },
+            {
+                "platform": "template",
+                "value_template": unplugged_template,
+                "for": {"hours": 0, "minutes": 0, "seconds": 30},
+                "id": "voiture_debranchee",
+            },
+        ],
+        "condition": [],
+        "action": [{
+            "choose": [
+                {
+                    "conditions": [{
+                        "condition": "template",
+                        "value_template": plugged_template,
+                    }],
+                    "sequence": enable_export_sequence,
+                },
+            ],
+            "default": disable_export_sequence,
+        }],
+        "mode": "restart",
+        "max_exceeded": "silent",
+    }
+
+
 def _refresh_solar_forecast_inventory(
     supervisor_token: str,
     states: list[dict[str, Any]],
@@ -1134,6 +1281,8 @@ def relay_command(
         elif action == "ha.automation.create":
             name = str(payload.get("name", "")).strip()
             trigger_time = str(payload.get("time", "")).strip()
+            trigger_type = str(payload.get("triggerType", "time")).strip()
+            weekdays = payload.get("weekdays", [])
             entity_id = str(payload.get("entityId", "")).strip()
             domain = str(payload.get("domain", "")).strip()
             service = str(payload.get("service", "")).strip()
@@ -1149,10 +1298,18 @@ def relay_command(
             }
             if len(name) < 3 or len(name) > 80:
                 raise ValueError("Nom d’automatisation invalide")
-            try:
-                datetime.strptime(trigger_time, "%H:%M")
-            except ValueError as error:
-                raise ValueError("Horaire invalide") from error
+            if trigger_type == "time":
+                try:
+                    datetime.strptime(trigger_time, "%H:%M")
+                except ValueError as error:
+                    raise ValueError("Horaire invalide") from error
+            elif trigger_type not in {"sunrise", "sunset"}:
+                raise ValueError("Déclencheur invalide")
+            if not isinstance(weekdays, list) or any(
+                day not in {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+                for day in weekdays
+            ):
+                raise ValueError("Jours invalides")
             if (
                 len(entity_parts) != 2
                 or entity_parts[0] != domain
@@ -1163,6 +1320,11 @@ def relay_command(
             automation_id = (
                 f"ma_maison_{int(time.time())}_{secrets.token_hex(3)}"
             )
+            trigger = ({"platform": "time", "at": f"{trigger_time}:00"}
+                       if trigger_type == "time" else
+                       {"platform": "sun", "event": trigger_type})
+            conditions = ([{"condition": "time", "weekday": weekdays}]
+                          if weekdays else [])
             result = request_json(
                 f"{SUPERVISOR_API}/config/automation/config/{automation_id}",
                 method="POST",
@@ -1171,11 +1333,8 @@ def relay_command(
                     "id": automation_id,
                     "alias": f"1.2.3 Home · {name}",
                     "description": "Créée depuis le portail Ma Maison",
-                    "trigger": [{
-                        "platform": "time",
-                        "at": f"{trigger_time}:00",
-                    }],
-                    "condition": [],
+                    "trigger": [trigger],
+                    "condition": conditions,
                     "action": [{
                         "service": f"{domain}.{service}",
                         "target": {"entity_id": entity_id},
@@ -1524,6 +1683,8 @@ def relay_command(
                 + str(minimum_amps) + " }}"
             )
 
+            inverter_export_automation = deye_vehicle_export_automation(payload, states)
+
             automation_payload = {
                 "id": automation_id,
                 "alias": "1.2.3 Home · Recharge solaire Lektrico",
@@ -1679,6 +1840,46 @@ def relay_command(
                 payload=automation_payload,
                 timeout=60,
             )
+            if inverter_export_automation:
+                request_json(
+                    f"{SUPERVISOR_API}/config/automation/config/"
+                    "ma_maison_deye_vehicle_export_policy",
+                    method="POST",
+                    token=supervisor_token,
+                    payload=inverter_export_automation,
+                    timeout=60,
+                )
+            else:
+                # An explicit opt-out must also undo a policy installed earlier.
+                # Otherwise changing the customer's portal setting would leave the
+                # old automation active on the box.
+                listed_automations = home_assistant_ws_command(
+                    supervisor_token,
+                    {"type": "config/automation/list"},
+                ).get("result", [])
+                if any(
+                    isinstance(item, dict)
+                    and str(item.get("id", "")) == "ma_maison_deye_vehicle_export_policy"
+                    for item in listed_automations
+                ):
+                    request_json(
+                        f"{SUPERVISOR_API}/config/automation/config/"
+                        "ma_maison_deye_vehicle_export_policy",
+                        method="DELETE",
+                        token=supervisor_token,
+                        timeout=60,
+                    )
+                export_switch_entity_id = str(
+                    payload.get("inverterExportSwitchEntityId", "")
+                ).strip()
+                if _valid_entity_id(export_switch_entity_id, "switch"):
+                    request_json(
+                        f"{SUPERVISOR_API}/services/switch/turn_on",
+                        method="POST",
+                        token=supervisor_token,
+                        payload={"entity_id": export_switch_entity_id},
+                        timeout=60,
+                    )
             request_json(
                 f"{SUPERVISOR_API}/services/automation/reload",
                 method="POST",

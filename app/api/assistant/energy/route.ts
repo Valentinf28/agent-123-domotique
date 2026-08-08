@@ -24,33 +24,82 @@ type CoachReply = {
   suggestedQuestions: string[];
 };
 
-function localReply(message: string, insights: EnergyInsight[]): CoachReply {
+function watts(value: number) {
+  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.max(0, value))} W`;
+}
+
+function kilowattHours(valueWh: number) {
+  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(Math.max(0, valueWh) / 1000)} kWh`;
+}
+
+function localReply(
+  message: string,
+  context: Awaited<ReturnType<typeof getEnergyCoachContext>>,
+): CoachReply {
   const normalized = message.toLowerCase();
-  const matching = insights.find((insight) => {
+  const matching = context.insights.find((insight) => {
     if (/nuit|veille/.test(normalized)) return insight.id === "night-base";
     if (/solaire|surplus|autoconsomm/.test(normalized)) return insight.id === "solar-surplus";
     if (/chauffe|ballon|eau chaude/.test(normalized)) return insight.id === "hot-water";
     if (/voiture|tesla|recharge/.test(normalized)) return insight.id === "vehicle-charge";
     if (/batterie/.test(normalized)) return insight.id === "battery-low";
     return false;
-  }) ?? insights[0];
-  const asksAutomation = /automat|programme|règle|decale|décale/.test(normalized);
-  return {
-    answer: matching
+  }) ?? context.insights[0];
+  const topConsumers = context.consumptionBreakdown
+    .filter((item) => item.id !== "other-home" && item.watts > 0)
+    .slice(0, 3);
+  let answer: string;
+  if (/quoi|appareil|équipement|equipement|consomm/.test(normalized) && topConsumers.length) {
+    const list = topConsumers
+      .map((item) => `${item.name} : ${watts(item.watts)} (${item.sharePercent} %)`)
+      .join(", ");
+    answer = `En ce moment, les principaux appareils mesurés sont ${list}. Le reste de la maison est regroupé séparément pour éviter tout double comptage.`;
+  } else if (/mois|économ|econom|bilan/.test(normalized) && context.historySamples >= 4) {
+    const observedDays = Math.max(1, context.week.observedDays);
+    const projectedConsumption = context.week.consumptionWh * 30 / observedDays;
+    const period = observedDays >= 7
+      ? "Sur les sept derniers jours disponibles"
+      : `Sur les ${observedDays} jours disponibles`;
+    answer = `${period}, la maison a consommé ${kilowattHours(context.week.consumptionWh)} et produit ${kilowattHours(context.week.productionWh)}. À rythme identique, la consommation mensuelle serait d’environ ${kilowattHours(projectedConsumption)}. C’est une projection, pas une facture.`;
+  } else if (/solaire|surplus|autoconsomm/.test(normalized)) {
+    const exportWatts = Math.max(0, -context.current.gridWatts);
+    const remaining = context.solarForecast.prudentRemainingWh;
+    answer = exportWatts > 100
+      ? `La maison exporte actuellement environ ${watts(exportWatts)}. La prévision prudente estime encore ${kilowattHours(remaining)} à produire aujourd’hui ; un appareil flexible peut être déplacé sur ce créneau si ses garde-fous le permettent.`
+      : `Il n’y a pas de surplus significatif mesuré maintenant. La prévision prudente estime encore ${kilowattHours(remaining)} à produire aujourd’hui ; mieux vaut conserver les garde-fous batterie avant de déplacer un appareil.`;
+  } else if (/voiture|tesla|recharge/.test(normalized)) {
+    const exportWatts = Math.max(0, -context.current.gridWatts);
+    answer = context.current.vehicleWatts > 100
+      ? `La voiture charge actuellement à ${watts(context.current.vehicleWatts)}. Le coach recommande de laisser la borne piloter l’intensité et de conserver la réserve batterie configurée.`
+      : exportWatts > 100
+        ? `La voiture ne charge pas actuellement et environ ${watts(exportWatts)} sont exportés. Vérifiez qu’elle est branchée et disponible ; la borne pourra ensuite ajuster la charge au surplus.`
+        : "La voiture ne charge pas actuellement et aucun surplus significatif n’est mesuré. Le démarrage doit attendre un créneau plus favorable ou un mode de charge choisi par le client.";
+  } else {
+    answer = matching
       ? `${matching.title}. ${matching.description} ${matching.impact}. Je peux vous aider à préparer une automatisation, mais elle ne sera jamais activée sans votre confirmation.`
-      : "Je n’ai pas encore assez d’historique pour répondre précisément. Le coach continue d’apprendre les habitudes de la maison.",
-    automationProposal: asksAutomation && matching ? {
-      name: `Optimisation · ${matching.title}`,
-      trigger: "Quand les conditions énergétiques sont favorables",
-      action: matching.action,
-      rationale: matching.description,
-    } : null,
+      : "Je n’ai pas encore assez d’historique pour répondre précisément. Le coach continue d’apprendre les habitudes de la maison.";
+  }
+  return {
+    answer,
+    // The local fallback gives advice only. It must not manufacture an
+    // executable energy trigger that the automation engine cannot parse.
+    automationProposal: null,
     suggestedQuestions: [
       "Que puis-je économiser ce mois-ci ?",
       "Quand recharger la voiture ?",
       "Comment augmenter mon autoconsommation ?",
     ],
   };
+}
+
+function executableProposal(proposal: AutomationProposal | null) {
+  if (!proposal) return null;
+  const trigger = proposal.trigger.trim();
+  const action = proposal.action.trim();
+  const hasSupportedTrigger = /\b(?:[01]?\d|2[0-3])\s*(?:h|:)\s*[0-5]\d\b/i.test(trigger) ||
+    /\b(?:lever|coucher)\s+(?:du\s+)?soleil\b/i.test(trigger);
+  const hasConcreteAction = /\b(?:allum|étein|etein|active|désactive|desactive|ouvre|ferme|démarre|demarre|arrête|arrete|coupe)\w*\b/i.test(action);
+  return hasSupportedTrigger && hasConcreteAction ? proposal : null;
 }
 
 function responseText(payload: {
@@ -97,6 +146,8 @@ async function openAiReply(
           "Utilise exclusivement les mesures et analyses fournies. Ne fabrique jamais une économie, un tarif, une présence ou une mesure manquante.",
           "Présente les économies comme des estimations lorsqu’elles le sont.",
           "Tu peux proposer une automatisation, mais tu ne peux jamais dire qu’elle est créée, activée ou appliquée.",
+          "Ne fournis une automatisation que si le déclencheur contient une heure précise ou le lever/coucher du soleil, et si l’action nomme clairement l’équipement et l’ordre à exécuter.",
+          "Pour une optimisation dépendant du surplus, de la batterie, de la météo ou d’une prévision, donne uniquement un conseil et laisse automationProposal à null.",
           "Toute automatisation reste un brouillon jusqu’à confirmation explicite du client dans l’interface.",
           "Ne révèle aucun identifiant technique ni donnée interne.",
           "Si une intervention électrique ou une modification matérielle est nécessaire, recommande un professionnel.",
@@ -113,6 +164,7 @@ async function openAiReply(
               nombreDeReleves: context.historySamples,
               previsionSolaire: context.solarForecast,
               plansPredictifs: context.predictivePlans,
+              appareilsQuiConsomment: context.consumptionBreakdown,
               recommandationsCalculees: context.insights,
             }),
           }],
@@ -174,7 +226,10 @@ async function openAiReply(
       await refundAssistantRequest(context.dossier.id, "energy");
       return null;
     }
-    return parsed;
+    return {
+      ...parsed,
+      automationProposal: executableProposal(parsed.automationProposal),
+    };
   } catch {
     await refundAssistantRequest(context.dossier.id, "energy").catch(() => undefined);
     return null;
@@ -203,6 +258,7 @@ export async function GET(request: Request) {
         solarForecast: context.solarForecast,
         predictivePlan: context.predictivePlan,
         predictivePlans: context.predictivePlans,
+        consumptionBreakdown: context.consumptionBreakdown,
         ready: context.historySamples >= 4,
       },
     }, { headers: { "Cache-Control": "no-store" } });
@@ -227,7 +283,7 @@ export async function POST(request: Request) {
     }
     const context = await getEnergyCoachContext(body.dossierPublicId);
     const reply = await openAiReply(message, context) ??
-      localReply(message, context.insights);
+      localReply(message, context);
     return Response.json({ reply }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return Response.json({ error: "Le coach ne peut pas répondre pour le moment" }, { status: 502 });

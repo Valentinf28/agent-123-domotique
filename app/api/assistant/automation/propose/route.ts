@@ -15,7 +15,8 @@ const help = {
     title: "Créer une règle simple",
     steps: [
       "Vérifiez que l’appareil apparaît en ligne dans l’onglet Équipements.",
-      "Indiquez une action, un appareil et une heure précise.",
+      "Indiquez une action, un appareil et une heure, ou le lever/coucher du soleil.",
+      "Vous pouvez préciser tous les jours, en semaine, le week-end ou un jour particulier.",
       "Relisez toujours l’aperçu avant de confirmer.",
     ],
   },

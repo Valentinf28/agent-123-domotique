@@ -8,6 +8,10 @@ const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8")
 test("le portail client n'invente aucun contrôle pendant une reconnexion", () => {
   assert.match(portal, /const controls = overview\?\.controls \?\? \[\];/);
   assert.doesNotMatch(portal, /demo-(?:heat|filter|pool|lock|camera|water)/);
+  assert.match(portal, /useState<Device\[]>\(\[\]\)/);
+  assert.match(portal, /useState<Automation\[]>\(\[\]\)/);
+  assert.doesNotMatch(portal, /const demoDevices/);
+  assert.doesNotMatch(portal, /const demoAutomations/);
 });
 
 test("les quatre onglets premium partagent la mise en page mobile compacte", () => {

@@ -13,6 +13,14 @@ export const ENERGY_PROFILE = {
     "météo maison",
     "forecast maison"
   ],
+  "currentPrecipitation": [
+    "sensor.escorpain_precipitation",
+    "sensor.precipitation",
+    "sensor.rain_rate",
+    "binary_sensor.rain",
+    "précipitations actuelles",
+    "pluie actuelle"
+  ],
   "solarPower": [
     "sensor.onduleur_pv_power",
     "sensor.inverter_pv_power",
@@ -30,10 +38,10 @@ export const ENERGY_PROFILE = {
     "home power"
   ],
   "gridPower": [
-    "sensor.shellyem3_483fdac38616_channel_c_power",
     "sensor.onduleur_grid_power",
     "sensor.inverter_grid_power",
     "sensor.1_2_3_home_puissance_reseau",
+    "sensor.shellyem3_483fdac38616_channel_c_power",
     "puissance reseau",
     "grid power"
   ],

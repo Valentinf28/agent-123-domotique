@@ -4,6 +4,7 @@ import {
   energySnapshotFromInventory,
   type EnergyInventoryItem,
 } from "../lib/energy-snapshot.ts";
+import { consumptionBreakdownFromInventory } from "../lib/consumption-breakdown.ts";
 
 const entity = (
   entityId: string,
@@ -54,4 +55,35 @@ test("normalise W, kW, Wh et kWh avant stockage", () => {
   assert.equal(snapshot.batteryWatts, -1100);
   assert.equal(snapshot.dailyProductionWh, 12850);
   assert.equal(snapshot.dailyConsumptionWh, 9400);
+});
+
+test("classe les appareils mesurés et conserve les autres usages de la maison", () => {
+  const breakdown = consumptionBreakdownFromInventory([
+    entity("sensor.pac_piscine_power", "2.1", "kW"),
+    entity("sensor.filtration_power", "680", "W"),
+  ], [
+    { id: "pac", name: "PAC piscine", category: "pool", icon: "≋", powerWatts: 2100, minimumRunMinutes: 60, priority: 1, enabled: true, powerEntityId: "sensor.pac_piscine_power", showInConsumption: true },
+    { id: "filtration", name: "Filtration", category: "filtration", icon: "≈", powerWatts: 680, minimumRunMinutes: 60, priority: 2, enabled: true, powerEntityId: "sensor.filtration_power", showInConsumption: true },
+  ], 3500);
+
+  assert.deepEqual(breakdown.map((item) => [item.id, item.watts]), [
+    ["pac", 2100],
+    ["filtration", 680],
+    ["other-home", 720],
+  ]);
+  assert.equal(breakdown[0].sharePercent, 60);
+});
+
+test("ne compte jamais deux fois une même pince de mesure", () => {
+  const breakdown = consumptionBreakdownFromInventory([
+    entity("sensor.pince_pac", "2", "kW"),
+  ], [
+    { id: "pac", name: "PAC", category: "heating", icon: "♨", enabled: true, powerEntityId: "sensor.pince_pac" },
+    { id: "duplicate", name: "Ancienne PAC", category: "heating", icon: "♨", enabled: true, powerEntityId: "SENSOR.PINCE_PAC" },
+  ], 2500);
+
+  assert.deepEqual(breakdown.map((item) => [item.id, item.watts]), [
+    ["pac", 2000],
+    ["other-home", 500],
+  ]);
 });

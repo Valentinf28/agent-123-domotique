@@ -31,6 +31,10 @@ type EnergyCoachInsight = {
   id: string; icon: string; tone: "positive" | "attention" | "tip";
   title: string; description: string; impact: string; action: string;
 };
+type ConsumptionBreakdownItem = {
+  id: string; name: string; category: string; icon: string;
+  watts: number; sharePercent: number;
+};
 type CoachReply = {
   answer: string;
   automationProposal: {
@@ -45,7 +49,9 @@ type CoachMessage = {
 type AssistantAutomationRule = {
   version: 1;
   name: string;
-  time: string;
+  triggerType: "time" | "sunrise" | "sunset";
+  time: string | null;
+  weekdays: string[];
   publicDeviceId: string;
   deviceName: string;
   desiredActive: boolean;
@@ -71,6 +77,12 @@ type AssistantAutomationPreview = {
   code?: string;
 };
 type SolarForecastSlot = { startsAt: string; estimatedWh: number };
+type CoachWeekSummary = {
+  productionWh: number;
+  consumptionWh: number;
+  historySamples: number;
+  observedDays: number;
+};
 type SolarForecastSummary = {
   rawTodayWh: number;
   prudentTodayWh: number;
@@ -159,6 +171,8 @@ type FlexibleLoadConfiguration = {
   minimumRunMinutes: number;
   priority: number;
   enabled: boolean;
+  powerEntityId?: string;
+  showInConsumption?: boolean;
 };
 type OffPeakPeriod = {
   id: string;
@@ -177,6 +191,7 @@ type EnergyConfiguration = {
   flexibleLoads: FlexibleLoadConfiguration[];
   tariffPlan: "base" | "hp_hc";
   offPeakPeriods: OffPeakPeriod[];
+  allowGridExport: boolean;
 };
 type AgentInventoryItem = {
   entityId: string; name: string; domain: string; state: string; deviceClass?: string | null;
@@ -241,11 +256,11 @@ const appModules: { key: AppModule; label: string; description: string; icon: st
 ];
 
 const flexibleLoadPresets: FlexibleLoadConfiguration[] = [
-  { id: "pac-piscine", name: "PAC piscine", category: "pool", icon: "≋", powerWatts: 2000, minimumRunMinutes: 60, priority: 2, enabled: true },
-  { id: "chauffe-eau", name: "Chauffe-eau", category: "hot_water", icon: "♨", powerWatts: 2400, minimumRunMinutes: 120, priority: 1, enabled: true },
-  { id: "recharge-vehicule", name: "Recharge véhicule", category: "vehicle", icon: "◇", powerWatts: 7400, minimumRunMinutes: 120, priority: 3, enabled: true },
-  { id: "filtration-piscine", name: "Filtration piscine", category: "filtration", icon: "≋", powerWatts: 700, minimumRunMinutes: 120, priority: 4, enabled: true },
-  { id: "chauffage-maison", name: "Chauffage maison", category: "heating", icon: "♨", powerWatts: 3000, minimumRunMinutes: 60, priority: 1, enabled: true },
+  { id: "pac-piscine", name: "PAC piscine", category: "pool", icon: "≋", powerWatts: 2000, minimumRunMinutes: 60, priority: 2, enabled: true, showInConsumption: true },
+  { id: "chauffe-eau", name: "Chauffe-eau", category: "hot_water", icon: "♨", powerWatts: 2400, minimumRunMinutes: 120, priority: 1, enabled: true, showInConsumption: true },
+  { id: "recharge-vehicule", name: "Recharge véhicule", category: "vehicle", icon: "◇", powerWatts: 7400, minimumRunMinutes: 120, priority: 3, enabled: true, showInConsumption: true },
+  { id: "filtration-piscine", name: "Filtration piscine", category: "filtration", icon: "≋", powerWatts: 700, minimumRunMinutes: 120, priority: 4, enabled: true, showInConsumption: true },
+  { id: "chauffage-maison", name: "PAC maison", category: "heating", icon: "♨", powerWatts: 3000, minimumRunMinutes: 60, priority: 1, enabled: true, showInConsumption: true },
   { id: "appareil-flexible", name: "Autre appareil", category: "other", icon: "ϟ", powerWatts: 1000, minimumRunMinutes: 60, priority: 3, enabled: true },
 ];
 
@@ -265,22 +280,6 @@ const catalogItems: CatalogItem[] = [
   { id: "onvif-camera", brand: "ONVIF", model: "Caméra IP", category: "Sécurité", protocol: "Réseau", level: "Expert", method: "Découverte ONVIF locale", prerequisites: "Identifiants locaux et accès au flux vidéo", estimatedMinutes: 8, icon: "◉" },
   { id: "ring-cameras", brand: "Ring", model: "Caméras", category: "Sécurité", protocol: "Wi-Fi", level: "Assistée", method: "Association sécurisée du compte Ring", prerequisites: "Accès au compte Ring et code à deux facteurs", estimatedMinutes: 8, icon: "◉" },
   { id: "tesla-vehicle", brand: "Tesla", model: "Véhicule", category: "Véhicule", protocol: "Réseau", level: "Assistée", method: "Association sécurisée du compte Tesla", prerequisites: "Compte Tesla et véhicule autorisé", estimatedMinutes: 8, icon: "◇" },
-];
-
-const demoDevices: Device[] = [
-  { id: "demo_1", name: "Suspension du salon", room: "Salon", areaPublicId: null, category: "Éclairage", state: "Allumée", detail: "48 %", online: true, visible: true, icon: "◉" },
-  { id: "demo_2", name: "Thermostat principal", room: "Salon", areaPublicId: null, category: "Climat", state: "Confort", detail: "21,5 °C", battery: 82, online: true, visible: true, icon: "♨" },
-  { id: "demo_3", name: "Détecteur fenêtre", room: "Salon", areaPublicId: null, category: "Sécurité", state: "Fermée", detail: "Aucune anomalie", battery: 14, online: true, visible: true, icon: "▣" },
-  { id: "demo_4", name: "Lampe chevet gauche", room: "Chambre", areaPublicId: null, category: "Éclairage", state: "Éteinte", detail: "Prête", online: true, visible: true, icon: "◉" },
-  { id: "demo_5", name: "Prise lave-linge", room: "Buanderie", areaPublicId: null, category: "Énergie", state: "En veille", detail: "0,3 W", online: true, visible: false, icon: "ϟ" },
-  { id: "demo_6", name: "Capteur de jardin", room: "Extérieur", areaPublicId: null, category: "Capteurs", state: "Indisponible", detail: "Vu il y a 2 h", battery: 36, online: false, visible: false, icon: "⌁" },
-];
-
-const demoAutomations: Automation[] = [
-  { id: "demo_a1", name: "Départ de la maison", trigger: "Quand le dernier occupant part", action: "Éteindre 8 appareils", active: true, icon: "↗" },
-  { id: "demo_a2", name: "Soirée douce", trigger: "Quand il est 20 h 30", action: "Salon à 35 % · 20 °C", active: true, icon: "☾" },
-  { id: "demo_a3", name: "Alerte fenêtre", trigger: "Quand une fenêtre reste ouverte", action: "Notifier après 10 minutes", active: true, icon: "!" },
-  { id: "demo_a4", name: "Arrosage intelligent", trigger: "Quand l’humidité est basse", action: "Arroser pendant 12 minutes", active: false, icon: "⌁" },
 ];
 
 const nav: { label: View; icon: string }[] = [
@@ -305,9 +304,9 @@ export default function Portal({
   const [toast, setToast] = useState("");
   const [modal, setModal] = useState<string | null>(null);
   const [guideStep, setGuideStep] = useState(1);
-  const [devices, setDevices] = useState<Device[]>(demoDevices);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
-  const [automationItems, setAutomationItems] = useState<Automation[]>(demoAutomations);
+  const [automationItems, setAutomationItems] = useState<Automation[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [selectedAutomation, setSelectedAutomation] = useState<Automation | null>(null);
   const [liveStatus, setLiveStatus] = useState<"loading" | "connected" | "demo">("loading");
@@ -317,10 +316,7 @@ export default function Portal({
   const [premiumSaving, setPremiumSaving] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [homeRefreshToken, setHomeRefreshToken] = useState(0);
-  const [plannedItems, setPlannedItems] = useState<PlannedItem[]>([
-    { ...catalogItems[5], quantity: 1, room: "Local technique", status: "Prêt" },
-    { ...catalogItems[6], quantity: 4, room: "Salon", status: "À préparer" },
-  ]);
+  const [plannedItems, setPlannedItems] = useState<PlannedItem[]>([]);
   const [dossiers, setDossiers] = useState<InstallationDossier[]>([]);
   const [selectedDossierId, setSelectedDossierId] = useState("");
   const [newDossierOpen, setNewDossierOpen] = useState(false);
@@ -677,6 +673,12 @@ export default function Portal({
           </div>
         </header>
 
+        {customerOnly && view !== "Accueil" && <nav className="customer-section-nav" aria-label="Navigation client">
+          <button type="button" onClick={() => setView("Accueil")}><span>⌂</span> Maison</button>
+          <button type="button" className={view === "Automatisations" ? "active" : ""} onClick={() => setView("Automatisations")}><span>✦</span> Coach & règles</button>
+          <button type="button" className={view === "Appareils" ? "active" : ""} onClick={() => setView("Appareils")}><span>◫</span> Appareils</button>
+        </nav>}
+
         {view === "Accueil" && <Dashboard dossierId={selectedDossierId} enabledModules={enabledHomeModules} setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} lastSyncedAt={lastSyncedAt} onControl={setHomeControl} />}
         {view === "Préparation" && <Preparation dossierId={selectedDossierId} plannedItems={plannedItems} setPlannedItems={setPlannedItems} notify={notify} setView={setView} />}
         {view === "Installation" && <Installation dossierId={selectedDossierId} notify={notify} />}
@@ -686,11 +688,14 @@ export default function Portal({
         {view === "Journal" && <Journal role={role} />}
       </main>
 
-      {!customerOnly && <nav className="mobile-nav" aria-label="Navigation mobile">
-        {nav.filter((item) => !["Préparation", "Installation"].includes(item.label)).slice(0, 4).map((item) => <button key={item.label} className={view === item.label ? "active" : ""} onClick={() => setView(item.label)}>
-          <span>{item.icon}</span><small>{item.label}</small>
-        </button>)}
-      </nav>}
+      <nav className={`mobile-nav ${customerOnly ? "customer-mobile-nav" : ""}`} aria-label="Navigation mobile">
+        {(customerOnly
+          ? [{ label: "Accueil" as View, icon: "⌂", copy: "Maison" }, { label: "Automatisations" as View, icon: "✦", copy: "Coach" }, { label: "Appareils" as View, icon: "◫", copy: "Appareils" }]
+          : nav.filter((item) => !["Préparation", "Installation"].includes(item.label)).slice(0, 4).map((item) => ({ ...item, copy: item.label })))
+          .map((item) => <button key={item.label} className={view === item.label ? "active" : ""} onClick={() => setView(item.label)}>
+            <span>{item.icon}</span><small>{item.copy}</small>
+          </button>)}
+      </nav>
 
       {toast && <div className="toast">✓ {toast}</div>}
       {newDossierOpen && <div className="modal-backdrop" role="presentation">
@@ -759,6 +764,7 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
     flexibleLoads: [],
     tariffPlan: "base",
     offPeakPeriods: [],
+    allowGridExport: true,
   });
   const [saveState, setSaveState] = useState<"saved" | "saving" | "offline">("saving");
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
@@ -786,6 +792,7 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
           offPeakPeriods: Array.isArray(payload.dossier.energyConfiguration.offPeakPeriods)
             ? payload.dossier.energyConfiguration.offPeakPeriods
             : [],
+          allowGridExport: payload.dossier.energyConfiguration.allowGridExport !== false,
         });
         setSaveState("saved");
       })
@@ -906,7 +913,9 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
 
   function addSolarArray() {
     const index = energyConfiguration.solarArrays.length + 1;
-    const next = { ...energyConfiguration, solarArrays: [...energyConfiguration.solarArrays, { id: `pan-${Date.now()}`, label: `Pan ${index}`, peakWatts: 0, orientation: "Sud", inclinationDegrees: 30 }] };
+    let suffix = index;
+    while (energyConfiguration.solarArrays.some((array) => array.id === `pan-${suffix}`)) suffix += 1;
+    const next = { ...energyConfiguration, solarArrays: [...energyConfiguration.solarArrays, { id: `pan-${suffix}`, label: `Pan ${index}`, peakWatts: 0, orientation: "Sud", inclinationDegrees: 30 }] };
     void save(plannedItems, enabledModules, next);
   }
 
@@ -1052,6 +1061,13 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
           <label><span>Capacité utile batterie</span><div><input type="number" min="0" value={energyConfiguration.batteryCapacityWh} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryCapacityWh: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryCapacityWh", Number(event.target.value))} /><em>Wh</em></div><small>0 Wh si aucune batterie</small></label>
           <label><span>Réserve minimale</span><div><input type="number" min="5" max="80" value={energyConfiguration.batteryReservePercent} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryReservePercent: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryReservePercent", Number(event.target.value))} /><em>%</em></div><small>Protection du stockage</small></label>
         </div>
+        <div className="grid-export-configuration">
+          <div><small>INJECTION DU SURPLUS</small><h4>Le client autorise-t-il l’injection réseau ?</h4><p>Ce choix pilote la règle installée sur la box Home Assistant.</p></div>
+          <div className="grid-export-choice" role="group" aria-label="Autorisation d’injection réseau">
+            <button type="button" className={energyConfiguration.allowGridExport ? "selected" : ""} onClick={() => void save(undefined, undefined, { ...energyConfiguration, allowGridExport: true })}><b>Autorisée</b><small>Le surplus peut être envoyé sur le réseau. Aucune règle de blocage.</small></button>
+            <button type="button" className={!energyConfiguration.allowGridExport ? "selected blocked" : ""} onClick={() => void save(undefined, undefined, { ...energyConfiguration, allowGridExport: false })}><b>Interdite</b><small>La box bloque l’injection lorsque la voiture ne charge pas.</small></button>
+          </div>
+        </div>
         <div className="tunnel-actions"><button type="button" onClick={() => setTunnelStep(0)}>Retour</button><button type="button" className="primary" onClick={() => setTunnelStep(2)}>Valider l’énergie</button></div>
       </div>}
 
@@ -1160,6 +1176,8 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
           <span className="flexible-load-icon">{load.icon}</span>
           <label><span>Appareil</span><input value={load.name} onChange={event => updateFlexibleLoad(load.id, { name: event.target.value })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /></label>
           <label><span>Puissance</span><div><input type="number" min="0" max="50000" value={load.powerWatts} onChange={event => updateFlexibleLoad(load.id, { powerWatts: Number(event.target.value) })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /><em>W</em></div></label>
+          <label><span>Mesure Home Assistant</span><input placeholder="sensor.appareil_puissance" value={load.powerEntityId || ""} onChange={event => updateFlexibleLoad(load.id, { powerEntityId: event.target.value })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /></label>
+          <label><span>Répartition</span><select value={load.showInConsumption === false ? "no" : "yes"} onChange={event => updateFlexibleLoad(load.id, { showInConsumption: event.target.value === "yes" }, true)}><option value="yes">Afficher</option><option value="no">Masquer</option></select></label>
           <label><span>Cycle minimum</span><div><input type="number" min="15" max="720" value={load.minimumRunMinutes} onChange={event => updateFlexibleLoad(load.id, { minimumRunMinutes: Number(event.target.value) })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /><em>min</em></div></label>
           <label><span>Priorité</span><select value={load.priority} onChange={event => updateFlexibleLoad(load.id, { priority: Number(event.target.value) }, true)}>{[1,2,3,4,5].map((priority) => <option value={priority} key={priority}>{priority}</option>)}</select></label>
           <button type="button" className="flexible-load-remove" aria-label={`Retirer ${load.name}`} onClick={() => removeFlexibleLoad(load.id)}>×</button>
@@ -1718,12 +1736,10 @@ function Dashboard({ dossierId, enabledModules, setView, setModal, notify, devic
     ),
   );
   const visibleHomeTabs = useMemo(() => homeTabs.filter((tab) => {
-    const module = homeTabKeys[tab];
-    return module === "home" || enabledModules.includes(module) || (module === "pool" && detectedPool);
+    const moduleKey = homeTabKeys[tab];
+    return moduleKey === "home" || moduleKey === "coach" || enabledModules.includes(moduleKey as AppModule) || (moduleKey === "pool" && detectedPool);
   }), [detectedPool, enabledModules]);
-  useEffect(() => {
-    if (!visibleHomeTabs.includes(homeTab)) setHomeTab("Maison");
-  }, [homeTab, visibleHomeTabs]);
+  const activeHomeTab = visibleHomeTabs.includes(homeTab) ? homeTab : "Maison";
   const [openCameraId, setOpenCameraId] = useState<string | null>(null);
   const available = devices.filter((device) => device.online).length;
   const lowBattery = devices.filter((device) => device.battery !== undefined && device.battery < 20).length;
@@ -1738,9 +1754,9 @@ function Dashboard({ dossierId, enabledModules, setView, setModal, notify, devic
       ] ?? [],
     ]),
   ) as Partial<Record<HomeTab, readonly string[]>>;
-  const visibleControls = homeTab === "Maison"
+  const visibleControls = activeHomeTab === "Maison"
     ? controls
-    : controls.filter((control) => controlLabels[homeTab]?.includes(control.label));
+    : controls.filter((control) => controlLabels[activeHomeTab]?.includes(control.label));
   const hotWaterControl = controls.find((control) => control.label === "Ballon d’eau chaude");
   const hotWaterPower = powerNumber(overview?.comfort?.hotWaterPower);
   const hotWaterStatus = hotWaterPower >= 50
@@ -1752,17 +1768,23 @@ function Dashboard({ dossierId, enabledModules, setView, setModal, notify, devic
 
   return <div className="content app-home app-client-content">
     <section className="app-preview">
-      <div className="app-tabs" role="tablist">{visibleHomeTabs.map((tab) => <button key={tab} role="tab" aria-selected={homeTab === tab} className={homeTab === tab ? "selected" : ""} onClick={() => setHomeTab(tab)}><span>{homeTabMeta[tab].icon}</span><b>{tab}</b></button>)}</div>
+      <div className="app-tabs" role="tablist">{visibleHomeTabs.map((tab) => <button key={tab} role="tab" aria-selected={activeHomeTab === tab} className={activeHomeTab === tab ? "selected" : ""} onClick={() => {
+        if (tab === "Coach") {
+          setView("Automatisations");
+          return;
+        }
+        setHomeTab(tab);
+      }}><span>{homeTabMeta[tab].icon}</span><b>{tab}</b></button>)}</div>
       <div className="app-connection"><i className={liveStatus === "connected" ? "online" : ""} />{liveStatus === "connected" ? `Maison connectée en direct${lastSyncedAt ? ` · ${lastSyncedAt.toLocaleTimeString("fr-FR")}` : ""}` : liveStatus === "loading" ? "Connexion en cours…" : "Données momentanément indisponibles"}</div>
-      {homeTab === "Maison" && <EnergyScene overview={overview} />}
-      {homeTab === "Solaire" && <SolarPortalView overview={overview} tariffCopy={offPeakCopy} dossierId={dossierId} />}
-      {homeTab === "Chauffage" && <HeatingPortalView overview={overview} hotWaterStatus={hotWaterStatus} tariffCopy={offPeakCopy} />}
-      {homeTab === "Piscine" && <PoolPortalView overview={overview} controls={controls} onControl={onControl} />}
-      {homeTab === "Équipements" && <div className="equipment-premium mobile-section">
+      {activeHomeTab === "Maison" && <EnergyScene overview={overview} />}
+      {activeHomeTab === "Solaire" && <SolarPortalView overview={overview} tariffCopy={offPeakCopy} dossierId={dossierId} />}
+      {activeHomeTab === "Chauffage" && <HeatingPortalView overview={overview} hotWaterStatus={hotWaterStatus} tariffCopy={offPeakCopy} />}
+      {activeHomeTab === "Piscine" && <PoolPortalView overview={overview} controls={controls} onControl={onControl} />}
+      {activeHomeTab === "Équipements" && <div className="equipment-premium mobile-section">
         <PortalCategoryHeader eyebrow="ÉQUIPEMENTS" title="Votre maison" subtitle="Lumières, volets, accès et surveillance." icon="◉" />
         <div className="equipment-overview"><article><small>ÉQUIPEMENTS DISPONIBLES</small><strong>{available}<em> / {devices.length}</em></strong><span>Synchronisés avec Home Assistant</span></article><article><small>ÉTAT DE LA MAISON</small><strong>{lowBattery ? `${lowBattery} alerte${lowBattery > 1 ? "s" : ""}` : "Tout va bien"}</strong><span>{lowBattery ? "Batteries à vérifier" : "Aucune anomalie détectée"}</span></article></div>
       </div>}
-      {homeTab === "Équipements" && Boolean(overview?.security?.length) && <div className="security-device-grid">
+      {activeHomeTab === "Équipements" && Boolean(overview?.security?.length) && <div className="security-device-grid">
         {overview?.security?.map((device) => <article key={device.publicId}>
           <div className="security-device-head">
             <span>{device.kind === "doorbell" ? "▣" : "◉"}</span>
@@ -1785,7 +1807,7 @@ function Dashboard({ dossierId, enabledModules, setView, setModal, notify, devic
           </button>
         </article>)}
       </div>}
-      {homeTab === "Véhicule" && <VehiclePortalView overview={overview} controls={controls} onControl={onControl} />}
+      {activeHomeTab === "Véhicule" && <VehiclePortalView overview={overview} controls={controls} onControl={onControl} />}
       {visibleControls.length > 0 && <div className="mobile-controls">
         {visibleControls.map((control) => <button key={control.publicId} disabled={!control.available || control.controllable === false} onClick={() => void onControl(control, !control.active)}>
           <span className={control.active ? "control-state active" : "control-state"}>{
@@ -1831,7 +1853,6 @@ function PortalEnergyChart({ history, date }: { history: EnergyHistoryPoint[]; d
   const orderedHistory = useMemo(() => [...history].sort((a, b) => Date.parse(a.capturedAt) - Date.parse(b.capturedAt)), [history]);
   const defaultIndex = Math.max(0, orderedHistory.length - 1);
   const [cursorIndex, setCursorIndex] = useState(defaultIndex);
-  useEffect(() => setCursorIndex(defaultIndex), [date, defaultIndex]);
   const values = orderedHistory.flatMap((point) => [point.solarWatts, point.homeWatts, point.gridWatts, point.batteryWatts]);
   const maximum = Math.ceil(Math.max(1000, ...values.map((value) => Math.max(0, Number(value) || 0))) / 1000) * 1000;
   const minimum = Math.floor(Math.min(-1000, ...values.map((value) => Math.min(0, Number(value) || 0))) / 1000) * 1000;
@@ -1877,10 +1898,10 @@ function SolarPortalView({ overview, tariffCopy, dossierId }: { overview: Mobile
   const [period, setPeriod] = useState<"day" | "month" | "year">("day");
   const [selectedDate, setSelectedDate] = useState(() => energyDateKey());
   const [history, setHistory] = useState<EnergyHistoryPoint[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
   useEffect(() => {
     let active = true;
-    setHistoryLoading(true);
+    queueMicrotask(() => { if (active) setHistoryLoading(true); });
     const query = new URLSearchParams({ date: selectedDate });
     if (dossierId) query.set("dossier", dossierId);
     fetch(`/api/home/history?${query}`, { cache: "no-store" })
@@ -1962,7 +1983,7 @@ function SolarPortalView({ overview, tariffCopy, dossierId }: { overview: Mobile
       <article><i>↑</i><strong>{periodValues.exported ?? "—"}</strong><small>Injectée</small></article>
       <article><i>♧</i><strong>{energy.co2Avoided ?? "—"}</strong><small>CO₂ évité</small></article>
     </div></section>
-    {period === "day" && <PortalEnergyChart history={history} date={selectedDate} />}
+    {period === "day" && <PortalEnergyChart key={selectedDate} history={history} date={selectedDate} />}
     {period === "day" && !historicalDay && <section className="solar-advice-card"><header><span>✦</span><div><small>ASSISTANT ÉNERGIE</small><h3>Meilleurs créneaux</h3></div></header><article><b>Solaire en priorité</b><p>Les appareils flexibles sont proposés quand le surplus est suffisant. Le tarif du client sert de solution de secours.</p><em>{tariffCopy}</em></article></section>}
     <section className="energy-balance-card"><header><div><small>INSTALLATION</small><h3>Détail des panneaux</h3></div><span>☀</span></header><div>
       <article><i>1</i><strong>{energy.pv1 ?? "0 W"}</strong><small>String PV1</small></article>
@@ -2231,7 +2252,9 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
   const [assistantCreated, setAssistantCreated] = useState<string | null>(null);
   const [supportBusy, setSupportBusy] = useState(false);
   const [coachInsights, setCoachInsights] = useState<EnergyCoachInsight[]>([]);
+  const [consumptionBreakdown, setConsumptionBreakdown] = useState<ConsumptionBreakdownItem[]>([]);
   const [solarForecast, setSolarForecast] = useState<SolarForecastSlot[]>([]);
+  const [coachWeek, setCoachWeek] = useState<CoachWeekSummary | null>(null);
   const [solarForecastSummary, setSolarForecastSummary] = useState<SolarForecastSummary | null>(null);
   const [predictivePlan, setPredictivePlan] = useState<PredictiveEnergyPlan | null>(null);
   const [predictivePlans, setPredictivePlans] = useState<PredictiveEnergyPlan[]>([]);
@@ -2247,6 +2270,11 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       text: "Bonjour ! J’analyse la maison et je peux vous aider à réduire la consommation sans sacrifier votre confort.",
     },
   ]);
+  const assistantExamples = [
+    "Allume la filtration en semaine à 10h30",
+    "Allume la lumière piscine au coucher du soleil le week-end",
+    "Coupe le ballon d’eau chaude tous les jours à 16h",
+  ];
 
   useEffect(() => {
     let active = true;
@@ -2259,9 +2287,23 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       .then((payload) => {
         if (active && Array.isArray(payload?.coach?.insights)) {
           setCoachInsights(payload.coach.insights);
+          setConsumptionBreakdown(Array.isArray(payload?.coach?.consumptionBreakdown)
+            ? payload.coach.consumptionBreakdown
+            : []);
           setSolarForecast(Array.isArray(payload?.coach?.solarForecast?.slots)
             ? payload.coach.solarForecast.slots
             : []);
+          const week = payload?.coach?.week;
+          setCoachWeek(
+            week && Number.isFinite(week.productionWh) && Number.isFinite(week.consumptionWh)
+              ? {
+                productionWh: week.productionWh,
+                consumptionWh: week.consumptionWh,
+                historySamples: Number(payload?.coach?.historySamples) || 0,
+                observedDays: Math.max(1, Number(week.observedDays) || 1),
+              }
+              : null,
+          );
           const summary = payload?.coach?.solarForecast;
           setSolarForecastSummary(
             summary && Number.isFinite(summary.rawTodayWh) && Number.isFinite(summary.prudentTodayWh)
@@ -2408,13 +2450,15 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
   const forecastTime = (value: string | null) => value
     ? new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
     : "—";
-  const forecastKwh = (value: number) => formatKilowatts(value).replace(" kW", " kWh");
+  const forecastKwh = (value: number) => value >= 1000
+    ? `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value / 1000)} kWh`
+    : `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.max(0, value))} Wh`;
   const confidenceLabel = solarForecastSummary?.confidence === "high"
     ? "Élevée"
     : solarForecastSummary?.confidence === "medium" ? "Moyenne" : "Faible";
 
   return <div className="content">
-    <div className="section-intro split"><div><span className="eyebrow">Simple et puissant</span><h2>Les habitudes qui travaillent pour vous</h2><p>Créez des règles faciles à comprendre, sans réglage technique.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
+    <div className="section-intro split"><div><span className="eyebrow">Votre avantage Premium</span><h2>Coach énergie et maison intelligente</h2><p>Comprenez ce qui consomme, recevez des conseils chiffrés et créez vos règles en langage simple.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
     <section className="home-assistant-card">
       <div className="home-assistant-symbol">✦</div>
       <div>
@@ -2424,6 +2468,16 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       </div>
       <button onClick={() => setCoachOpen((open) => !open)}>{coachOpen ? "Fermer le coach" : "Parler au coach"} <span>{coachOpen ? "×" : "→"}</span></button>
     </section>
+    <section className="coach-quick-start" aria-label="Démarrer avec le Coach énergie">
+      <div><small>COMMENCER EN UN GESTE</small><strong>Que voulez-vous améliorer aujourd’hui ?</strong></div>
+      {coachSuggestions.map((suggestion) => <button type="button" key={suggestion} disabled={coachLoading} onClick={() => void askCoach(suggestion)}>{suggestion}<span>→</span></button>)}
+    </section>
+    {coachWeek && coachWeek.historySamples >= 4 && <section className="coach-week-summary" aria-label="Bilan énergétique récent">
+      <div><small>BILAN SUR {coachWeek.observedDays} JOUR{coachWeek.observedDays > 1 ? "S" : ""}</small><strong>Votre maison en un coup d’œil</strong><span>{coachWeek.historySamples} relevés analysés</span></div>
+      <article><small>Production solaire</small><strong>{forecastKwh(coachWeek.productionWh)}</strong><span>Énergie produite</span></article>
+      <article><small>Consommation</small><strong>{forecastKwh(coachWeek.consumptionWh)}</strong><span>Énergie utilisée</span></article>
+      <article><small>Couverture solaire</small><strong>{coachWeek.consumptionWh > 0 ? Math.min(100, Math.round(coachWeek.productionWh / coachWeek.consumptionWh * 100)) : 0} %</strong><span>Indicateur théorique</span></article>
+    </section>}
     <section className="automation-assistant" id="assistant-domotique" aria-label="Assistant de création d’automatisations">
       <header>
         <div><span>✦</span><div><small>ASSISTANT DOMOTIQUE PREMIUM</small><h3>Dites simplement ce que vous voulez</h3><p>L’assistant prépare une règle sûre. Il ne crée rien avant votre confirmation explicite.</p></div></div>
@@ -2448,6 +2502,14 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
           {assistantBusy ? "Préparation…" : "Préparer l’aperçu"}
         </button>
       </form>
+      <div className="assistant-examples" aria-label="Exemples de règles compatibles">
+        <small>ESSAYEZ PAR EXEMPLE</small>
+        <div>{assistantExamples.map((example) => <button type="button" key={example} onClick={() => {
+          setAssistantRequest(example);
+          setAssistantPreview(null);
+          setAssistantCreated(null);
+        }}>{example}</button>)}</div>
+      </div>
       {assistantCreated && <div className="assistant-result success" role="status"><span>✓</span><div><b>Demande confirmée</b><p>{assistantCreated}</p></div></div>}
       {assistantPreview?.result?.status === "ready" && assistantPreview.result.proposal && <article className="assistant-preview">
         <div className="assistant-preview-heading"><div><small>APERÇU À CONFIRMER · NON ACTIVÉ</small><h4>{assistantPreview.result.proposal.name}</h4></div><span>Valable 10 min</span></div>
@@ -2460,12 +2522,12 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
         </div>
         <small className="assistant-safety-note">En confirmant, seule la règle affichée ci-dessus sera envoyée à votre Green Box.</small>
       </article>}
-      {assistantPreview && assistantPreview.result?.status !== "ready" && <div className={`assistant-result ${assistantPreview.result?.status === "refused" ? "refused" : "attention"}`} role="status">
+      {assistantPreview?.result && assistantPreview.result.status !== "ready" && <div className={`assistant-result ${assistantPreview.result.status === "refused" ? "refused" : "attention"}`} role="status">
         <span>{assistantPreview.result?.status === "refused" ? "!" : "?"}</span>
         <div><b>{assistantPreview.result?.status === "refused" ? "Action non autorisée" : "Il me manque une précision"}</b><p>{assistantPreview.result?.message ?? assistantPreview.error}</p></div>
       </div>}
       {assistantPreview?.error && !assistantPreview.result && <div className="assistant-result attention" role="status"><span>!</span><div><b>Assistant indisponible</b><p>{assistantPreview.error}</p></div></div>}
-      {assistantPreview && assistantPreview.result?.status !== "ready" && <div className="assistant-help">
+      {assistantPreview?.result && assistantPreview.result.status !== "ready" && <div className="assistant-help">
         <div><small>{assistantPreview.help?.documentation?.title ?? "Pour réussir votre demande"}</small><ol>{(assistantPreview.help?.documentation?.steps ?? [
           "Vérifiez que l’appareil est en ligne dans Équipements.",
           "Indiquez une action, un appareil et une heure précise.",
@@ -2507,6 +2569,14 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
         </div>)}
       </div>}
       {["ready_now", "scheduled"].includes(predictivePlan.status) && <button className="predictive-ask" onClick={() => void askCoach(`Explique-moi le plan prédictif de ${predictivePlan.loadLabel} et les garde-fous batterie.`)}>Demander une explication au coach →</button>}
+    </section>}
+    {consumptionBreakdown.length > 0 && <section className="coach-consumption-breakdown" aria-label="Qui consomme quoi maintenant">
+      <header><div><small>MESURES EN DIRECT</small><h3>Qui consomme quoi maintenant ?</h3></div><strong>{formatWatts(consumptionBreakdown.reduce((sum, item) => sum + item.watts, 0))}</strong></header>
+      <div>{consumptionBreakdown.slice(0, 6).map((item) => <article key={item.id}>
+        <span>{item.icon || "ϟ"}</span><p><b>{item.name}</b><small>{item.sharePercent} % de la puissance mesurée</small></p><strong>{formatWatts(item.watts)}</strong>
+        <i><em style={{ width: `${Math.max(2, item.sharePercent)}%` }} /></i>
+      </article>)}</div>
+      <button type="button" onClick={() => void askCoach("Quels appareils consomment le plus maintenant et comment réduire leur consommation ?")}>Demander l’analyse du Coach →</button>
     </section>}
     {coachInsights.length > 0 && <section className="energy-coach-insights" aria-label="Conseils énergétiques personnalisés">
       {coachInsights.slice(0, 3).map((insight) => <article className={`coach-insight ${insight.tone}`} key={insight.id}>

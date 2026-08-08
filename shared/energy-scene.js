@@ -3,6 +3,7 @@ export const ENERGY_SCENE_GEOMETRY = {
     width: 1704,
     height: 3692,
     inverter: { x: 842, y: 1880 },
+    solarPanels: [{ x: 609, y: 1046 }, { x: 1313, y: 1174 }, { x: 1427, y: 1424 }, { x: 757, y: 1351 }],
     vehicleCable: {
       charger: { x: 613, y: 2190 }, cableStart: { x: 613, y: 2215 },
       descentControl: { x: 613, y: 2290 }, lowerRightControl: { x: 600, y: 2350 },
@@ -17,6 +18,7 @@ export const ENERGY_SCENE_GEOMETRY = {
     width: 1704,
     height: 3692,
     inverter: { x: 842, y: 1880 },
+    solarPanels: [{ x: 609, y: 1046 }, { x: 1313, y: 1174 }, { x: 1427, y: 1424 }, { x: 757, y: 1351 }],
     vehicleCable: {
       charger: { x: 613, y: 2190 }, cableStart: { x: 613, y: 2215 },
       descentControl: { x: 613, y: 2290 }, lowerRightControl: { x: 600, y: 2350 },
@@ -31,6 +33,7 @@ export const ENERGY_SCENE_GEOMETRY = {
     width: 1704,
     height: 3692,
     inverter: { x: 842, y: 1880 },
+    solarPanels: [{ x: 609, y: 1046 }, { x: 1313, y: 1174 }, { x: 1427, y: 1424 }, { x: 757, y: 1351 }],
     vehicleCable: {
       charger: { x: 613, y: 2190 }, cableStart: { x: 613, y: 2215 },
       descentControl: { x: 613, y: 2290 }, lowerRightControl: { x: 600, y: 2350 },
@@ -45,6 +48,7 @@ export const ENERGY_SCENE_GEOMETRY = {
     width: 1706,
     height: 3688,
     inverter: { x: 843, y: 1880 },
+    solarPanels: [{ x: 610, y: 1046 }, { x: 1314, y: 1174 }, { x: 1428, y: 1424 }, { x: 758, y: 1351 }],
     vehicleCable: {
       charger: { x: 614, y: 2190 }, cableStart: { x: 614, y: 2215 },
       descentControl: { x: 614, y: 2290 }, lowerRightControl: { x: 601, y: 2350 },

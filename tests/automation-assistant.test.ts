@@ -19,8 +19,30 @@ test("prépare une règle quotidienne sûre à partir d’une phrase française"
   assert.equal(result.status, "ready");
   if (result.status !== "ready") return;
   assert.equal(result.proposal.time, "10:30");
+  assert.equal(result.proposal.triggerType, "time");
   assert.equal(result.proposal.publicDeviceId, "filtration");
   assert.equal(result.proposal.desiredActive, true);
+});
+
+test("comprend les jours de semaine et le coucher du soleil", () => {
+  const result = proposeSafeAutomation("Allume la lumière piscine au coucher du soleil le week-end", [
+    ...devices,
+    { publicId: "pool-light", name: "Lumière piscine", room: "Piscine", category: "Piscine", available: true, controllable: true },
+  ]);
+  assert.equal(result.status, "ready");
+  if (result.status !== "ready") return;
+  assert.equal(result.proposal.triggerType, "sunset");
+  assert.equal(result.proposal.time, null);
+  assert.deepEqual(result.proposal.weekdays, ["sat", "sun"]);
+  assert.match(result.proposal.triggerLabel, /week-end.*coucher du soleil/i);
+});
+
+test("comprend une règle limitée aux jours ouvrables", () => {
+  const result = proposeSafeAutomation("Allume le ballon d'eau chaude en semaine à 12h30", devices);
+  assert.equal(result.status, "ready");
+  if (result.status !== "ready") return;
+  assert.deepEqual(result.proposal.weekdays, ["mon", "tue", "wed", "thu", "fri"]);
+  assert.equal(result.proposal.time, "12:30");
 });
 test("comprend midi, l’arrêt et le ballon d’eau chaude", () => {
   const result = proposeSafeAutomation("Coupe le ballon d'eau chaude à midi", devices);

@@ -1,5 +1,19 @@
 # Journal des versions
 
+## 0.5.42
+
+- Raccorde la PAC piscine à la pince dédiée Shelly EM3 483FDAC38616 phase A.
+- Calcule sa consommation quotidienne depuis le compteur d’énergie Shelly, même lorsque Tuya ne fournit aucune puissance.
+- Conserve séparément la phase B pour la consommation générale de la maison et la pince 483FDAC37994 phase B pour le chauffe-eau.
+
+## 0.5.41
+
+- Ajoute une politique Deye optionnelle qui bloque l’injection lorsque la voiture est débranchée.
+- Réactive automatiquement l’injection dès que la connexion physique du véhicule est stable.
+- Pilote uniquement la commande SolarMAN « Solar Sell » sans modifier le mode général de l’onduleur.
+- Temporise les transitions 10 secondes au branchement et 30 secondes au débranchement pour éviter les bascules parasites.
+- Conserve la régulation de surplus Lektrico existante et n’effectue aucune écriture Modbus directe.
+
 ## 0.5.29
 
 - Supprime la marge d'injection permanente de la recharge solaire Lektrico.

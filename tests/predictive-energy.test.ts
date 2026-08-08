@@ -128,6 +128,39 @@ test("revient progressivement vers la prévision si l’éclaircie arrive plus t
   assert.ok(adaptive.prudentSlots[8].estimatedWh >= 600);
 });
 
+test("compare le cumul journalier plutôt que la puissance instantanée en fin de journée", () => {
+  const adaptive = buildAdaptiveSolarForecast({
+    now,
+    forecast: hourlyForecast(new Array(12).fill(1_000)),
+    actualSolarWatts: 227,
+    forecastSolarWatts: 483,
+    actualTodayWh: 50_400,
+    forecastTodayWh: 65_000,
+    forecastRemainingWh: 100,
+    cloudCoverPercent: 35,
+  });
+
+  assert.match(adaptive.explanation || "", /50,4 kWh produits/);
+  assert.match(adaptive.explanation || "", /64,9 kWh initialement prévus/);
+  assert.match(adaptive.explanation || "", /22 % de moins/);
+  assert.doesNotMatch(adaptive.explanation || "", /53 %/);
+});
+
+test("masque la comparaison lorsque l’écart journalier est négligeable", () => {
+  const adaptive = buildAdaptiveSolarForecast({
+    now,
+    forecast: hourlyForecast(new Array(12).fill(1_000)),
+    actualSolarWatts: 2_850,
+    forecastSolarWatts: 3_000,
+    actualTodayWh: 26_500,
+    forecastTodayWh: 44_700,
+    forecastRemainingWh: 18_200,
+    cloudCoverPercent: 20,
+  });
+
+  assert.equal(adaptive.explanation, null);
+});
+
 test("une confiance faible empêche de conseiller un démarrage anticipé", () => {
   const plan = scenario({ forecastConfidence: "low" });
   assert.notEqual(plan.status, "ready_now");

@@ -56,6 +56,14 @@ function parseInventory(value: string) {
   }
 }
 
+function measuredLoads(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((load) => load?.enabled !== false && load?.showInConsumption !== false && typeof load?.powerEntityId === "string" && load.powerEntityId.includes("."))
+      .map((load) => ({ id: String(load.id || load.powerEntityId), name: String(load.name || "Équipement"), category: String(load.category || "other"), icon: String(load.icon || "ϟ"), powerEntityId: load.powerEntityId })) : [];
+  } catch { return []; }
+}
+
 export async function GET(request: Request) {
   const authorization = request.headers.get("Authorization") ?? "";
   if (!authorization.startsWith("Bearer ")) {
@@ -95,10 +103,12 @@ export async function GET(request: Request) {
     subscription: subscriptionSummary(dossier),
     tariffPlan: dossier.tariffPlan === "hp_hc" ? "hp_hc" : "base",
     offPeakPeriods: parsePeriods(dossier.offPeakPeriodsJson),
+    allowGridExport: dossier.allowGridExport,
     solarInstalledPowerWp: normalizeSolarInstalledPowerWp(dossier.solarPeakWatts),
     modules,
     views,
     bindings: bindingReport.bindings,
+    measuredLoads: measuredLoads(dossier.flexibleLoadsJson),
     configuredDevices: configuredDevices
       .filter((device) => Boolean(device.matchedEntityId))
       .map((device) => ({
