@@ -20,6 +20,7 @@ type Area = { publicId: string; name: string };
 type Automation = {
   id: string; name: string; trigger: string; action: string;
   active: boolean; icon: string; lastTriggered?: string | null;
+  pending?: boolean;
 };
 type AutomationDraft = {
   name: string;
@@ -27,6 +28,10 @@ type AutomationDraft = {
   publicDeviceId: string;
   desiredActive: boolean;
 };
+const canonicalAutomationName = (value: string) => value
+  .toLocaleLowerCase("fr-FR")
+  .replace(/^1\.2\.3 home\s*·\s*/, "")
+  .trim();
 type EnergyCoachInsight = {
   id: string; icon: string; tone: "positive" | "attention" | "tip";
   title: string; description: string; impact: string; action: string;
@@ -596,7 +601,7 @@ export default function Portal({
         },
       );
       if (!response.ok) throw new Error("command");
-      notify(`${control.label} · commande envoyée à la Green Box`);
+      notify(`${control.label} · commande envoyée à la box 1.2.3 Home`);
     } catch {
       setMobileOverview((current) => current ? {
         ...current,
@@ -706,7 +711,7 @@ export default function Portal({
         {view === "Préparation" && <Preparation dossierId={selectedDossierId} plannedItems={plannedItems} setPlannedItems={setPlannedItems} notify={notify} setView={setView} />}
         {view === "Installation" && <Installation dossierId={selectedDossierId} notify={notify} />}
         {view === "Appareils" && <Devices filtered={filtered} areas={areas} search={search} setSearch={setSearch} room={room} setRoom={setRoom} notify={notify} manage={(device) => { setSelectedDevice(device); setModal("appareil"); }} updateDevice={updateDevice} />}
-        {view === "Automatisations" && <Automations dossierId={selectedDossierId} items={automationItems} setModal={setModal} notify={notify} selectAutomation={setSelectedAutomation} setEnabled={setAutomationEnabled} />}
+        {view === "Automatisations" && <Automations dossierId={selectedDossierId} items={automationItems} setModal={setModal} notify={notify} selectAutomation={setSelectedAutomation} setEnabled={setAutomationEnabled} requestHomeRefresh={() => setHomeRefreshToken((value) => value + 1)} />}
         {view === "Ajouter" && <AddDevice step={guideStep} setStep={setGuideStep} notify={notify} />}
         {view === "Journal" && <Journal role={role} />}
       </main>
@@ -1086,7 +1091,7 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
           <label><span>Réserve minimale</span><div><input type="number" min="5" max="80" value={energyConfiguration.batteryReservePercent} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryReservePercent: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryReservePercent", Number(event.target.value))} /><em>%</em></div><small>Protection du stockage</small></label>
         </div>
         <div className="grid-export-configuration">
-          <div><small>INJECTION DU SURPLUS</small><h4>Le client autorise-t-il l’injection réseau ?</h4><p>Ce choix pilote la règle installée sur la box Home Assistant.</p></div>
+          <div><small>INJECTION DU SURPLUS</small><h4>Le client autorise-t-il l’injection réseau ?</h4><p>Ce choix pilote la règle installée sur la box 1.2.3 Home.</p></div>
           <div className="grid-export-choice" role="group" aria-label="Autorisation d’injection réseau">
             <button type="button" className={energyConfiguration.allowGridExport ? "selected" : ""} onClick={() => void save(undefined, undefined, { ...energyConfiguration, allowGridExport: true })}><b>Autorisée</b><small>Le surplus peut être envoyé sur le réseau. Aucune règle de blocage.</small></button>
             <button type="button" className={!energyConfiguration.allowGridExport ? "selected blocked" : ""} onClick={() => void save(undefined, undefined, { ...energyConfiguration, allowGridExport: false })}><b>Interdite</b><small>La box bloque l’injection lorsque la voiture ne charge pas.</small></button>
@@ -1200,14 +1205,14 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
           <span className="flexible-load-icon">{load.icon}</span>
           <label><span>Appareil</span><input value={load.name} onChange={event => updateFlexibleLoad(load.id, { name: event.target.value })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /></label>
           <label><span>Puissance</span><div><input type="number" min="0" max="50000" value={load.powerWatts} onChange={event => updateFlexibleLoad(load.id, { powerWatts: Number(event.target.value) })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /><em>W</em></div></label>
-          <label><span>Mesure Home Assistant</span><input placeholder="sensor.appareil_puissance" value={load.powerEntityId || ""} onChange={event => updateFlexibleLoad(load.id, { powerEntityId: event.target.value })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /></label>
+          <label><span>Capteur de puissance</span><input placeholder="sensor.appareil_puissance" value={load.powerEntityId || ""} onChange={event => updateFlexibleLoad(load.id, { powerEntityId: event.target.value })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /></label>
           <label><span>Répartition</span><select value={load.showInConsumption === false ? "no" : "yes"} onChange={event => updateFlexibleLoad(load.id, { showInConsumption: event.target.value === "yes" }, true)}><option value="yes">Afficher</option><option value="no">Masquer</option></select></label>
           <label><span>Cycle minimum</span><div><input type="number" min="15" max="720" value={load.minimumRunMinutes} onChange={event => updateFlexibleLoad(load.id, { minimumRunMinutes: Number(event.target.value) })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /><em>min</em></div></label>
           <label><span>Priorité</span><select value={load.priority} onChange={event => updateFlexibleLoad(load.id, { priority: Number(event.target.value) }, true)}>{[1,2,3,4,5].map((priority) => <option value={priority} key={priority}>{priority}</option>)}</select></label>
           <button type="button" className="flexible-load-remove" aria-label={`Retirer ${load.name}`} onClick={() => removeFlexibleLoad(load.id)}>×</button>
         </article>
       )}</div>
-      <div className="predictive-note"><span>☀</span><div><b>Source recommandée : Forecast.Solar dans Home Assistant</b><p>La box récupère la courbe horaire sans exposer l’adresse de la maison ni une clé météo dans l’application.</p></div></div>
+      <div className="predictive-note"><span>☀</span><div><b>Source recommandée : prévision solaire de la box 1.2.3 Home</b><p>La box récupère la courbe horaire sans exposer l’adresse de la maison ni une clé météo dans l’application.</p></div></div>
     </section>
     <div className="prep-layout">
       <section className="catalog-panel">
@@ -1444,7 +1449,7 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
       <div className={`box-state ${agent?.status === "online" ? "online" : ""}`}><i /><span>Agent de la box<strong>{agent?.status === "online" ? `Connecté · HA ${agent.haVersion || "détecté"} · ${agent.inventoryCount} entités` : enrollment ? `Code ${enrollment.code} · valable 30 min` : "En attente d’association"}</strong></span><button onClick={agent ? () => notify(`Dernier contact : ${agent.lastSeenAt ? new Date(agent.lastSeenAt).toLocaleString("fr-FR") : "inconnu"}`) : createEnrollment}>{agent ? "Voir l’état" : enrollment ? "Nouveau code" : "Associer la box"}</button></div>
     </section>
     {discoveryReport && <section className="discovery-report">
-      <div className="panel-title"><div><small>Inventaire Home Assistant · {discoveryReport.inventoryCount} entités</small><h3>Rapport de découverte</h3></div><span>{discoveryReport.certain.length} sûre{discoveryReport.certain.length > 1 ? "s" : ""}</span></div>
+      <div className="panel-title"><div><small>Inventaire de la box 1.2.3 Home · {discoveryReport.inventoryCount} éléments</small><h3>Rapport de découverte</h3></div><span>{discoveryReport.certain.length} sûre{discoveryReport.certain.length > 1 ? "s" : ""}</span></div>
       <div className="discovery-report-grid">
         <article className="discovery-safe"><b>Associations enregistrées</b><strong>{discoveryReport.certain.length}</strong><small>Les choix existants sont conservés.</small></article>
         <article className="discovery-ambiguous"><b>À confirmer</b><strong>{discoveryReport.ambiguous.length}</strong><small>Aucune association ambiguë n’est appliquée seule.</small></article>
@@ -1483,7 +1488,7 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
           <div className="installation-device"><span>{item.icon}</span><div><small>{item.category} · {item.protocol} · Qté {item.quantity}</small><h3>{item.brand} {item.model}</h3><p>{item.room} · {item.method}</p></div><em className={`level level-${item.level.toLowerCase()}`}>{item.level}</em></div>
           <div className="stage-track">{installationStages.map((stage, index) => <button key={stage} className={item.status !== "Bloqué" && index <= activeIndex ? "done" : ""} onClick={() => updateStatus(item, stage)}><i>{item.status !== "Bloqué" && index <= activeIndex ? "✓" : index + 1}</i><span>{stage}</span></button>)}</div>
           <div className="entity-association">
-            <label><b>Entité Home Assistant</b><select value={item.matchedEntityId ?? ""} onChange={(event) => associateEntity(item, event.target.value)}>
+            <label><b>Appareil ou capteur associé</b><select value={item.matchedEntityId ?? ""} onChange={(event) => associateEntity(item, event.target.value)}>
               <option value="">Choisir une entité détectée…</option>
               {associableInventory.map((entity) => <option key={entity.entityId} value={entity.entityId}>{entity.name} · {entity.entityId}</option>)}
             </select></label>
@@ -1810,7 +1815,7 @@ function Dashboard({ dossierId, enabledModules, setView, setModal, notify, devic
       {activeHomeTab === "Piscine" && <PoolPortalView overview={overview} controls={controls} onControl={onControl} />}
       {activeHomeTab === "Équipements" && <div className="equipment-premium mobile-section">
         <PortalCategoryHeader eyebrow="ÉQUIPEMENTS" title="Votre maison" subtitle="Lumières, volets, accès et surveillance." icon="◉" />
-        <div className="equipment-overview"><article><small>ÉQUIPEMENTS DISPONIBLES</small><strong>{available}<em> / {devices.length}</em></strong><span>Synchronisés avec Home Assistant</span></article><article><small>ÉTAT DE LA MAISON</small><strong>{lowBattery ? `${lowBattery} alerte${lowBattery > 1 ? "s" : ""}` : "Tout va bien"}</strong><span>{lowBattery ? "Batteries à vérifier" : "Aucune anomalie détectée"}</span></article></div>
+        <div className="equipment-overview"><article><small>ÉQUIPEMENTS DISPONIBLES</small><strong>{available}<em> / {devices.length}</em></strong><span>Synchronisés avec la box 1.2.3 Home</span></article><article><small>ÉTAT DE LA MAISON</small><strong>{lowBattery ? `${lowBattery} alerte${lowBattery > 1 ? "s" : ""}` : "Tout va bien"}</strong><span>{lowBattery ? "Batteries à vérifier" : "Aucune anomalie détectée"}</span></article></div>
       </div>}
       {activeHomeTab === "Équipements" && Boolean(overview?.security?.length) && <div className="security-device-grid">
         {overview?.security?.map((device) => <article key={device.publicId}>
@@ -2264,12 +2269,13 @@ function Devices({ filtered, areas, search, setSearch, room, setRoom, notify, ma
   </div>;
 }
 
-function Automations({ dossierId, items, setModal, notify, selectAutomation, setEnabled }: {
+function Automations({ dossierId, items, setModal, notify, selectAutomation, setEnabled, requestHomeRefresh }: {
   dossierId: string;
   items: Automation[]; setModal: (value: string) => void;
   notify: (value: string) => void;
   selectAutomation: (automation: Automation | null) => void;
   setEnabled: (automation: Automation, enabled: boolean) => Promise<void>;
+  requestHomeRefresh: () => void;
 }) {
   const [coachOpen, setCoachOpen] = useState(false);
   const [coachLoading, setCoachLoading] = useState(false);
@@ -2278,6 +2284,9 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantPreview, setAssistantPreview] = useState<AssistantAutomationPreview | null>(null);
   const [assistantCreated, setAssistantCreated] = useState<string | null>(null);
+  const [pendingAutomations, setPendingAutomations] = useState<Automation[]>([]);
+  const [trackedAutomations, setTrackedAutomations] = useState<Automation[]>([]);
+  const [automationSyncError, setAutomationSyncError] = useState<string | null>(null);
   const [supportBusy, setSupportBusy] = useState(false);
   const [coachInsights, setCoachInsights] = useState<EnergyCoachInsight[]>([]);
   const [consumptionBreakdown, setConsumptionBreakdown] = useState<ConsumptionBreakdownItem[]>([]);
@@ -2303,6 +2312,42 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
     "Allume la lumière piscine au coucher du soleil le week-end",
     "Coupe le ballon d’eau chaude tous les jours à 16h",
   ];
+
+  useEffect(() => {
+    let active = true;
+    const loadStatus = () => fetch(`/api/assistant/automation/status?dossier=${encodeURIComponent(dossierId)}`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    }).then((response) => response.ok ? response.json() : Promise.reject())
+      .then((payload) => {
+        if (!active) return;
+        const commands = Array.isArray(payload.commands) ? payload.commands : [];
+        const failed = commands.find((command: { status?: string }) => command.status === "failed");
+        setAutomationSyncError(failed?.error
+          ? `Une automatisation n’a pas pu être créée : ${failed.error}`
+          : null);
+        setTrackedAutomations(commands
+          .filter((command: { status?: string }) => command.status !== "failed")
+          .map((command: { id: string; name: string; trigger: string; action: string; status: string }) => ({
+            id: `tracked-${command.id}`,
+            name: command.name,
+            trigger: command.trigger,
+            action: command.status === "completed"
+              ? "Créée · actualisation de la liste en cours"
+              : "Envoi en cours vers la box 1.2.3 Home",
+            active: true,
+            icon: "⌁",
+            pending: true,
+          })));
+      })
+      .catch(() => undefined);
+    if (dossierId) loadStatus();
+    const timer = window.setInterval(loadStatus, 5_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [dossierId]);
 
   useEffect(() => {
     let active = true;
@@ -2416,7 +2461,7 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       setAssistantPreview(payload);
       if (!response.ok) notify(payload.error ?? "La proposition ne peut pas être préparée");
     } catch {
-      setAssistantPreview({ error: "La Green Box ne répond pas pour le moment." });
+      setAssistantPreview({ error: "La box 1.2.3 Home ne répond pas pour le moment." });
     } finally {
       setAssistantBusy(false);
     }
@@ -2434,16 +2479,36 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
           confirmed: true,
         }),
       });
-      const payload = await response.json() as { message?: string; error?: string };
+      const payload = await response.json() as {
+        message?: string;
+        error?: string;
+        commandId?: string;
+        rule?: AssistantAutomationRule;
+      };
       if (!response.ok) {
         setAssistantPreview((preview) => preview ? { ...preview, error: payload.error } : null);
         return;
       }
-      const message = payload.message ?? "Automatisation envoyée à la Green Box.";
+      const message = payload.message ?? "Automatisation envoyée à la box 1.2.3 Home.";
+      if (payload.rule) {
+        setPendingAutomations((pending) => {
+          const next: Automation = {
+            id: `pending-${payload.commandId ?? Date.now()}`,
+            name: payload.rule!.name,
+            trigger: payload.rule!.triggerLabel,
+            action: `${payload.rule!.actionLabel} · Synchronisation en cours`,
+            active: true,
+            icon: "⌁",
+            pending: true,
+          };
+          return [...pending.filter((item) => item.name !== next.name), next];
+        });
+      }
       setAssistantCreated(message);
       setAssistantPreview(null);
       setAssistantRequest("");
       notify(message);
+      window.setTimeout(requestHomeRefresh, 6_000);
     } catch {
       setAssistantPreview((preview) => preview ? { ...preview, error: "La confirmation n’a pas pu être envoyée." } : null);
     } finally {
@@ -2484,6 +2549,16 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
   const confidenceLabel = solarForecastSummary?.confidence === "high"
     ? "Élevée"
     : solarForecastSummary?.confidence === "medium" ? "Moyenne" : "Faible";
+  const pendingByName = new Map<string, Automation>();
+  for (const candidate of [...pendingAutomations, ...trackedAutomations]) {
+    pendingByName.set(canonicalAutomationName(candidate.name), candidate);
+  }
+  const displayedAutomations = [
+    ...[...pendingByName.values()].filter((candidate) => !items.some((item) =>
+      canonicalAutomationName(item.name) === canonicalAutomationName(candidate.name)
+    )),
+    ...items,
+  ];
 
   return <div className="content coach-page">
     <div className="section-intro split"><div><span className="eyebrow">Votre avantage Premium</span><h2>Coach énergie et maison intelligente</h2><p>Comprenez ce qui consomme, recevez des conseils chiffrés et créez vos règles en langage simple.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
@@ -2548,7 +2623,7 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
           <button type="button" onClick={() => setAssistantPreview(null)}>Modifier la demande</button>
           <button type="button" className="primary" disabled={assistantBusy} onClick={() => void confirmAssistantAutomation()}>{assistantBusy ? "Confirmation…" : "Confirmer et créer"}</button>
         </div>
-        <small className="assistant-safety-note">En confirmant, seule la règle affichée ci-dessus sera envoyée à votre Green Box.</small>
+        <small className="assistant-safety-note">En confirmant, seule la règle affichée ci-dessus sera envoyée à votre box 1.2.3 Home.</small>
       </article>}
       {assistantPreview?.result && assistantPreview.result.status !== "ready" && <div className={`assistant-result ${assistantPreview.result.status === "refused" ? "refused" : "attention"}`} role="status">
         <span>{assistantPreview.result?.status === "refused" ? "!" : "?"}</span>
@@ -2647,15 +2722,16 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       </form>
       <footer>Les conseils sont basés sur les données disponibles et restent des estimations.</footer>
     </section>}
-    <div className="automation-layout"><section><h3>Vos automatisations <span>{items.length}</span></h3><div className="automation-list">{items.map((a)=><article key={a.id}>
+    {automationSyncError && <div className="assistant-result attention" role="alert"><span>!</span><div><b>Création non terminée</b><p>{automationSyncError}</p></div></div>}
+    <div className="automation-layout"><section><h3>Vos automatisations <span>{displayedAutomations.length}</span></h3><div className="automation-list">{displayedAutomations.map((a)=><article className={a.pending ? "pending" : ""} key={a.id}>
       <span className="automation-icon">{a.icon}</span><div><h4>{a.name}</h4><p><b>QUAND</b> {a.trigger}</p><p><b>ALORS</b> {a.action}</p></div>
-      <label className="switch"><input type="checkbox" checked={a.active} onChange={(event)=>{
+      <label className="switch"><input type="checkbox" checked={a.active} disabled={a.pending} onChange={(event)=>{
         const enabled = event.target.checked;
         setEnabled(a, enabled)
           .then(() => notify(`${a.name} ${enabled ? "activée" : "désactivée"}`))
           .catch(() => notify("L’automatisation n’a pas pu être modifiée"));
       }} /><span /></label>
-      <button aria-label={`Options pour ${a.name}`} onClick={()=>{selectAutomation(a);setModal("delete")}}>•••</button>
+      <button disabled={a.pending} aria-label={a.pending ? `${a.name} en cours de synchronisation` : `Options pour ${a.name}`} onClick={()=>{selectAutomation(a);setModal("delete")}}>{a.pending ? "…" : "•••"}</button>
     </article>)}</div></section>
     <aside className="templates"><small>POUR COMMENCER</small><h3>Modèles populaires</h3>
       {[["☾","Bonne nuit","Éteint les lumières et baisse le chauffage"],["↗","Je quitte la maison","Sécurise et économise en un geste"],["☼","Réveil en douceur","Ouvre les volets progressivement"]].map(x=><button key={x[1]} onClick={()=>{selectAutomation(null);setModal("automation")}}><span>{x[0]}</span><div><b>{x[1]}</b><small>{x[2]}</small></div><em>＋</em></button>)}
@@ -2776,7 +2852,7 @@ function Modal({
         publicDeviceId: automationDeviceId,
         desiredActive: automationDesiredActive,
       });
-      notify("Automatisation envoyée à votre Green Box");
+      notify("Automatisation envoyée à votre box 1.2.3 Home");
       close();
     } catch {
       notify("L’automatisation n’a pas pu être créée");
@@ -2794,5 +2870,5 @@ function Modal({
   const actionLabel = selectedTarget?.category === "Sécurité"
     ? automationDesiredActive ? "Verrouiller" : "Déverrouiller"
     : automationDesiredActive ? "Allumer" : "Éteindre";
-  return <div className="modal-backdrop" onMouseDown={close}><div className="modal automation-modal wide" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><small>RÈGLE SIMPLE · GREEN BOX</small><h3>Créer une automatisation</h3><p>La règle est préparée ici puis exécutée localement dans votre maison, même si Internet est coupé.</p><label className="field">Nom de la règle<input value={automationName} maxLength={80} placeholder="Éclairage du soir" onChange={event=>{setAutomationName(event.target.value);setAutomationConfirmation(false)}} /></label><div className="rule-row"><b>QUAND</b><label><span>Chaque jour à</span><input type="time" value={automationTime} onChange={event=>{setAutomationTime(event.target.value);setAutomationConfirmation(false)}} /></label></div><div className="rule-row"><b>SI</b><div className="optional-condition">Toujours · aucune condition supplémentaire</div></div><div className="rule-row"><b>ALORS</b><div className="automation-action-fields"><select value={automationDeviceId} onChange={event=>{setAutomationDeviceId(event.target.value);setAutomationConfirmation(false)}}><option value="">Choisir un appareil</option>{actionableDevices.map((item)=><option key={item.id} value={item.id}>{item.name} · {item.room}</option>)}</select><select value={automationDesiredActive ? "on" : "off"} onChange={event=>{setAutomationDesiredActive(event.target.value==="on");setAutomationConfirmation(false)}}><option value="on">{selectedTarget?.category === "Sécurité" ? "Verrouiller" : "Allumer"}</option><option value="off">{selectedTarget?.category === "Sécurité" ? "Déverrouiller" : "Éteindre"}</option></select></div></div>{automationConfirmation && <div className="automation-confirmation"><b>Confirmez la règle</b><p>Tous les jours à {automationTime}, la Green Box va {actionLabel.toLowerCase()} « {selectedTarget?.name ?? "l’appareil sélectionné"} ».</p></div>}<button disabled={busy || !actionableDevices.length} className="primary full" onClick={()=>automationConfirmation ? void submitAutomation() : setAutomationConfirmation(true)}>{busy ? "Envoi à la maison…" : automationConfirmation ? "Confirmer et activer" : "Vérifier la règle"}</button>{!actionableDevices.length && <p className="automation-empty">Aucun appareil pilotable n’est actuellement disponible.</p>}</div></div>;
+  return <div className="modal-backdrop" onMouseDown={close}><div className="modal automation-modal wide" onMouseDown={e=>e.stopPropagation()}><button className="modal-close" onClick={close}>×</button><small>RÈGLE SIMPLE · BOX 1.2.3 HOME</small><h3>Créer une automatisation</h3><p>La règle est préparée ici puis exécutée localement dans votre maison, même si Internet est coupé.</p><label className="field">Nom de la règle<input value={automationName} maxLength={80} placeholder="Éclairage du soir" onChange={event=>{setAutomationName(event.target.value);setAutomationConfirmation(false)}} /></label><div className="rule-row"><b>QUAND</b><label><span>Chaque jour à</span><input type="time" value={automationTime} onChange={event=>{setAutomationTime(event.target.value);setAutomationConfirmation(false)}} /></label></div><div className="rule-row"><b>SI</b><div className="optional-condition">Toujours · aucune condition supplémentaire</div></div><div className="rule-row"><b>ALORS</b><div className="automation-action-fields"><select value={automationDeviceId} onChange={event=>{setAutomationDeviceId(event.target.value);setAutomationConfirmation(false)}}><option value="">Choisir un appareil</option>{actionableDevices.map((item)=><option key={item.id} value={item.id}>{item.name} · {item.room}</option>)}</select><select value={automationDesiredActive ? "on" : "off"} onChange={event=>{setAutomationDesiredActive(event.target.value==="on");setAutomationConfirmation(false)}}><option value="on">{selectedTarget?.category === "Sécurité" ? "Verrouiller" : "Allumer"}</option><option value="off">{selectedTarget?.category === "Sécurité" ? "Déverrouiller" : "Éteindre"}</option></select></div></div>{automationConfirmation && <div className="automation-confirmation"><b>Confirmez la règle</b><p>Tous les jours à {automationTime}, la box 1.2.3 Home va {actionLabel.toLowerCase()} « {selectedTarget?.name ?? "l’appareil sélectionné"} ».</p></div>}<button disabled={busy || !actionableDevices.length} className="primary full" onClick={()=>automationConfirmation ? void submitAutomation() : setAutomationConfirmation(true)}>{busy ? "Envoi à la maison…" : automationConfirmation ? "Confirmer et activer" : "Vérifier la règle"}</button>{!actionableDevices.length && <p className="automation-empty">Aucun appareil pilotable n’est actuellement disponible.</p>}</div></div>;
 }

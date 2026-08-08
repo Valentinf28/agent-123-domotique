@@ -602,7 +602,7 @@ def enroll(portal_url: str, code: str) -> dict[str, Any]:
     result = request_json(
         f"{portal_url}/agent/enroll",
         method="POST",
-        payload={"code": code, "label": "Box Home Assistant"},
+        payload={"code": code, "label": "Box 1.2.3 Home"},
     )
     if not isinstance(result, dict) or not result.get("token"):
         raise RuntimeError("Réponse d'enrôlement invalide")
@@ -2171,10 +2171,13 @@ def main() -> None:
             commands = heartbeat_result.get("commands")
             if isinstance(commands, list):
                 results = []
+                refresh_full_inventory = False
                 for command in commands[:20]:
                     if not isinstance(command, dict):
                         continue
                     result = relay_command(supervisor_token, command)
+                    if bool(result.get("ok")) and str(command.get("action", "")) == "ha.automation.create":
+                        refresh_full_inventory = True
                     results.append({
                         "id": str(command.get("id", "")),
                         "ok": bool(result.get("ok")),
@@ -2183,6 +2186,8 @@ def main() -> None:
                 if results:
                     state["command_results"] = results
                     write_state(state)
+                if refresh_full_inventory:
+                    last_full_inventory_at = 0.0
             dashboard = heartbeat_result.get("dashboard")
             if isinstance(dashboard, dict):
                 apply_dashboard(supervisor_token, dashboard, state)

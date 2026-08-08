@@ -274,7 +274,7 @@ test("permet à chaque maison d’autoriser ou d’interdire l’injection rése
   assert.match(migration, /allow_grid_export/);
 });
 
-test("crée et administre les automatisations via la Green Box", async () => {
+test("crée et administre les automatisations via la box 1.2.3 Home", async () => {
   const [portal, collectionRoute, itemRoute, agentHome, agent] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/automations/route.ts", import.meta.url), "utf8"),

@@ -657,7 +657,7 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
       enabled: item.state === "on",
       lastTriggered: null,
       trigger: "Pilotage énergétique",
-      action: "Action gérée par la Green Box",
+      action: "Action gérée par la box 1.2.3 Home",
     }));
 
   const energyItems = {

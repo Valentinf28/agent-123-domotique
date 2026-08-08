@@ -5,6 +5,7 @@ import test from "node:test";
 const portal = fs.readFileSync(new URL("../app/portal.tsx", import.meta.url), "utf8");
 const proposeRoute = fs.readFileSync(new URL("../app/api/assistant/automation/propose/route.ts", import.meta.url), "utf8");
 const confirmRoute = fs.readFileSync(new URL("../app/api/assistant/automation/confirm/route.ts", import.meta.url), "utf8");
+const statusRoute = fs.readFileSync(new URL("../app/api/assistant/automation/status/route.ts", import.meta.url), "utf8");
 
 test("impose un aperçu et une confirmation séparée avant toute création", () => {
   assert.match(portal, /APERÇU À CONFIRMER · NON ACTIVÉ/);
@@ -25,6 +26,22 @@ test("permet à l’installateur de présenter l’assistant sans modifier le fo
   assert.match(proposeRoute, /portalApiAdminAuthorized/);
   assert.match(proposeRoute, /remoteAccessAllowed\s*\|\|/);
   assert.match(proposeRoute, /Activez ou renouvelez le forfait Premium/);
+});
+
+test("affiche immédiatement la règle confirmée pendant sa synchronisation", () => {
+  assert.match(portal, /pendingAutomations/);
+  assert.match(portal, /Synchronisation en cours/);
+  assert.match(portal, /requestHomeRefresh/);
+  assert.match(portal, /automation\/status/);
+  assert.match(statusRoute, /agentCommands/);
+  assert.match(statusRoute, /Cache-Control/);
+});
+
+test("nomme toujours la box avec la marque 1.2.3 Home", () => {
+  assert.doesNotMatch(portal, /Green Box/i);
+  assert.doesNotMatch(proposeRoute, /Green Box/i);
+  assert.doesNotMatch(confirmRoute, /Green Box/i);
+  assert.match(portal, /box 1\.2\.3 Home/);
 });
 
 test("présente des exemples de règles réellement prises en charge", () => {

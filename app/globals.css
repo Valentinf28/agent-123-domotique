@@ -257,6 +257,10 @@ main { margin-left:248px; min-height:100vh; }
 .coach-page .automation-layout h3{font-size:18px}
 .coach-page .automation-list h4{font-size:13px}
 .coach-page .automation-list p{font-size:11px}
+.coach-page .automation-list article.pending{border-color:#6b5e27;background:linear-gradient(145deg,#292719,#20211d)}
+.coach-page .automation-list article.pending h4:after{content:" · Synchronisation";color:#d8bf51;font-size:10px;font-weight:600}
+.coach-page .automation-list article.pending .switch{opacity:.45}
+.coach-page .automation-list article.pending>button{cursor:default}
 
 @media(max-width:760px){
   .coach-page{padding-left:16px;padding-right:16px}

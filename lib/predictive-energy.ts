@@ -312,7 +312,7 @@ export function buildPredictiveEnergyPlan(input: PredictiveEnergyInput): Predict
     return plan(input, {
       status: "needs_forecast",
       headline: "Prévision solaire à connecter",
-      explanation: "Ajoutez Forecast.Solar dans Home Assistant puis associez-le au tableau Énergie.",
+      explanation: "Activez la prévision solaire dans la box 1.2.3 Home, puis associez-la au tableau Énergie.",
     });
   }
 

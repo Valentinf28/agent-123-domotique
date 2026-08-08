@@ -466,7 +466,7 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     week,
     solarForecast: {
       available: forecast.length > 0,
-      source: "Open-Meteo via Home Assistant",
+      source: "Prévision météo locale",
       slots: adaptiveForecast.prudentSlots.slice(0, 24),
       rawSlots: adaptiveForecast.rawSlots.slice(0, 24),
       rawTodayWh: adaptiveForecast.rawTodayWh,
