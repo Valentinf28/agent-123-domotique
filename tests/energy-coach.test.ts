@@ -5,7 +5,7 @@ import {
   type EnergyInventoryItem,
 } from "../lib/energy-snapshot.ts";
 import { consumptionBreakdownFromInventory } from "../lib/consumption-breakdown.ts";
-import { buildEnergyInsights } from "../lib/energy-insights.ts";
+import { buildEnergyInsights, tariffGuidance } from "../lib/energy-insights.ts";
 
 const entity = (
   entityId: string,
@@ -131,6 +131,16 @@ test("alerte quand la batterie alimente la maison sans solaire près de sa rése
   assert.match(alert.description, /1[\s ]?150 W/);
 });
 
+test("agit avant que la batterie soit presque vide le soir", () => {
+  const insights = buildEnergyInsights(snapshot({
+    batteryPercent: 56,
+    batteryWatts: 1219,
+    solarWatts: 0,
+  }), [], [], 25);
+
+  assert.ok(insights.some((insight) => insight.id === "battery-evening-discharge"));
+});
+
 test("équilibre les priorités économies, batterie et solaire", () => {
   const insights = buildEnergyInsights(snapshot({
     batteryPercent: 35,
@@ -151,4 +161,20 @@ test("équilibre les priorités économies, batterie et solaire", () => {
     "battery",
     "solar",
   ]);
+});
+
+test("utilise les vraies heures creuses sans inventer leur prix", () => {
+  const advice = tariffGuidance("hp_hc", [{ start: "22:30", end: "06:30" }]);
+
+  assert.match(advice, /22:30–06:30/);
+  assert.match(advice, /solution de repli/);
+  assert.match(advice, /ne peut pas être calculé honnêtement/);
+  assert.doesNotMatch(advice, /\d+[,.]?\d*\s*€/);
+});
+
+test("ne prétend pas qu'un simple décalage fait économiser avec l'option Base", () => {
+  const advice = tariffGuidance("base", []);
+
+  assert.match(advice, /décaler un usage ne réduit pas son prix/);
+  assert.match(advice, /prioriser le solaire/);
 });

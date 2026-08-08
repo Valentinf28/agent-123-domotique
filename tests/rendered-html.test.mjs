@@ -439,7 +439,9 @@ test("inclut les assistants et le nouveau tarif dans le forfait client", async (
   assert.match(portal, /Coach énergie et maison intelligente/i);
   assert.match(portal, /coach-quick-start/);
   assert.match(portal, /Démarrer avec le Coach énergie/);
-  assert.match(portal, /Comprenez ce qui consomme, recevez des conseils chiffrés/i);
+  assert.match(portal, /Réduisez votre facture, protégez la batterie/i);
+  assert.match(portal, /PLAN D’ACTION PERSONNALISÉ/i);
+  assert.match(portal, /mesure réelle.*estimation/i);
   assert.match(portal, /Bilan énergétique récent/);
   assert.match(portal, /coachWeek\.observedDays/);
   assert.match(portal, /Votre maison en un coup d’œil/);

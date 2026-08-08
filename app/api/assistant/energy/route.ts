@@ -9,6 +9,7 @@ import {
   getEnergyCoachContext,
   refundAssistantRequest,
 } from "../../../../lib/energy-coach";
+import { tariffGuidance } from "../../../../lib/energy-insights";
 
 type AutomationProposal = {
   name: string;
@@ -80,7 +81,9 @@ function localReply(
     const period = observedDays >= 7
       ? "Sur les sept derniers jours disponibles"
       : `Sur les ${observedDays} jours disponibles`;
-    answer = `${period}, la maison a consommé ${kilowattHours(context.week.consumptionWh)} et produit ${kilowattHours(context.week.productionWh)}. À rythme identique, la consommation mensuelle serait d’environ ${kilowattHours(projectedConsumption)}. C’est une projection, pas une facture.`;
+    answer = `${period}, la maison a consommé ${kilowattHours(context.week.consumptionWh)} et produit ${kilowattHours(context.week.productionWh)}. À rythme identique, la consommation mensuelle serait d’environ ${kilowattHours(projectedConsumption)}. C’est une projection, pas une facture. ${tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods)}`;
+  } else if (/heures?\s+creuses?|tarif|facture|prix/.test(normalized)) {
+    answer = tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods);
   } else if (/solaire|surplus|autoconsomm/.test(normalized)) {
     const exportWatts = Math.max(0, -context.current.gridWatts);
     const remaining = context.solarForecast.prudentRemainingWh;
@@ -216,7 +219,7 @@ async function openAiReply(
               bilanSeptJours: context.week,
               nombreDeReleves: context.historySamples,
               previsionSolaire: context.solarForecast,
-              contratTarifaire: "Prix du kWh non renseigné : ne jamais annoncer d'économie en euros.",
+              contratTarifaire: context.tariff,
               plansPredictifs: context.predictivePlans,
               appareilsQuiConsomment: context.consumptionBreakdown,
               recommandationsCalculees: context.insights,

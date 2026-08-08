@@ -243,10 +243,17 @@ main { margin-left:248px; min-height:100vh; }
 .coach-page .coach-consumption-breakdown article>strong{font-size:17px}
 .coach-page .coach-consumption-breakdown>button{font-size:12px}
 .coach-page .energy-coach-insights{gap:14px;margin-bottom:24px}
+.coach-page .coach-insights-section{margin-bottom:24px;padding:22px 24px;border:1px solid #34362f;border-radius:20px;background:linear-gradient(145deg,#20211d,#191a17)}
+.coach-page .coach-insights-section>header{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-bottom:16px}
+.coach-page .coach-insights-section>header small{display:block;color:#d3b948;font-size:10px;letter-spacing:.7px}
+.coach-page .coach-insights-section>header h3{margin:5px 0 0;font-size:22px}
+.coach-page .coach-insights-section>header>span{color:#85877f;font-size:11px}
+.coach-page .coach-insights-section .energy-coach-insights{margin-bottom:0}
 .coach-page .coach-insight{min-height:145px;padding:20px}
 .coach-page .coach-insight small{font-size:10px}
 .coach-page .coach-insight h3{font-size:15px}
 .coach-page .coach-insight p{font-size:12px;line-height:1.55}
+.coach-page .coach-insight div>em{display:block;margin-top:10px;color:#aeb0a8;font-size:10px;font-style:normal}
 .coach-page .energy-coach-chat header b{font-size:14px}
 .coach-page .energy-coach-chat header small{font-size:11px}
 .coach-page .energy-coach-chat header>em{font-size:10px}
@@ -267,6 +274,10 @@ main { margin-left:248px; min-height:100vh; }
   .coach-page .section-intro{padding-top:14px}
   .coach-page .section-intro h2{font-size:30px}
   .coach-page .section-intro p{font-size:15px}
+  .coach-page .coach-insights-section{padding:18px}
+  .coach-page .coach-insights-section>header{display:block}
+  .coach-page .coach-insights-section>header h3{font-size:20px}
+  .coach-page .coach-insights-section>header>span{display:block;margin-top:7px}
   .coach-page .home-assistant-card{padding:20px}
   .coach-page .coach-quick-start>div,.coach-page .coach-quick-start>button{min-height:76px}
   .coach-page .coach-week-summary{grid-template-columns:1fr}

@@ -25,6 +25,7 @@ import {
 import { HOUSE_BINDINGS } from "./house-bindings.generated";
 import { resolveEntityCandidate } from "./entity-resolution.generated.js";
 import { buildEnergyInsights as buildPrioritizedEnergyInsights } from "./energy-insights";
+import type { OffPeakPeriod } from "./energy-insights";
 export {
   ASSISTANT_MONTHLY_LIMIT,
   assistantQuotaAllows,
@@ -142,6 +143,17 @@ function flexibleLoadsFrom(value: string): FlexibleLoadConfiguration[] {
         )
       )
       : [];
+  } catch {
+    return [];
+  }
+}
+
+function offPeakPeriodsFrom(value: string): OffPeakPeriod[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((period): period is OffPeakPeriod =>
+      Boolean(period && typeof period.start === "string" && typeof period.end === "string")
+    ) : [];
   } catch {
     return [];
   }
@@ -502,6 +514,11 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
       id: selected.dossier.id,
       publicId: selected.dossier.publicId,
       name: selected.dossier.customerName,
+    },
+    tariff: {
+      plan: selected.dossier.tariffPlan === "hp_hc" ? "hp_hc" as const : "base" as const,
+      offPeakPeriods: offPeakPeriodsFrom(selected.dossier.offPeakPeriodsJson),
+      pricesConfigured: false,
     },
     current,
     historySamples: history.length,

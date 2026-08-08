@@ -2581,13 +2581,13 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
   ];
 
   return <div className="content coach-page">
-    <div className="section-intro split"><div><span className="eyebrow">Votre avantage Premium</span><h2>Coach énergie et maison intelligente</h2><p>Comprenez ce qui consomme, recevez des conseils chiffrés et créez vos règles en langage simple.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
+    <div className="section-intro split"><div><span className="eyebrow">Votre avantage Premium</span><h2>Coach énergie et maison intelligente</h2><p>Réduisez votre facture, protégez la batterie et utilisez davantage votre production solaire.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
     <section className="home-assistant-card">
       <div className="home-assistant-symbol">✦</div>
       <div>
         <small>COACH ÉNERGIE · INCLUS DANS VOTRE FORFAIT</small>
-        <h3>Votre maison vous aide à moins consommer</h3>
-        <p>Le coach analyse vos habitudes, chiffre les économies possibles et peut préparer une automatisation. Rien n’est activé sans votre accord.</p>
+        <h3>Un plan d’action adapté à votre maison</h3>
+        <p>Le Coach croise les mesures, le solaire, la réserve batterie et le contrat électrique. Il explique chaque conseil et prépare les règles utiles sans jamais les activer sans votre accord.</p>
       </div>
       <button onClick={() => setCoachOpen((open) => !open)}>{coachOpen ? "Fermer le coach" : "Parler au coach"} <span>{coachOpen ? "×" : "→"}</span></button>
     </section>
@@ -2701,12 +2701,13 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       </article>)}</div>
       <button type="button" onClick={() => void askCoach("Quels appareils consomment le plus maintenant et comment réduire leur consommation ?")}>Demander l’analyse du Coach →</button>
     </section>}
-    {coachInsights.length > 0 && <section className="energy-coach-insights" aria-label="Conseils énergétiques personnalisés">
-      {coachInsights.slice(0, 3).map((insight) => <article className={`coach-insight ${insight.tone}`} key={insight.id}>
+    {coachInsights.length > 0 && <section className="coach-insights-section" aria-label="Conseils énergétiques personnalisés">
+      <header><div><small>PLAN D’ACTION PERSONNALISÉ</small><h3>Vos priorités maintenant</h3></div><span>Classées selon les mesures de la maison</span></header>
+      <div className="energy-coach-insights">{coachInsights.slice(0, 3).map((insight, index) => <article className={`coach-insight ${insight.tone}`} key={insight.id}>
         <span>{insight.icon}</span>
-        <div><small>{insight.goal === "money" ? "ÉCONOMIES" : insight.goal === "battery" ? "BATTERIE" : "SOLAIRE"} · {insight.impact}</small><h3>{insight.title}</h3><p>{insight.description}</p></div>
+        <div><small>PRIORITÉ {index + 1} · {insight.goal === "money" ? "ÉCONOMIES" : insight.goal === "battery" ? "BATTERIE" : "SOLAIRE"}</small><h3>{insight.title}</h3><p>{insight.description}</p><em>{insight.impact} · {insight.confidence === "measured" ? "mesure réelle" : "estimation"}</em></div>
         <button onClick={() => void askCoach(insight.action)} aria-label={`Demander conseil : ${insight.title}`}>→</button>
-      </article>)}
+      </article>)}</div>
     </section>}
     {coachOpen && <section className="energy-coach-chat" aria-label="Conversation avec le coach énergie">
       <header><div><span>✦</span><p><b>Coach 1.2.3 Home</b><small><i /> Analyse personnalisée de votre maison</small></p></div><em>Inclus</em></header>

@@ -15,6 +15,27 @@ export type EnergyInsight = {
 
 type HistorySample = { capturedAt: string; homeWatts: number };
 
+export type OffPeakPeriod = {
+  id?: string;
+  label?: string;
+  start: string;
+  end: string;
+};
+
+export function tariffGuidance(
+  plan: "base" | "hp_hc",
+  periods: OffPeakPeriod[],
+) {
+  if (plan === "hp_hc" && periods.length) {
+    const slots = periods.map((period) => `${period.start}–${period.end}`).join(", ");
+    return `Le contrat comporte des heures creuses (${slots}). Utilisez-les comme solution de repli pour les appareils flexibles lorsque le solaire ne suffit pas. Sans prix du kWh renseigné, le gain en euros ne peut pas être calculé honnêtement.`;
+  }
+  if (plan === "hp_hc") {
+    return "Le contrat est en heures pleines / heures creuses, mais aucune plage n’est configurée. Renseignez les horaires avant de proposer un décalage tarifaire. Sans prix du kWh renseigné, le gain en euros ne peut pas être calculé honnêtement.";
+  }
+  return "Le contrat est en option Base : décaler un usage ne réduit pas son prix à lui seul. Pour économiser, il faut prioriser le solaire disponible ou réduire la consommation. Sans prix du kWh renseigné, le gain en euros ne peut pas être calculé honnêtement.";
+}
+
 const average = (values: number[]) => values.length
   ? values.reduce((sum, value) => sum + value, 0) / values.length
   : 0;
@@ -80,7 +101,9 @@ export function buildEnergyInsights(
     title: "Réserve batterie faible", description: `La batterie est à ${current.batteryPercent} %.`,
     impact: "Garder une réserve pour le soir", action: "Vérifier la stratégie de batterie",
   });
-  const protectionThreshold = Math.max(35, batteryReservePercent + 15);
+  // Avant la nuit, attendre d'être presque à la réserve est trop tard : une
+  // décharge significative sans solaire devient actionnable dès 65 %.
+  const protectionThreshold = Math.max(65, batteryReservePercent + 20);
   if (current.batteryWatts > 300 && current.solarWatts < 100 && current.batteryPercent > 20 && current.batteryPercent <= protectionThreshold) insights.push({
     id: "battery-evening-discharge", icon: "▣", tone: "attention", goal: "battery", confidence: "measured",
     title: "Batterie sollicitée sans solaire",
