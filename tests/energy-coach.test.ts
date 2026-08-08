@@ -211,6 +211,19 @@ test("utilise les vraies heures creuses sans inventer leur prix", () => {
   assert.doesNotMatch(advice, /\d+[,.]?\d*\s*€/);
 });
 
+test("utilise les prix contractuels configurés sans les confondre", () => {
+  const advice = tariffGuidance("hp_hc", [{ start: "22:30", end: "06:30" }], {
+    baseMilliEurosPerKwh: null,
+    peakMilliEurosPerKwh: 270,
+    offPeakMilliEurosPerKwh: 207,
+    exportMilliEurosPerKwh: 40,
+  });
+
+  assert.match(advice, /0,270 € \/ kWh en heures pleines/);
+  assert.match(advice, /0,207 € \/ kWh en heures creuses/);
+  assert.doesNotMatch(advice, /gain en euros ne peut pas être calculé/);
+});
+
 test("ne prétend pas qu'un simple décalage fait économiser avec l'option Base", () => {
   const advice = tariffGuidance("base", []);
 

@@ -28,6 +28,10 @@ type EnergyConfigurationPayload = {
   batteryReservePercent?: number;
   flexibleLoads?: FlexibleLoadPayload[];
   tariffPlan?: string;
+  basePriceMilliEurosPerKwh?: number | null;
+  peakPriceMilliEurosPerKwh?: number | null;
+  offPeakPriceMilliEurosPerKwh?: number | null;
+  exportPriceMilliEurosPerKwh?: number | null;
   offPeakPeriods?: OffPeakPeriodPayload[];
   allowGridExport?: boolean;
 };
@@ -73,6 +77,14 @@ function boundedInteger(value: unknown, fallback: number, minimum: number, maxim
   const numeric = value === undefined ? fallback : Number(value);
   const safeValue = Number.isFinite(numeric) ? numeric : fallback;
   return Math.min(maximum, Math.max(minimum, Math.round(safeValue)));
+}
+
+function optionalPrice(value: unknown, fallback: number | null) {
+  if (value === undefined) return fallback;
+  if (value === null || value === "") return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > 2_000) throw new Error("INVALID_TARIFF_PRICE");
+  return Math.round(numeric);
 }
 
 function flexibleLoadsFrom(value: string) {
@@ -211,6 +223,10 @@ export async function GET(request: Request) {
           batteryReservePercent: dossier.batteryReservePercent,
           flexibleLoads: flexibleLoadsFrom(dossier.flexibleLoadsJson),
           tariffPlan: dossier.tariffPlan === "hp_hc" ? "hp_hc" : "base",
+          basePriceMilliEurosPerKwh: dossier.basePriceMilliEurosPerKwh,
+          peakPriceMilliEurosPerKwh: dossier.peakPriceMilliEurosPerKwh,
+          offPeakPriceMilliEurosPerKwh: dossier.offPeakPriceMilliEurosPerKwh,
+          exportPriceMilliEurosPerKwh: dossier.exportPriceMilliEurosPerKwh,
           offPeakPeriods: offPeakPeriodsFrom(dossier.offPeakPeriodsJson),
           allowGridExport: dossier.allowGridExport,
         },
@@ -293,6 +309,10 @@ export async function PUT(request: Request) {
       tariffPlan: requestedEnergy.tariffPlan === undefined
         ? dossier.tariffPlan
         : requestedEnergy.tariffPlan === "hp_hc" ? "hp_hc" : "base",
+      basePriceMilliEurosPerKwh: optionalPrice(requestedEnergy.basePriceMilliEurosPerKwh, dossier.basePriceMilliEurosPerKwh),
+      peakPriceMilliEurosPerKwh: optionalPrice(requestedEnergy.peakPriceMilliEurosPerKwh, dossier.peakPriceMilliEurosPerKwh),
+      offPeakPriceMilliEurosPerKwh: optionalPrice(requestedEnergy.offPeakPriceMilliEurosPerKwh, dossier.offPeakPriceMilliEurosPerKwh),
+      exportPriceMilliEurosPerKwh: optionalPrice(requestedEnergy.exportPriceMilliEurosPerKwh, dossier.exportPriceMilliEurosPerKwh),
       offPeakPeriods: requestedEnergy.offPeakPeriods === undefined
         ? offPeakPeriodsFrom(dossier.offPeakPeriodsJson)
         : sanitizeOffPeakPeriods(requestedEnergy.offPeakPeriods),
@@ -317,6 +337,10 @@ export async function PUT(request: Request) {
       batteryReservePercent: energyConfiguration.batteryReservePercent,
       flexibleLoadsJson: JSON.stringify(energyConfiguration.flexibleLoads),
       tariffPlan: energyConfiguration.tariffPlan,
+      basePriceMilliEurosPerKwh: energyConfiguration.basePriceMilliEurosPerKwh,
+      peakPriceMilliEurosPerKwh: energyConfiguration.peakPriceMilliEurosPerKwh,
+      offPeakPriceMilliEurosPerKwh: energyConfiguration.offPeakPriceMilliEurosPerKwh,
+      exportPriceMilliEurosPerKwh: energyConfiguration.exportPriceMilliEurosPerKwh,
       offPeakPeriodsJson: JSON.stringify(energyConfiguration.offPeakPeriods),
       allowGridExport: energyConfiguration.allowGridExport,
       updatedAt: new Date().toISOString(),
@@ -330,7 +354,7 @@ export async function PUT(request: Request) {
     return Response.json({ saved: true, count: items.length, enabledModules, energyConfiguration });
   } catch (error) {
     const invalid = error instanceof Error &&
-      ["INVALID_ITEM", "INVALID_ENTITY", "INVALID_FLEXIBLE_LOAD", "INVALID_OFF_PEAK_PERIOD", "INVALID_SOLAR_ARRAY"].includes(error.message);
+      ["INVALID_ITEM", "INVALID_ENTITY", "INVALID_FLEXIBLE_LOAD", "INVALID_OFF_PEAK_PERIOD", "INVALID_SOLAR_ARRAY", "INVALID_TARIFF_PRICE"].includes(error.message);
     return Response.json(
       { error: invalid ? "Un équipement ou son association est invalide" : "Enregistrement impossible" },
       { status: invalid ? 400 : 503 },

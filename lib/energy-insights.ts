@@ -52,18 +52,38 @@ export type OffPeakPeriod = {
   end: string;
 };
 
+export type TariffPrices = {
+  baseMilliEurosPerKwh: number | null;
+  peakMilliEurosPerKwh: number | null;
+  offPeakMilliEurosPerKwh: number | null;
+  exportMilliEurosPerKwh: number | null;
+};
+
+const euroPrice = (milliEuros: number) => `${new Intl.NumberFormat("fr-FR", {
+  minimumFractionDigits: 3,
+  maximumFractionDigits: 3,
+}).format(milliEuros / 1000)} € / kWh`;
+
 export function tariffGuidance(
   plan: "base" | "hp_hc",
   periods: OffPeakPeriod[],
+  prices?: TariffPrices,
 ) {
   if (plan === "hp_hc" && periods.length) {
     const slots = periods.map((period) => `${period.start}–${period.end}`).join(", ");
-    return `Le contrat comporte des heures creuses (${slots}). Utilisez-les comme solution de repli pour les appareils flexibles lorsque le solaire ne suffit pas. Sans prix du kWh renseigné, le gain en euros ne peut pas être calculé honnêtement.`;
+    const configured = prices?.peakMilliEurosPerKwh != null && prices.offPeakMilliEurosPerKwh != null;
+    const price = configured
+      ? `Les prix renseignés sont ${euroPrice(prices.peakMilliEurosPerKwh!)} en heures pleines et ${euroPrice(prices.offPeakMilliEurosPerKwh!)} en heures creuses.`
+      : "Sans les deux prix du kWh renseignés, le gain en euros ne peut pas être calculé honnêtement.";
+    return `Le contrat comporte des heures creuses (${slots}). Utilisez-les comme solution de repli pour les appareils flexibles lorsque le solaire ne suffit pas. ${price}`;
   }
   if (plan === "hp_hc") {
     return "Le contrat est en heures pleines / heures creuses, mais aucune plage n’est configurée. Renseignez les horaires avant de proposer un décalage tarifaire. Sans prix du kWh renseigné, le gain en euros ne peut pas être calculé honnêtement.";
   }
-  return "Le contrat est en option Base : décaler un usage ne réduit pas son prix à lui seul. Pour économiser, il faut prioriser le solaire disponible ou réduire la consommation. Sans prix du kWh renseigné, le gain en euros ne peut pas être calculé honnêtement.";
+  const price = prices?.baseMilliEurosPerKwh != null
+    ? `Le prix renseigné est de ${euroPrice(prices.baseMilliEurosPerKwh)}.`
+    : "Sans prix du kWh renseigné, le gain en euros ne peut pas être calculé honnêtement.";
+  return `Le contrat est en option Base : décaler un usage ne réduit pas son prix à lui seul. Pour économiser, il faut prioriser le solaire disponible ou réduire la consommation. ${price}`;
 }
 
 export type CoachActionPlan = {

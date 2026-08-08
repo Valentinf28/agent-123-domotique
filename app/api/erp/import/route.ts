@@ -92,7 +92,12 @@ export async function POST(request: Request) {
         batteryReservePercent: dossier.batteryReservePercent,
         flexibleLoads: JSON.parse(dossier.flexibleLoadsJson || "[]"),
         tariffPlan: dossier.tariffPlan,
+        basePriceMilliEurosPerKwh: dossier.basePriceMilliEurosPerKwh,
+        peakPriceMilliEurosPerKwh: dossier.peakPriceMilliEurosPerKwh,
+        offPeakPriceMilliEurosPerKwh: dossier.offPeakPriceMilliEurosPerKwh,
+        exportPriceMilliEurosPerKwh: dossier.exportPriceMilliEurosPerKwh,
         offPeakPeriods: JSON.parse(dossier.offPeakPeriodsJson || "[]"),
+        allowGridExport: dossier.allowGridExport,
       },
       warnings: [
         !erp.domotiqueConfirmed ? "La liste domotique n’est pas encore confirmée dans l’ERP" : null,

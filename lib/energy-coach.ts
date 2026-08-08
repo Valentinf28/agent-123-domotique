@@ -540,7 +540,15 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     tariff: {
       plan: selected.dossier.tariffPlan === "hp_hc" ? "hp_hc" as const : "base" as const,
       offPeakPeriods: offPeakPeriodsFrom(selected.dossier.offPeakPeriodsJson),
-      pricesConfigured: false,
+      prices: {
+        baseMilliEurosPerKwh: selected.dossier.basePriceMilliEurosPerKwh,
+        peakMilliEurosPerKwh: selected.dossier.peakPriceMilliEurosPerKwh,
+        offPeakMilliEurosPerKwh: selected.dossier.offPeakPriceMilliEurosPerKwh,
+        exportMilliEurosPerKwh: selected.dossier.exportPriceMilliEurosPerKwh,
+      },
+      pricesConfigured: selected.dossier.tariffPlan === "hp_hc"
+        ? selected.dossier.peakPriceMilliEurosPerKwh != null && selected.dossier.offPeakPriceMilliEurosPerKwh != null
+        : selected.dossier.basePriceMilliEurosPerKwh != null,
     },
     equipmentCapabilities,
     current,

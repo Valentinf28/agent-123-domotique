@@ -118,9 +118,15 @@ function localReply(
     const observedDays = Math.max(1, context.week.observedDays);
     const projectedConsumption = context.week.consumptionWh * 30 / observedDays;
     const period = observedPeriodLabel(observedDays);
-    answer = `${period}, la maison a consommé ${kilowattHours(context.week.consumptionWh)} et produit ${kilowattHours(context.week.productionWh)}. À rythme identique, la consommation mensuelle serait d’environ ${kilowattHours(projectedConsumption)}. C’est une projection, pas une facture. ${tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods)}`;
+    const projectedKwh = projectedConsumption / 1000;
+    const financialProjection = context.tariff.plan === "base" && context.tariff.prices.baseMilliEurosPerKwh != null
+      ? ` Cela représente environ ${new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(projectedKwh * context.tariff.prices.baseMilliEurosPerKwh / 1000)} d’énergie au prix renseigné, hors abonnement et taxes fixes.`
+      : context.tariff.plan === "hp_hc" && context.tariff.pricesConfigured
+        ? ` Selon la répartition entre heures pleines et creuses, la part énergie serait comprise entre ${new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(projectedKwh * Math.min(context.tariff.prices.peakMilliEurosPerKwh!, context.tariff.prices.offPeakMilliEurosPerKwh!) / 1000)} et ${new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(projectedKwh * Math.max(context.tariff.prices.peakMilliEurosPerKwh!, context.tariff.prices.offPeakMilliEurosPerKwh!) / 1000)}, hors abonnement et taxes fixes.`
+        : "";
+    answer = `${period}, la maison a consommé ${kilowattHours(context.week.consumptionWh)} et produit ${kilowattHours(context.week.productionWh)}. À rythme identique, la consommation mensuelle serait d’environ ${kilowattHours(projectedConsumption)}.${financialProjection} C’est une projection, pas une facture. ${tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods, context.tariff.prices)}`;
   } else if (/heures?\s+creuses?|tarif|facture|prix/.test(normalized)) {
-    answer = tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods);
+    answer = tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods, context.tariff.prices);
   } else if (/solaire|surplus|autoconsomm/.test(normalized)) {
     const exportWatts = Math.max(0, -context.current.gridWatts);
     const remaining = context.solarForecast.prudentRemainingWh;

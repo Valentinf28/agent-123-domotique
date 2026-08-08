@@ -8,7 +8,7 @@ import { createEnergySceneLayout } from "../lib/energy-scene.generated.js";
 import { addEnergyDays, energyDateKey, formatEnergyDay, isEnergyToday } from "../lib/energy-period.generated.js";
 import { MOON_PHASE_GLYPHS, MOON_PHASE_LABELS, moonDisplayPhase } from "../lib/moon-phase";
 
-type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
+type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal" | "Paramètres";
 const SELECTED_DOSSIER_STORAGE_KEY = "ma-maison-selected-dossier";
 type HomeTab = (typeof CLIENT_EXPERIENCE.tabs)[number]["label"];
 type Device = {
@@ -209,6 +209,10 @@ type EnergyConfiguration = {
   batteryReservePercent: number;
   flexibleLoads: FlexibleLoadConfiguration[];
   tariffPlan: "base" | "hp_hc";
+  basePriceMilliEurosPerKwh: number | null;
+  peakPriceMilliEurosPerKwh: number | null;
+  offPeakPriceMilliEurosPerKwh: number | null;
+  exportPriceMilliEurosPerKwh: number | null;
   offPeakPeriods: OffPeakPeriod[];
   allowGridExport: boolean;
 };
@@ -305,6 +309,7 @@ const nav: { label: View; icon: string }[] = [
   { label: "Accueil", icon: "⌂" }, { label: "Préparation", icon: "✓" }, { label: "Installation", icon: "⌁" }, { label: "Appareils", icon: "◫" },
   { label: "Automatisations", icon: "⌁" }, { label: "Ajouter", icon: "+" },
   { label: "Journal", icon: "≡" },
+  { label: "Paramètres", icon: "⚙" },
 ];
 
 export default function Portal({
@@ -722,6 +727,7 @@ export default function Portal({
             {role === "Installateur" && <button className="icon-button" aria-label="Créer un dossier" title="Créer un dossier" onClick={() => setNewDossierOpen(true)}>＋</button>}
             {!customerOnly && <Link className="dashboard-link" href="/ma-maison">Vue client</Link>}
             {customerOnly && <button className="premium-pill" onClick={() => setModal("premium")}><span>✦</span> Premium</button>}
+            {customerOnly && <button className="icon-button" aria-label="Paramètres" onClick={() => setView("Paramètres")}>⚙</button>}
             <button className="icon-button" aria-label="Actualiser" onClick={() => {
               setHomeRefreshToken((value) => value + 1);
               notify("Actualisation demandée");
@@ -735,6 +741,7 @@ export default function Portal({
           <button type="button" onClick={() => setView("Accueil")}><span>⌂</span> Maison</button>
           <button type="button" className={view === "Automatisations" ? "active" : ""} onClick={() => setView("Automatisations")}><span>✦</span> Coach & règles</button>
           <button type="button" className={view === "Appareils" ? "active" : ""} onClick={() => setView("Appareils")}><span>◫</span> Appareils</button>
+          <button type="button" className={view === "Paramètres" ? "active" : ""} onClick={() => setView("Paramètres")}><span>⚙</span> Paramètres</button>
         </nav>}
 
         {view === "Accueil" && <Dashboard dossierId={selectedDossierId} enabledModules={enabledHomeModules} setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} lastSyncedAt={lastSyncedAt} onControl={setHomeControl} />}
@@ -744,11 +751,12 @@ export default function Portal({
         {view === "Automatisations" && <Automations dossierId={selectedDossierId} items={automationItems} setModal={setModal} notify={notify} selectAutomation={setSelectedAutomation} setEnabled={setAutomationEnabled} requestHomeRefresh={() => setHomeRefreshToken((value) => value + 1)} />}
         {view === "Ajouter" && <AddDevice step={guideStep} setStep={setGuideStep} notify={notify} />}
         {view === "Journal" && <Journal role={role} />}
+        {view === "Paramètres" && <CustomerSettings dossierId={selectedDossierId} notify={notify} />}
       </main>
 
       <nav className={`mobile-nav ${customerOnly ? "customer-mobile-nav" : ""}`} aria-label="Navigation mobile">
         {(customerOnly
-          ? [{ label: "Accueil" as View, icon: "⌂", copy: "Maison" }, { label: "Automatisations" as View, icon: "✦", copy: "Coach" }, { label: "Appareils" as View, icon: "◫", copy: "Appareils" }]
+          ? [{ label: "Accueil" as View, icon: "⌂", copy: "Maison" }, { label: "Automatisations" as View, icon: "✦", copy: "Coach" }, { label: "Appareils" as View, icon: "◫", copy: "Appareils" }, { label: "Paramètres" as View, icon: "⚙", copy: "Réglages" }]
           : nav.filter((item) => !["Préparation", "Installation"].includes(item.label)).slice(0, 4).map((item) => ({ ...item, copy: item.label })))
           .map((item) => <button key={item.label} className={view === item.label ? "active" : ""} onClick={() => setView(item.label)}>
             <span>{item.icon}</span><small>{item.copy}</small>
@@ -822,6 +830,10 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
     batteryReservePercent: 25,
     flexibleLoads: [],
     tariffPlan: "base",
+    basePriceMilliEurosPerKwh: null,
+    peakPriceMilliEurosPerKwh: null,
+    offPeakPriceMilliEurosPerKwh: null,
+    exportPriceMilliEurosPerKwh: null,
     offPeakPeriods: [],
     allowGridExport: true,
   });
@@ -999,6 +1011,13 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
         : energyConfiguration.offPeakPeriods,
     };
     void save(plannedItems, enabledModules, next);
+  }
+
+  function updateTariffPrice(key: "basePriceMilliEurosPerKwh" | "peakPriceMilliEurosPerKwh" | "offPeakPriceMilliEurosPerKwh" | "exportPriceMilliEurosPerKwh", euros: string, persist = false) {
+    const parsed = euros.trim() === "" ? null : Math.round(Math.max(0, Number(euros) || 0) * 1000);
+    const next = { ...energyConfiguration, [key]: parsed };
+    setEnergyConfiguration(next);
+    if (persist) void save(plannedItems, enabledModules, next);
   }
 
   function addOffPeakPeriod() {
@@ -1208,6 +1227,13 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
           <button type="button" className={energyConfiguration.tariffPlan === "hp_hc" ? "selected" : ""} onClick={() => setTariffPlan("hp_hc")}>
             <b>Heures pleines / creuses</b><small>Les appareils peuvent se replier sur les HC</small>
           </button>
+        </div>
+        <div className="tariff-price-fields">
+          {energyConfiguration.tariffPlan === "base" ? <label><span>Prix d’achat</span><div><input type="number" min="0" max="2" step="0.001" placeholder="0,251" value={energyConfiguration.basePriceMilliEurosPerKwh === null ? "" : energyConfiguration.basePriceMilliEurosPerKwh / 1000} onChange={event => updateTariffPrice("basePriceMilliEurosPerKwh", event.target.value)} onBlur={event => updateTariffPrice("basePriceMilliEurosPerKwh", event.target.value, true)} /><em>€ / kWh</em></div></label> : <>
+            <label><span>Prix heures pleines</span><div><input type="number" min="0" max="2" step="0.001" placeholder="0,270" value={energyConfiguration.peakPriceMilliEurosPerKwh === null ? "" : energyConfiguration.peakPriceMilliEurosPerKwh / 1000} onChange={event => updateTariffPrice("peakPriceMilliEurosPerKwh", event.target.value)} onBlur={event => updateTariffPrice("peakPriceMilliEurosPerKwh", event.target.value, true)} /><em>€ / kWh</em></div></label>
+            <label><span>Prix heures creuses</span><div><input type="number" min="0" max="2" step="0.001" placeholder="0,207" value={energyConfiguration.offPeakPriceMilliEurosPerKwh === null ? "" : energyConfiguration.offPeakPriceMilliEurosPerKwh / 1000} onChange={event => updateTariffPrice("offPeakPriceMilliEurosPerKwh", event.target.value)} onBlur={event => updateTariffPrice("offPeakPriceMilliEurosPerKwh", event.target.value, true)} /><em>€ / kWh</em></div></label>
+          </>}
+          <label><span>Rémunération de l’injection</span><div><input type="number" min="0" max="2" step="0.001" placeholder="0,040" value={energyConfiguration.exportPriceMilliEurosPerKwh === null ? "" : energyConfiguration.exportPriceMilliEurosPerKwh / 1000} onChange={event => updateTariffPrice("exportPriceMilliEurosPerKwh", event.target.value)} onBlur={event => updateTariffPrice("exportPriceMilliEurosPerKwh", event.target.value, true)} /><em>€ / kWh</em></div></label>
         </div>
         {energyConfiguration.tariffPlan === "hp_hc" && <div className="off-peak-editor">
           <div className="off-peak-list">{energyConfiguration.offPeakPeriods.map((period) => <article key={period.id}>
@@ -2810,6 +2836,95 @@ function AddDevice({ step, setStep, notify }: {
     {step===2 && <div className="tutorial-card"><div className="tutorial-visual"><span>①</span><i>⌁</i></div><div><small>AVANT DE CONTINUER</small><h3>Maintenez le bouton d’association</h3><ol><li>Branchez ou alimentez l’appareil.</li><li>Maintenez son bouton pendant 5 secondes.</li><li>Attendez que le voyant clignote.</li></ol><div className="guide-actions"><button onClick={()=>setStep(1)}>Retour</button><button className="primary" onClick={()=>setStep(3)}>Le voyant clignote →</button></div></div></div>}
     {step===3 && <div className="searching-card"><div className="radar"><i>⌁</i><span/><b/></div><h3>Recherche des appareils…</h3><p>Gardez l’appareil à moins de 2 mètres de la box.</p><button onClick={()=>{notify("Progression enregistrée. Vous pourrez reprendre plus tard.");setStep(1)}}>Reprendre plus tard</button></div>}
     <div className="help-strip"><span>?</span><div><b>Besoin d’aide ?</b><small>Consultez le tutoriel de votre appareil ou lancez un diagnostic.</small></div><button onClick={()=>notify("Diagnostic prêt à démarrer")}>Dépanner</button></div>
+  </div>;
+}
+
+type CustomerEnergyContract = Pick<EnergyConfiguration,
+  "tariffPlan" | "basePriceMilliEurosPerKwh" | "peakPriceMilliEurosPerKwh" |
+  "offPeakPriceMilliEurosPerKwh" | "exportPriceMilliEurosPerKwh" | "offPeakPeriods">;
+
+function CustomerSettings({ dossierId, notify }: { dossierId: string; notify: (value: string) => void }) {
+  const [contract, setContract] = useState<CustomerEnergyContract | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setContract(null);
+    setError("");
+    if (!dossierId) return undefined;
+    fetch(`/api/settings/energy?dossier=${encodeURIComponent(dossierId)}`, { headers: { Accept: "application/json" } })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Chargement impossible");
+        return payload.energyContract as CustomerEnergyContract;
+      })
+      .then((value) => { if (active) setContract(value); })
+      .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : "Chargement impossible"); });
+    return () => { active = false; };
+  }, [dossierId]);
+
+  function priceValue(value: number | null) {
+    return value === null ? "" : String(value / 1000);
+  }
+
+  function setPrice(key: keyof Pick<CustomerEnergyContract, "basePriceMilliEurosPerKwh" | "peakPriceMilliEurosPerKwh" | "offPeakPriceMilliEurosPerKwh" | "exportPriceMilliEurosPerKwh">, value: string) {
+    setContract((current) => current ? { ...current, [key]: value === "" ? null : Math.round(Math.max(0, Number(value) || 0) * 1000) } : current);
+  }
+
+  function updatePeriod(id: string, update: Partial<OffPeakPeriod>) {
+    setContract((current) => current ? {
+      ...current,
+      offPeakPeriods: current.offPeakPeriods.map((period) => period.id === id ? { ...period, ...update } : period),
+    } : current);
+  }
+
+  async function saveContract() {
+    if (!contract) return;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/settings/energy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ dossierPublicId: dossierId, ...contract }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Enregistrement impossible");
+      setContract(payload.energyContract);
+      notify("Contrat d’électricité mis à jour pour le Coach");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Enregistrement impossible");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!contract) return <div className="content settings-page"><section className="settings-contract"><p>{error || "Chargement du contrat…"}</p></section></div>;
+  return <div className="content settings-page">
+    <div className="section-intro"><div><span className="eyebrow">PARAMÈTRES DE LA MAISON</span><h2>Contrat d’électricité</h2><p>Ces informations permettent au Coach de convertir les kWh en euros sans inventer de tarif. Modifiez-les lorsque votre fournisseur ou votre offre change.</p></div></div>
+    <section className="settings-contract">
+      <header><div><small>OFFRE ACTUELLE</small><h3>Type de contrat et prix de fourniture</h3></div><span>Maison sélectionnée uniquement</span></header>
+      <div className="settings-plan-choice" role="group" aria-label="Type de contrat électrique">
+        <button type="button" className={contract.tariffPlan === "base" ? "selected" : ""} onClick={() => setContract({ ...contract, tariffPlan: "base" })}><b>Option Base</b><small>Même prix toute la journée</small></button>
+        <button type="button" className={contract.tariffPlan === "hp_hc" ? "selected" : ""} onClick={() => setContract({ ...contract, tariffPlan: "hp_hc", offPeakPeriods: contract.offPeakPeriods.length ? contract.offPeakPeriods : [{ id: "nuit", label: "Nuit", start: "22:30", end: "06:30" }] })}><b>Heures pleines / creuses</b><small>Prix différent selon les plages</small></button>
+      </div>
+      <div className="settings-price-grid">
+        {contract.tariffPlan === "base" ? <label><span>Prix d’achat du kWh</span><div><input type="number" min="0" max="2" step="0.001" placeholder="0,251" value={priceValue(contract.basePriceMilliEurosPerKwh)} onChange={(event) => setPrice("basePriceMilliEurosPerKwh", event.target.value)} /><em>€ / kWh</em></div></label> : <>
+          <label><span>Prix heures pleines</span><div><input type="number" min="0" max="2" step="0.001" placeholder="0,270" value={priceValue(contract.peakPriceMilliEurosPerKwh)} onChange={(event) => setPrice("peakPriceMilliEurosPerKwh", event.target.value)} /><em>€ / kWh</em></div></label>
+          <label><span>Prix heures creuses</span><div><input type="number" min="0" max="2" step="0.001" placeholder="0,207" value={priceValue(contract.offPeakPriceMilliEurosPerKwh)} onChange={(event) => setPrice("offPeakPriceMilliEurosPerKwh", event.target.value)} /><em>€ / kWh</em></div></label>
+        </>}
+        <label><span>Rémunération de l’injection</span><div><input type="number" min="0" max="2" step="0.001" placeholder="0,040" value={priceValue(contract.exportPriceMilliEurosPerKwh)} onChange={(event) => setPrice("exportPriceMilliEurosPerKwh", event.target.value)} /><em>€ / kWh</em></div></label>
+      </div>
+      {contract.tariffPlan === "hp_hc" && <div className="settings-periods"><h4>Plages d’heures creuses</h4>{contract.offPeakPeriods.map((period) => <article key={period.id}>
+        <input aria-label="Nom de la plage" value={period.label} onChange={(event) => updatePeriod(period.id, { label: event.target.value })} />
+        <label><span>Début</span><input type="time" value={period.start} onChange={(event) => updatePeriod(period.id, { start: event.target.value })} /></label>
+        <label><span>Fin</span><input type="time" value={period.end} onChange={(event) => updatePeriod(period.id, { end: event.target.value })} /></label>
+        <button type="button" aria-label={`Supprimer ${period.label}`} onClick={() => setContract({ ...contract, offPeakPeriods: contract.offPeakPeriods.filter((item) => item.id !== period.id) })}>×</button>
+      </article>)}<button type="button" className="settings-add-period" disabled={contract.offPeakPeriods.length >= 4} onClick={() => setContract({ ...contract, offPeakPeriods: [...contract.offPeakPeriods, { id: `hc-${Date.now()}`, label: `Plage ${contract.offPeakPeriods.length + 1}`, start: "12:00", end: "14:00" }] })}>＋ Ajouter une plage</button></div>}
+      {error && <p className="settings-error">{error}</p>}
+      <footer><p>Le Coach utilisera ces prix pour ses prochaines estimations. Les montants restent indiqués hors abonnement et taxes fixes.</p><button type="button" className="primary" disabled={saving} onClick={() => void saveContract()}>{saving ? "Enregistrement…" : "Enregistrer le contrat"}</button></footer>
+    </section>
   </div>;
 }
 

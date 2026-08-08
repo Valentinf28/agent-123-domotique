@@ -94,6 +94,21 @@ test("enregistre le tarif et les heures creuses séparément pour chaque maison"
   assert.match(migration, /off_peak_periods_json/);
 });
 
+test("permet au client de consulter et modifier les prix de son contrat", async () => {
+  const [portal, route, schema, migration] = await Promise.all([
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/settings/energy/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0016_energy_tariff_prices.sql", import.meta.url), "utf8"),
+  ]);
+  assert.match(portal, /Contrat d’électricité/);
+  assert.match(portal, /Rémunération de l’injection/);
+  assert.match(route, /portalHouseAuthorized/);
+  assert.match(route, /basePriceMilliEurosPerKwh/);
+  assert.match(schema, /offPeakPriceMilliEurosPerKwh/);
+  assert.match(migration, /off_peak_price_milli_euros_per_kwh/);
+});
+
 test("protège l’enrôlement et les remontées de la box", async () => {
   const [enroll, heartbeat, gateway] = await Promise.all([
     readFile(new URL("../app/api/agent/enroll/route.ts", import.meta.url), "utf8"),
