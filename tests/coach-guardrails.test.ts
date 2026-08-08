@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { executableCoachProposal } from "../lib/coach-guardrails.ts";
+import { executableCoachProposal, safeCoachSuggestedQuestions } from "../lib/coach-guardrails.ts";
 
 test("accepte une automatisation simple et explicitement horaire", () => {
   const proposal = {
@@ -38,4 +38,15 @@ test("conserve la coupure au coucher du soleil", () => {
     rationale: "Éviter une chauffe nocturne inutile.",
   };
   assert.deepEqual(executableCoachProposal(proposal), proposal);
+});
+
+test("ne suggère pas de figer le créneau solaire ponctuel de demain", () => {
+  assert.deepEqual(safeCoachSuggestedQuestions([
+    "Peux-tu décaler automatiquement la PAC piscine vers 9 h demain ?",
+    "Quels garde-fous appliquer à la PAC piscine ?",
+    "À quelle heure relancer la PAC demain ?",
+  ]), [
+    "Quels garde-fous appliquer à la PAC piscine ?",
+    "À quelle heure relancer la PAC demain ?",
+  ]);
 });

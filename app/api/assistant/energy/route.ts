@@ -10,7 +10,7 @@ import {
   refundAssistantRequest,
 } from "../../../../lib/energy-coach";
 import { tariffGuidance } from "../../../../lib/energy-insights";
-import { executableCoachProposal } from "../../../../lib/coach-guardrails";
+import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../../lib/coach-guardrails";
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
 
 type AutomationProposal = {
@@ -43,7 +43,7 @@ function safeReply(reply: CoachReply): CoachReply {
       action: brandSafe(reply.automationProposal.action),
       rationale: brandSafe(reply.automationProposal.rationale),
     } : null,
-    suggestedQuestions: reply.suggestedQuestions.map(brandSafe).slice(0, 3),
+    suggestedQuestions: safeCoachSuggestedQuestions(reply.suggestedQuestions.map(brandSafe)),
   };
 }
 

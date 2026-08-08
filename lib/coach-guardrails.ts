@@ -19,3 +19,12 @@ export function executableCoachProposal(proposal: CoachAutomationProposal | null
     ? proposal
     : null;
 }
+
+export function safeCoachSuggestedQuestions(questions: string[]) {
+  return questions.filter((question) => {
+    const fixedTime = /\b(?:[01]?\d|2[0-3])\s*(?:h|:)\s*[0-5]?\d?\b/i.test(question);
+    const asksAutomation = /automati|programme|planifie|d[ée]cale|cr[ée]e?\s+(?:une\s+)?r[èe]gle/i.test(question);
+    const dynamicEnergy = /solaire|surplus|batterie|m[ée]t[ée]o|pr[ée]vision|demain/i.test(question);
+    return !(asksAutomation && fixedTime && dynamicEnergy);
+  }).slice(0, 3);
+}
