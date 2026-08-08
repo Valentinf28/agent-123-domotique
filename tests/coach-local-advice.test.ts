@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { batterySavingsGuidance, observedPeriodLabel, solarCoachGuidance, unavailableEquipmentGuidance } from '../lib/coach-local-advice';
+import { batterySavingsGuidance, financialCoachGuidance, observedPeriodLabel, solarCoachGuidance, unavailableEquipmentGuidance } from '../lib/coach-local-advice';
 
 test('annonce exactement la période réellement observée', () => {
   assert.equal(observedPeriodLabel(1), 'Sur la journée disponible');
@@ -34,6 +34,55 @@ test('n’invente pas le gain financier de la batterie', () => {
   assert.match(answer, /prix du kWh n’est pas renseigné/i);
   assert.match(answer, /ne peut pas être converti honnêtement en euros/i);
   assert.match(answer, /protéger la réserve/i);
+});
+
+test('projette uniquement les achats réseau et déduit la vente du surplus', () => {
+  const answer = financialCoachGuidance({
+    observedDays: 10,
+    importedWh: 50_000,
+    exportedWh: 20_000,
+    importCostEuros: 12,
+    exportRevenueEuros: 2,
+    netEnergyCostEuros: 10,
+    plan: 'base',
+    tariffGuidance: 'Option Base configurée.',
+  });
+  assert.match(answer, /acheté 50 kWh au réseau/i);
+  assert.match(answer, /injecté 20 kWh/i);
+  assert.match(answer, /30\s*€/);
+  assert.match(answer, /6\s*€ de rémunération/i);
+  assert.match(answer, /flux réseau mesurés/i);
+});
+
+test('ne déduit pas une injection dont le tarif de rachat manque', () => {
+  const answer = financialCoachGuidance({
+    observedDays: 10,
+    importedWh: 50_000,
+    exportedWh: 20_000,
+    importCostEuros: 12,
+    exportRevenueEuros: null,
+    netEnergyCostEuros: null,
+    plan: 'hp_hc',
+    tariffGuidance: 'Tarif HP/HC configuré.',
+  });
+  assert.match(answer, /36\s*€/);
+  assert.match(answer, /tarif de rachat n’est pas renseigné/i);
+  assert.match(answer, /n’est pas déduite/i);
+});
+
+test('refuse tout montant si le prix d’achat manque', () => {
+  const answer = financialCoachGuidance({
+    observedDays: 5,
+    importedWh: 12_000,
+    exportedWh: 0,
+    importCostEuros: null,
+    exportRevenueEuros: 0,
+    netEnergyCostEuros: null,
+    plan: 'base',
+    tariffGuidance: 'Prix manquant.',
+  });
+  assert.match(answer, /ne fabrique donc aucun montant/i);
+  assert.doesNotMatch(answer, /environ \d+\s*€/i);
 });
 
 test('refuse de parler comme si une borne ou un chauffe-eau absent existait', () => {

@@ -441,11 +441,12 @@ test("gère l’essai de 30 jours sans couper la domotique locale", async () => 
 });
 
 test("inclut les assistants et le nouveau tarif dans le forfait client", async () => {
-  const [portal, subscription, route, coach, heartbeat, schema, migration] = await Promise.all([
+  const [portal, subscription, route, coach, localAdvice, heartbeat, schema, migration] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/subscription.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/assistant/energy/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/energy-coach.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/coach-local-advice.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/agent/heartbeat/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0008_energy_coach.sql", import.meta.url), "utf8"),
@@ -473,9 +474,10 @@ test("inclut les assistants et le nouveau tarif dans le forfait client", async (
   assert.match(route, /OPENAI_API_KEY/);
   assert.match(route, /safety_identifier/);
   assert.match(route, /Toute automatisation reste un brouillon/);
-  assert.match(route, /observedPeriodLabel\(observedDays\)/);
+  assert.match(route, /financialCoachGuidance/);
   assert.match(route, /context\.week\.observedDays/);
-  assert.match(route, /C’est une projection, pas une facture/);
+  assert.match(localAdvice, /flux réseau mesurés/);
+  assert.match(localAdvice, /pas une facture/);
   assert.match(route, /Le reste de la maison est regroupé séparément pour éviter tout double comptage/);
   assert.match(route, /La voiture ne charge pas actuellement/);
   assert.doesNotMatch(route, /agentCommands|ha\.services\.call/);

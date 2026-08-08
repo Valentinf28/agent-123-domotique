@@ -13,7 +13,7 @@ import { tariffGuidance } from "../../../../lib/energy-insights";
 import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../../lib/coach-guardrails";
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
 import { asksForBatteryEndurance, asksForCoachActionPlan, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
-import { batterySavingsGuidance, observedPeriodLabel, solarCoachGuidance, unavailableEquipmentGuidance } from "../../../../lib/coach-local-advice";
+import { batterySavingsGuidance, financialCoachGuidance, solarCoachGuidance, unavailableEquipmentGuidance } from "../../../../lib/coach-local-advice";
 
 type AutomationProposal = {
   name: string;
@@ -134,16 +134,12 @@ function localReply(
   } else if (intent === "money" && /batterie/.test(normalized)) {
     answer = batterySavingsGuidance(context.tariff.pricesConfigured);
   } else if (intent === "money" && context.historySamples >= 4) {
-    const observedDays = Math.max(1, context.week.observedDays);
-    const projectedConsumption = context.week.consumptionWh * 30 / observedDays;
-    const period = observedPeriodLabel(observedDays);
-    const projectedKwh = projectedConsumption / 1000;
-    const financialProjection = context.tariff.plan === "base" && context.tariff.prices.baseMilliEurosPerKwh != null
-      ? ` Cela représente environ ${new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(projectedKwh * context.tariff.prices.baseMilliEurosPerKwh / 1000)} d’énergie au prix renseigné, hors abonnement et taxes fixes.`
-      : context.tariff.plan === "hp_hc" && context.tariff.pricesConfigured
-        ? ` Selon la répartition entre heures pleines et creuses, la part énergie serait comprise entre ${new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(projectedKwh * Math.min(context.tariff.prices.peakMilliEurosPerKwh!, context.tariff.prices.offPeakMilliEurosPerKwh!) / 1000)} et ${new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(projectedKwh * Math.max(context.tariff.prices.peakMilliEurosPerKwh!, context.tariff.prices.offPeakMilliEurosPerKwh!) / 1000)}, hors abonnement et taxes fixes.`
-        : "";
-    answer = `${period}, la maison a consommé ${kilowattHours(context.week.consumptionWh)} et produit ${kilowattHours(context.week.productionWh)}. À rythme identique, la consommation mensuelle serait d’environ ${kilowattHours(projectedConsumption)}.${financialProjection} C’est une projection, pas une facture. ${tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods, context.tariff.prices)}`;
+    answer = financialCoachGuidance({
+      observedDays: context.week.observedDays,
+      ...context.gridCost,
+      plan: context.tariff.plan,
+      tariffGuidance: tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods, context.tariff.prices),
+    });
   } else if (/heures?\s+creuses?|tarif|facture|prix/.test(normalized)) {
     answer = tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods, context.tariff.prices);
   } else if (/solaire|surplus|autoconsomm/.test(normalized)) {

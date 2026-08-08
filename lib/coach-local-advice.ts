@@ -5,6 +5,48 @@ export function observedPeriodLabel(observedDays: number) {
     : `Sur les ${days} derniers jours disponibles`;
 }
 
+function euros(value: number) {
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function kwh(valueWh: number) {
+  return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(Math.max(0, valueWh) / 1000)} kWh`;
+}
+
+export function financialCoachGuidance(input: {
+  observedDays: number;
+  importedWh: number;
+  exportedWh: number;
+  importCostEuros: number | null;
+  exportRevenueEuros: number | null;
+  netEnergyCostEuros: number | null;
+  plan: 'base' | 'hp_hc';
+  tariffGuidance: string;
+}) {
+  const days = Math.max(1, input.observedDays);
+  const factor = 30 / days;
+  const period = observedPeriodLabel(days);
+  const flows = `${period}, la maison a acheté ${kwh(input.importedWh)} au réseau et injecté ${kwh(input.exportedWh)}.`;
+  if (input.importCostEuros == null) {
+    return `${flows} Le prix d’achat correspondant n’est pas entièrement renseigné : le Coach ne fabrique donc aucun montant. ${input.tariffGuidance}`;
+  }
+  const purchase = `À rythme identique, les achats d’énergie représenteraient environ ${euros(input.importCostEuros * factor)} par mois`;
+  if (input.exportedWh > 0 && input.exportRevenueEuros == null) {
+    return `${flows} ${purchase}, hors abonnement et taxes fixes. Le tarif de rachat n’est pas renseigné : l’injection n’est pas déduite de ce montant. ${input.tariffGuidance}`;
+  }
+  if (input.netEnergyCostEuros != null) {
+    const revenue = input.exportRevenueEuros && input.exportRevenueEuros > 0
+      ? `, après environ ${euros(input.exportRevenueEuros * factor)} de rémunération de l’injection`
+      : '';
+    return `${flows} La part énergie nette projetée est d’environ ${euros(input.netEnergyCostEuros * factor)} par mois${revenue}, hors abonnement et taxes fixes. C’est une projection fondée sur les flux réseau mesurés, pas une facture. ${input.tariffGuidance}`;
+  }
+  return `${flows} ${purchase}, hors abonnement et taxes fixes. C’est une projection fondée sur les achats réseau mesurés, pas sur toute la consommation de la maison. ${input.tariffGuidance}`;
+}
+
 export function solarCoachGuidance(input: {
   forecastAvailable: boolean;
   exportWatts: number;

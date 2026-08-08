@@ -29,6 +29,7 @@ import { buildCoachActionPlan } from "./energy-insights";
 import type { OffPeakPeriod } from "./energy-insights";
 import { equipmentCapabilitiesFromInventory } from "./equipment-capabilities";
 import { buildBatteryNightOutlook } from "./battery-night-outlook";
+import { measuredGridCost } from "./energy-cost";
 export {
   ASSISTANT_MONTHLY_LIMIT,
   assistantQuotaAllows,
@@ -543,6 +544,20 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     history,
     nextSolarAt,
   });
+  const tariffPlan = selected.dossier.tariffPlan === "hp_hc" ? "hp_hc" as const : "base" as const;
+  const tariffPrices = {
+    baseMilliEurosPerKwh: selected.dossier.basePriceMilliEurosPerKwh,
+    peakMilliEurosPerKwh: selected.dossier.peakPriceMilliEurosPerKwh,
+    offPeakMilliEurosPerKwh: selected.dossier.offPeakPriceMilliEurosPerKwh,
+    exportMilliEurosPerKwh: selected.dossier.exportPriceMilliEurosPerKwh,
+  };
+  const offPeakPeriods = offPeakPeriodsFrom(selected.dossier.offPeakPeriodsJson);
+  const gridCost = measuredGridCost({
+    samples: history,
+    plan: tariffPlan,
+    periods: offPeakPeriods,
+    prices: tariffPrices,
+  });
   return {
     dossier: {
       id: selected.dossier.id,
@@ -552,14 +567,9 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
       batteryReservePercent: selected.dossier.batteryReservePercent,
     },
     tariff: {
-      plan: selected.dossier.tariffPlan === "hp_hc" ? "hp_hc" as const : "base" as const,
-      offPeakPeriods: offPeakPeriodsFrom(selected.dossier.offPeakPeriodsJson),
-      prices: {
-        baseMilliEurosPerKwh: selected.dossier.basePriceMilliEurosPerKwh,
-        peakMilliEurosPerKwh: selected.dossier.peakPriceMilliEurosPerKwh,
-        offPeakMilliEurosPerKwh: selected.dossier.offPeakPriceMilliEurosPerKwh,
-        exportMilliEurosPerKwh: selected.dossier.exportPriceMilliEurosPerKwh,
-      },
+      plan: tariffPlan,
+      offPeakPeriods,
+      prices: tariffPrices,
       pricesConfigured: selected.dossier.tariffPlan === "hp_hc"
         ? selected.dossier.peakPriceMilliEurosPerKwh != null && selected.dossier.offPeakPriceMilliEurosPerKwh != null
         : selected.dossier.basePriceMilliEurosPerKwh != null,
@@ -568,6 +578,7 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     current,
     historySamples: history.length,
     week,
+    gridCost,
     actionPlan,
     batteryOutlook,
     solarForecast: {
