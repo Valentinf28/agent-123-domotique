@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { batterySavingsGuidance, financialCoachGuidance, observedPeriodLabel, solarCoachGuidance, unavailableEquipmentGuidance } from '../lib/coach-local-advice';
+import { batterySavingsGuidance, financialCoachGuidance, observedPeriodLabel, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance } from '../lib/coach-local-advice';
 
 test('annonce exactement la période réellement observée', () => {
   assert.equal(observedPeriodLabel(1), 'Sur la journée disponible');
@@ -27,6 +27,24 @@ test('utilise la prévision prudente uniquement lorsqu’elle existe', () => {
   assert.match(answer, /850 W/);
   assert.match(answer, /4,2 kWh/);
   assert.match(answer, /garde-fous/);
+});
+
+test('transforme le surplus historique en priorités limitées aux appareils configurés', () => {
+  const answer = solarAutoconsumptionGuidance({
+    observedDays: 12,
+    exportedWh: 136_300,
+    peakHour: 15,
+    flexibleLoads: [
+      { label: 'PAC piscine', category: 'pool_heat_pump' },
+      { label: 'Borne Lektrico', category: 'vehicle' },
+    ],
+    currentExportWatts: 0,
+  });
+  assert.match(answer, /136,3 kWh/);
+  assert.match(answer, /11,4 kWh par jour/);
+  assert.match(answer, /PAC piscine, Borne Lektrico/);
+  assert.match(answer, /aucun démarrage immédiat/i);
+  assert.doesNotMatch(answer, /chauffe-eau/i);
 });
 
 test('n’invente pas le gain financier de la batterie', () => {

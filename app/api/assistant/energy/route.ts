@@ -13,7 +13,7 @@ import { tariffGuidance } from "../../../../lib/energy-insights";
 import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../../lib/coach-guardrails";
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
 import { asksForBatteryEndurance, asksForCoachActionPlan, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
-import { batterySavingsGuidance, financialCoachGuidance, solarCoachGuidance, unavailableEquipmentGuidance } from "../../../../lib/coach-local-advice";
+import { batterySavingsGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance } from "../../../../lib/coach-local-advice";
 
 type AutomationProposal = {
   name: string;
@@ -75,6 +75,7 @@ function localReply(
     .filter((item) => item.id !== "other-home" && item.watts > 0)
     .slice(0, 3);
   let answer: string;
+  let automationProposal: AutomationProposal | null = null;
   if (asksForBatteryEndurance(message)) {
     const outlook = context.batteryOutlook;
     if (!outlook.available) {
@@ -144,12 +145,35 @@ function localReply(
     answer = tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods, context.tariff.prices);
   } else if (/solaire|surplus|autoconsomm/.test(normalized)) {
     const exportWatts = Math.max(0, -context.current.gridWatts);
-    const remaining = context.solarForecast.prudentRemainingWh;
-    answer = solarCoachGuidance({
-      forecastAvailable: context.solarForecast.available,
-      exportWatts,
-      prudentRemainingKwh: kilowattHours(remaining),
-    });
+    const historical = context.insights.find((insight) => insight.id === "historical-solar-export");
+    if (historical) {
+      const exportedWh = context.gridCost.exportedWh;
+      const peakMatch = historical.description.match(/vers\s+(\d{1,2})\s*h/i);
+      const loads = context.predictivePlans
+        .filter((plan) => plan.loadCategory !== "other" && plan.loadId !== "configuration")
+        .map((plan) => ({ label: plan.loadLabel, category: plan.loadCategory }));
+      answer = solarAutoconsumptionGuidance({
+        observedDays: context.week.observedDays,
+        exportedWh,
+        peakHour: peakMatch ? Number(peakMatch[1]) : null,
+        flexibleLoads: loads,
+        currentExportWatts: exportWatts,
+      });
+      const pool = loads.find((load) => /pool|pac|piscine/i.test(`${load.category} ${load.label}`));
+      if (pool) automationProposal = {
+        name: `Arrêt nocturne de ${pool.label}`,
+        trigger: "Au coucher du soleil",
+        action: `Éteindre ${pool.label}`,
+        rationale: "Éviter que cet usage flexible sollicite la batterie après la production solaire.",
+      };
+    } else {
+      const remaining = context.solarForecast.prudentRemainingWh;
+      answer = solarCoachGuidance({
+        forecastAvailable: context.solarForecast.available,
+        exportWatts,
+        prudentRemainingKwh: kilowattHours(remaining),
+      });
+    }
   } else {
     answer = matching
       ? `${matching.title}. ${matching.description} ${matching.impact}. Je peux vous aider à préparer une automatisation, mais elle ne sera jamais activée sans votre confirmation.`
@@ -159,8 +183,12 @@ function localReply(
     answer,
     // The local fallback gives advice only. It must not manufacture an
     // executable energy trigger that the automation engine cannot parse.
-    automationProposal: null,
-    suggestedQuestions: [
+    automationProposal,
+    suggestedQuestions: intent === "solar" ? [
+      "Quel appareil prioriser sur le surplus ?",
+      "Préparer l’arrêt de la PAC piscine au coucher du soleil",
+      "Comment préserver la batterie après le solaire ?",
+    ] : [
       "Que puis-je économiser ce mois-ci ?",
       "Quand recharger la voiture ?",
       "Comment augmenter mon autoconsommation ?",
@@ -378,6 +406,7 @@ export async function POST(request: Request) {
       (asksForCoachActionPlan(message) ? localReply(message, context) : null) ??
       (equipmentMissing ? localReply(message, context) : null) ??
       (needsDeterministicFinancialAnswer(message) ? localReply(message, context) : null) ??
+      (intent === "solar" ? localReply(message, context) : null) ??
       await openAiReply(message, context, conversation) ??
       localReply(message, context);
     return Response.json({ reply: safeReply(reply) }, { headers: { "Cache-Control": "no-store" } });

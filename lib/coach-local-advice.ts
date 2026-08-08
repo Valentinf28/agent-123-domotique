@@ -65,6 +65,27 @@ export function solarCoachGuidance(input: {
   return `${current} La prévision prudente estime encore ${input.prudentRemainingKwh} à produire aujourd’hui ; ${next}`;
 }
 
+export function solarAutoconsumptionGuidance(input: {
+  observedDays: number;
+  exportedWh: number;
+  peakHour: number | null;
+  flexibleLoads: Array<{ label: string; category: string }>;
+  currentExportWatts: number;
+}) {
+  const days = Math.max(1, input.observedDays);
+  const dailyKwh = input.exportedWh / 1000 / days;
+  const peak = input.peakHour == null ? '' : `, le plus souvent autour de ${input.peakHour} h`;
+  const measured = `Sur ${days} jours, ${kwh(input.exportedWh)} ont été injectés${peak}, soit environ ${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(dailyKwh)} kWh par jour.`;
+  const distinct = [...new Map(input.flexibleLoads.map((load) => [load.label, load])).values()];
+  const priority = distinct.length
+    ? `Les usages pilotables configurés à tester en priorité sont : ${distinct.map((load) => load.label).join(', ')}.`
+    : "Aucun usage flexible pilotable n’est encore configuré : le Coach ne peut pas proposer honnêtement de règle d’absorption du surplus.";
+  const now = input.currentExportWatts > 100
+    ? `Il y a actuellement ${new Intl.NumberFormat('fr-FR').format(Math.round(input.currentExportWatts))} W de surplus.`
+    : "Il n’y a pas de surplus mesuré maintenant : aucun démarrage immédiat n’est conseillé.";
+  return `${measured} ${priority} ${now} Pour préserver la batterie, un appareil ne doit démarrer que lorsque sa puissance est couverte ; la PAC piscine doit aussi être arrêtée au coucher du soleil si elle n’a plus besoin de chauffer.`;
+}
+
 export function batterySavingsGuidance(pricesConfigured: boolean) {
   const price = pricesConfigured
     ? 'Le tarif est configuré, mais il manque encore le bilan dédié des cycles de batterie pour isoler ce gain.'
