@@ -2485,7 +2485,7 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
     ? "Élevée"
     : solarForecastSummary?.confidence === "medium" ? "Moyenne" : "Faible";
 
-  return <div className="content">
+  return <div className="content coach-page">
     <div className="section-intro split"><div><span className="eyebrow">Votre avantage Premium</span><h2>Coach énergie et maison intelligente</h2><p>Comprenez ce qui consomme, recevez des conseils chiffrés et créez vos règles en langage simple.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
     <section className="home-assistant-card">
       <div className="home-assistant-symbol">✦</div>
