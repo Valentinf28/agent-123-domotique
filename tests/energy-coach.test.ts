@@ -114,7 +114,7 @@ const snapshot = (overrides: Partial<ReturnType<typeof energySnapshotFromInvento
 
 test("n'invente pas d'économies en euros sans tarif renseigné", () => {
   const history = Array.from({ length: 8 }, (_, index) => ({
-    capturedAt: `2026-08-08T0${index % 4}:00:00.000Z`,
+    capturedAt: new Date(Date.UTC(2026, 7, index + 1, 2)).toISOString(),
     homeWatts: 650,
   }));
   const insights = buildEnergyInsights(snapshot(), history);
@@ -124,6 +124,36 @@ test("n'invente pas d'économies en euros sans tarif renseigné", () => {
   assert.match(nightBase.impact, /kWh \/ mois/);
   assert.doesNotMatch(nightBase.impact, /€|EUR/);
   assert.equal(nightBase.confidence, "estimated");
+});
+
+test("transforme deux semaines de surplus et de décharge en actions chiffrées", () => {
+  const history = Array.from({ length: 15 * 24 }, (_, index) => {
+    const capturedAt = new Date(Date.UTC(2026, 6, 20, index));
+    const hour = capturedAt.getUTCHours();
+    const solarPeriod = hour >= 10 && hour < 16;
+    const evening = hour >= 19 && hour < 22;
+    return {
+      capturedAt: capturedAt.toISOString(),
+      homeWatts: 900,
+      solarWatts: solarPeriod ? 3800 : 0,
+      gridWatts: solarPeriod ? -900 : 300,
+      batteryWatts: evening ? 1100 : 0,
+      filtrationWatts: evening ? 550 : 0,
+      hotWaterWatts: 0,
+      vehicleWatts: 0,
+    };
+  });
+  const insights = buildEnergyInsights(snapshot(), history);
+  const battery = insights.find(({ id }) => id === "historical-battery-flexible-loads");
+  const solar = insights.find(({ id }) => id === "historical-solar-export");
+
+  assert.ok(battery);
+  assert.ok(solar);
+  assert.match(battery.impact, /kWh \/ mois à déplacer/);
+  assert.match(solar.description, /kWh ont été injectés/);
+  assert.match(solar.impact, /kWh \/ mois à autoconsommer/);
+  assert.equal(battery.confidence, "measured");
+  assert.equal(solar.confidence, "measured");
 });
 
 test("alerte quand la batterie alimente la maison sans solaire près de sa réserve", () => {

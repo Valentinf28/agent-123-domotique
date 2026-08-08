@@ -13,7 +13,37 @@ export type EnergyInsight = {
   action: string;
 };
 
-type HistorySample = { capturedAt: string; homeWatts: number };
+type HistorySample = {
+  capturedAt: string;
+  homeWatts: number;
+  solarWatts?: number;
+  gridWatts?: number;
+  batteryWatts?: number;
+  filtrationWatts?: number;
+  hotWaterWatts?: number;
+  vehicleWatts?: number;
+};
+
+function measuredEnergyWh(
+  history: HistorySample[],
+  wattsForSample: (sample: HistorySample) => number,
+) {
+  const chronological = [...history].sort((left, right) =>
+    Date.parse(left.capturedAt) - Date.parse(right.capturedAt));
+  return chronological.reduce((total, sample, index) => {
+    const next = chronological[index + 1];
+    if (!next) return total;
+    // A missing relay period must not be interpreted as continuous usage.
+    const elapsedHours = Math.min(15 * 60_000, Math.max(0, Date.parse(next.capturedAt) - Date.parse(sample.capturedAt))) / 3_600_000;
+    return total + Math.max(0, wattsForSample(sample)) * elapsedHours;
+  }, 0);
+}
+
+function observedHistoryDays(history: HistorySample[]) {
+  if (history.length < 2) return 0;
+  const timestamps = history.map(({ capturedAt }) => Date.parse(capturedAt)).filter(Number.isFinite);
+  return timestamps.length < 2 ? 0 : (Math.max(...timestamps) - Math.min(...timestamps)) / 86_400_000;
+}
 
 export type OffPeakPeriod = {
   id?: string;
@@ -129,25 +159,16 @@ export function buildEnergyInsights(
   batteryReservePercent = 25,
 ): EnergyInsight[] {
   const insights: EnergyInsight[] = [];
-  const dominant = consumptionBreakdown.find((item) => item.id !== "other-home" && item.sharePercent >= 25);
-  if (dominant) insights.push({
-    id: `dominant-${dominant.id}`, icon: dominant.icon || "ϟ", tone: "tip",
-    goal: "money", confidence: "measured",
-    title: `${dominant.name} domine la consommation`,
-    description: `${dominant.watts} W, soit environ ${dominant.sharePercent} % de la puissance mesurée de la maison actuellement.`,
-    impact: "Premier poste à examiner maintenant",
-    action: `Comment réduire la consommation de ${dominant.name} ?`,
-  });
-
   const hourFormatter = new Intl.DateTimeFormat("fr-FR", {
     timeZone: "Europe/Paris", hour: "2-digit", hourCycle: "h23",
   });
+  const observedDays = observedHistoryDays(history);
   const nightBase = average(history.filter((sample) => {
     const hour = Number(hourFormatter.formatToParts(new Date(sample.capturedAt))
       .find((part) => part.type === "hour")?.value);
     return hour >= 0 && hour < 5;
   }).map((sample) => sample.homeWatts));
-  if (nightBase >= 250) {
+  if (observedDays >= 7 && nightBase >= 250) {
     const monthlyShiftableKwh = Math.round(Math.max(0, nightBase - 150) * 8 * 30 / 1000);
     insights.push({
       id: "night-base", icon: "☾", tone: "attention", goal: "money", confidence: "estimated",
@@ -157,6 +178,57 @@ export function buildEnergyInsights(
       action: "Identifier les appareils en veille",
     });
   }
+
+  if (observedDays >= 7) {
+    const flexibleBatteryWh = measuredEnergyWh(history, (sample) => {
+      if ((sample.solarWatts ?? 0) >= 100 || (sample.batteryWatts ?? 0) <= 300) return 0;
+      return (sample.filtrationWatts ?? 0) + (sample.hotWaterWatts ?? 0) + (sample.vehicleWatts ?? 0);
+    });
+    if (flexibleBatteryWh >= 500) {
+      const monthlyWh = flexibleBatteryWh * 30 / observedDays;
+      insights.push({
+        id: "historical-battery-flexible-loads", icon: "▣", tone: "attention",
+        goal: "battery", confidence: "measured",
+        title: "Des usages flexibles sollicitent la batterie",
+        description: `${Math.round(flexibleBatteryWh / 100) / 10} kWh ont alimenté la filtration, le chauffe-eau ou la recharge sans solaire pendant la période observée.`,
+        impact: `Environ ${Math.round(monthlyWh / 100) / 10} kWh / mois à déplacer`,
+        action: "Quels usages décaler pour préserver la batterie ?",
+      });
+    }
+
+    const exportedWh = measuredEnergyWh(history, (sample) => Math.max(0, -(sample.gridWatts ?? 0)));
+    if (exportedWh >= 1_000) {
+      const exportedByHour = new Map<number, number>();
+      for (const sample of history) {
+        const exported = Math.max(0, -(sample.gridWatts ?? 0));
+        if (exported < 200) continue;
+        const hour = Number(hourFormatter.formatToParts(new Date(sample.capturedAt))
+          .find((part) => part.type === "hour")?.value);
+        exportedByHour.set(hour, (exportedByHour.get(hour) ?? 0) + exported);
+      }
+      const bestHour = [...exportedByHour].sort((left, right) => right[1] - left[1])[0]?.[0];
+      const period = Number.isFinite(bestHour) ? `, le plus souvent vers ${bestHour} h` : "";
+      const monthlyWh = exportedWh * 30 / observedDays;
+      insights.push({
+        id: "historical-solar-export", icon: "☀", tone: "positive",
+        goal: "solar", confidence: "measured",
+        title: "Un surplus solaire revient régulièrement",
+        description: `${Math.round(exportedWh / 100) / 10} kWh ont été injectés pendant la période observée${period}.`,
+        impact: `Jusqu’à ${Math.round(monthlyWh / 100) / 10} kWh / mois à autoconsommer`,
+        action: "Quels appareils peuvent absorber ce surplus ?",
+      });
+    }
+  }
+
+  const dominant = consumptionBreakdown.find((item) => item.id !== "other-home" && item.sharePercent >= 25);
+  if (dominant) insights.push({
+    id: `dominant-${dominant.id}`, icon: dominant.icon || "ϟ", tone: "tip",
+    goal: "money", confidence: "measured",
+    title: `${dominant.name} domine la consommation`,
+    description: `${dominant.watts} W, soit environ ${dominant.sharePercent} % de la puissance mesurée de la maison actuellement.`,
+    impact: "Premier poste à examiner maintenant",
+    action: `Comment réduire la consommation de ${dominant.name} ?`,
+  });
 
   const likelySurplus = Math.max(0, -current.gridWatts);
   if (likelySurplus >= 500 && current.batteryPercent >= 85) insights.push({
