@@ -2,6 +2,12 @@ import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { installationDossiers, plannedDevices } from "../../../db/schema";
 import { portalApiAuthorized } from "../../../lib/portal-api-auth";
+import {
+  parseStoredTariff,
+  sanitizeEnergyTariff,
+  sanitizeOffPeakPeriods,
+  sanitizeTariffPlan,
+} from "../../../lib/energy-tariff-profile";
 
 type PlannedDevicePayload = {
   id?: string;
@@ -25,6 +31,10 @@ type EnergyConfigurationPayload = {
   solarPeakWatts?: number;
   batteryCapacityWh?: number;
   batteryReservePercent?: number;
+  allowGridExport?: boolean;
+  tariffPlan?: string;
+  offPeakPeriods?: Array<{ start?: string; end?: string }>;
+  energyTariff?: Record<string, unknown>;
   flexibleLoads?: FlexibleLoadPayload[];
 };
 
@@ -125,6 +135,10 @@ export async function GET(request: Request) {
           solarPeakWatts: dossier.solarPeakWatts,
           batteryCapacityWh: dossier.batteryCapacityWh,
           batteryReservePercent: dossier.batteryReservePercent,
+          allowGridExport: dossier.allowGridExport,
+          tariffPlan: sanitizeTariffPlan(dossier.tariffPlan),
+          offPeakPeriods: parseStoredTariff(dossier.offPeakPeriodsJson, sanitizeOffPeakPeriods, []),
+          energyTariff: parseStoredTariff(dossier.energyTariffJson, sanitizeEnergyTariff, sanitizeEnergyTariff({})),
           flexibleLoads: flexibleLoadsFrom(dossier.flexibleLoadsJson),
         },
       },
@@ -197,6 +211,18 @@ export async function PUT(request: Request) {
       solarPeakWatts: boundedInteger(requestedEnergy.solarPeakWatts, dossier.solarPeakWatts, 0, 100_000),
       batteryCapacityWh: boundedInteger(requestedEnergy.batteryCapacityWh, dossier.batteryCapacityWh, 0, 500_000),
       batteryReservePercent: boundedInteger(requestedEnergy.batteryReservePercent, dossier.batteryReservePercent, 5, 80),
+      allowGridExport: requestedEnergy.allowGridExport === undefined
+        ? dossier.allowGridExport
+        : requestedEnergy.allowGridExport === true,
+      tariffPlan: requestedEnergy.tariffPlan === undefined
+        ? sanitizeTariffPlan(dossier.tariffPlan)
+        : sanitizeTariffPlan(requestedEnergy.tariffPlan),
+      offPeakPeriods: requestedEnergy.offPeakPeriods === undefined
+        ? parseStoredTariff(dossier.offPeakPeriodsJson, sanitizeOffPeakPeriods, [])
+        : sanitizeOffPeakPeriods(requestedEnergy.offPeakPeriods),
+      energyTariff: requestedEnergy.energyTariff === undefined
+        ? parseStoredTariff(dossier.energyTariffJson, sanitizeEnergyTariff, sanitizeEnergyTariff({}))
+        : sanitizeEnergyTariff(requestedEnergy.energyTariff),
       flexibleLoads: requestedEnergy.flexibleLoads === undefined
         ? existingFlexibleLoads
         : sanitizeFlexibleLoads(requestedEnergy.flexibleLoads),
@@ -215,6 +241,10 @@ export async function PUT(request: Request) {
       solarPeakWatts: energyConfiguration.solarPeakWatts,
       batteryCapacityWh: energyConfiguration.batteryCapacityWh,
       batteryReservePercent: energyConfiguration.batteryReservePercent,
+      allowGridExport: energyConfiguration.allowGridExport,
+      tariffPlan: energyConfiguration.tariffPlan,
+      offPeakPeriodsJson: JSON.stringify(energyConfiguration.offPeakPeriods),
+      energyTariffJson: JSON.stringify(energyConfiguration.energyTariff),
       flexibleLoadsJson: JSON.stringify(energyConfiguration.flexibleLoads),
       updatedAt: new Date().toISOString(),
     })

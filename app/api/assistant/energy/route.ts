@@ -115,6 +115,7 @@ async function openAiReply(
               bilanSeptJours: context.week,
               nombreDeReleves: context.historySamples,
               previsionSolaire: context.solarForecast,
+              contratTarifaire: context.tariff,
               plansPredictifs: context.predictivePlans,
               recommandationsCalculees: context.insights,
             }),

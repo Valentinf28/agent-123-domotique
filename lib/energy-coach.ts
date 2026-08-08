@@ -7,6 +7,16 @@ import {
   buildPredictiveEnergyPlan,
   type SolarForecastSlot,
 } from "./predictive-energy";
+import { energyInsights, type CalculatedEnergyInsight } from "./energy-insights";
+import { energyWh, powerWatts } from "./energy-measurements";
+import {
+  parseStoredTariff,
+  sanitizeEnergyTariff,
+  sanitizeOffPeakPeriods,
+  sanitizeTariffPlan,
+} from "./energy-tariff-profile";
+
+export { energyInsights } from "./energy-insights";
 
 export type EnergyInventoryItem = {
   entityId: string;
@@ -14,6 +24,7 @@ export type EnergyInventoryItem = {
   domain: string;
   state: string;
   deviceClass?: string | null;
+  unit?: string | null;
 };
 
 export type EnergySnapshotValues = {
@@ -29,15 +40,7 @@ export type EnergySnapshotValues = {
   dailyConsumptionWh: number;
 };
 
-export type EnergyInsight = {
-  id: string;
-  icon: string;
-  tone: "positive" | "attention" | "tip";
-  title: string;
-  description: string;
-  impact: string;
-  action: string;
-};
+export type EnergyInsight = CalculatedEnergyInsight;
 
 type FlexibleLoadConfiguration = {
   id: string;
@@ -116,6 +119,18 @@ function numberFrom(inventory: EnergyInventoryItem[], ids: readonly string[]) {
     .find(Boolean);
   const value = Number(item?.state);
   return Number.isFinite(value) ? value : 0;
+}
+
+function itemFrom(inventory: EnergyInventoryItem[], ids: readonly string[]) {
+  return ids.map((id) => inventory.find((candidate) => candidate.entityId === id)).find(Boolean);
+}
+
+function powerFrom(inventory: EnergyInventoryItem[], ids: readonly string[]) {
+  return powerWatts(itemFrom(inventory, ids)) ?? 0;
+}
+
+function energyFrom(inventory: EnergyInventoryItem[], ids: readonly string[]) {
+  return energyWh(itemFrom(inventory, ids)) ?? 0;
 }
 
 function nullableNumberFrom(inventory: EnergyInventoryItem[], ids: readonly string[]) {
@@ -220,16 +235,16 @@ export function energySnapshotFromInventory(
   inventory: EnergyInventoryItem[],
 ): EnergySnapshotValues {
   return {
-    solarWatts: integer(numberFrom(inventory, bindings.solarWatts)),
-    homeWatts: integer(numberFrom(inventory, bindings.homeWatts)),
-    gridWatts: integer(numberFrom(inventory, bindings.gridWatts)),
+    solarWatts: integer(powerFrom(inventory, bindings.solarWatts)),
+    homeWatts: integer(powerFrom(inventory, bindings.homeWatts)),
+    gridWatts: integer(powerFrom(inventory, bindings.gridWatts)),
     batteryPercent: integer(numberFrom(inventory, bindings.batteryPercent)),
-    batteryWatts: integer(numberFrom(inventory, bindings.batteryWatts)),
-    filtrationWatts: integer(numberFrom(inventory, bindings.filtrationWatts)),
-    hotWaterWatts: integer(numberFrom(inventory, bindings.hotWaterWatts)),
-    vehicleWatts: integer(numberFrom(inventory, bindings.vehicleWatts)),
-    dailyProductionWh: integer(numberFrom(inventory, bindings.dailyProductionWh) * 1000),
-    dailyConsumptionWh: integer(numberFrom(inventory, bindings.dailyConsumptionWh) * 1000),
+    batteryWatts: integer(powerFrom(inventory, bindings.batteryWatts)),
+    filtrationWatts: integer(powerFrom(inventory, bindings.filtrationWatts)),
+    hotWaterWatts: integer(powerFrom(inventory, bindings.hotWaterWatts)),
+    vehicleWatts: integer(powerFrom(inventory, bindings.vehicleWatts)),
+    dailyProductionWh: integer(energyFrom(inventory, bindings.dailyProductionWh)),
+    dailyConsumptionWh: integer(energyFrom(inventory, bindings.dailyConsumptionWh)),
   };
 }
 
@@ -243,116 +258,6 @@ export function fifteenMinuteBucket(date: Date) {
 function average(values: number[]) {
   if (!values.length) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function euro(value: number) {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(Math.max(0, value));
-}
-
-function energyInsights(
-  current: EnergySnapshotValues,
-  history: Array<typeof energySnapshots.$inferSelect>,
-): EnergyInsight[] {
-  const insights: EnergyInsight[] = [];
-  const nightSamples = history.filter((sample) => {
-    const hour = new Date(sample.capturedAt).getUTCHours();
-    return hour >= 0 && hour < 5;
-  });
-  const nightBase = average(nightSamples.map((sample) => sample.homeWatts));
-  if (nightBase >= 250) {
-    const avoidableWatts = Math.max(0, nightBase - 150);
-    const monthlySaving = avoidableWatts * 8 * 30 / 1000 * 0.25;
-    insights.push({
-      id: "night-base",
-      icon: "☾",
-      tone: "attention",
-      title: "Consommation nocturne à examiner",
-      description: `La maison consomme en moyenne ${Math.round(nightBase)} W pendant la nuit.`,
-      impact: `Jusqu’à ${euro(monthlySaving)} / mois estimés`,
-      action: "Identifier les appareils en veille",
-    });
-  }
-
-  const likelySurplus = Math.max(0, current.solarWatts - current.homeWatts);
-  if (likelySurplus >= 500 && current.batteryPercent >= 85) {
-    insights.push({
-      id: "solar-surplus",
-      icon: "☀",
-      tone: "positive",
-      title: "Surplus solaire disponible",
-      description: `${likelySurplus} W peuvent alimenter un équipement flexible maintenant.`,
-      impact: "Autoconsommation à améliorer",
-      action: "Planifier chauffe-eau ou véhicule",
-    });
-  }
-
-  if (current.hotWaterWatts > 500 && current.solarWatts < current.hotWaterWatts) {
-    insights.push({
-      id: "hot-water",
-      icon: "♨",
-      tone: "tip",
-      title: "Chauffe-eau à décaler",
-      description: "Le ballon fonctionne alors que la production solaire ne couvre pas sa puissance.",
-      impact: "Décalage conseillé en journée",
-      action: "Préparer une règle solaire",
-    });
-  }
-
-  if (current.vehicleWatts > 500 && current.solarWatts < current.vehicleWatts) {
-    insights.push({
-      id: "vehicle-charge",
-      icon: "◇",
-      tone: "tip",
-      title: "Recharge à optimiser",
-      description: "La voiture charge plus vite que la production solaire disponible.",
-      impact: "Réduire les achats au réseau",
-      action: "Adapter l’horaire de recharge",
-    });
-  }
-
-  if (current.batteryPercent > 0 && current.batteryPercent <= 20) {
-    insights.push({
-      id: "battery-low",
-      icon: "▣",
-      tone: "attention",
-      title: "Réserve batterie faible",
-      description: `La batterie est à ${current.batteryPercent} %.`,
-      impact: "Garder une réserve pour le soir",
-      action: "Vérifier la stratégie de batterie",
-    });
-  }
-
-  if (current.dailyProductionWh > 0 || current.dailyConsumptionWh > 0) {
-    const selfCoverage = current.dailyConsumptionWh > 0
-      ? Math.min(100, Math.round(current.dailyProductionWh / current.dailyConsumptionWh * 100))
-      : 0;
-    insights.push({
-      id: "daily-balance",
-      icon: "↗",
-      tone: selfCoverage >= 70 ? "positive" : "tip",
-      title: "Bilan de la journée",
-      description: `${Math.round(current.dailyProductionWh / 100) / 10} kWh produits pour ${Math.round(current.dailyConsumptionWh / 100) / 10} kWh consommés.`,
-      impact: `${selfCoverage} % de couverture solaire théorique`,
-      action: "Voir les pistes d’amélioration",
-    });
-  }
-
-  if (!insights.length) {
-    insights.push({
-      id: "learning",
-      icon: "✦",
-      tone: "positive",
-      title: "Analyse en cours",
-      description: "Le coach collecte progressivement les habitudes de la maison.",
-      impact: "Premiers conseils après quelques heures",
-      action: "Poser une question au coach",
-    });
-  }
-  return insights.slice(0, 4);
 }
 
 export async function getEnergyCoachContext(dossierPublicId?: string | null) {
@@ -373,10 +278,10 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     now: new Date(),
     forecast,
     actualSolarWatts: current.solarWatts,
-    forecastSolarWatts: numberFrom(inventory, bindings.forecastSolarWatts),
+    forecastSolarWatts: powerFrom(inventory, bindings.forecastSolarWatts),
     actualTodayWh: current.dailyProductionWh,
-    forecastTodayWh: numberFrom(inventory, bindings.forecastTodayKwh) * 1000,
-    forecastRemainingWh: numberFrom(inventory, bindings.forecastRemainingKwh) * 1000,
+    forecastTodayWh: energyFrom(inventory, bindings.forecastTodayKwh),
+    forecastRemainingWh: energyFrom(inventory, bindings.forecastRemainingKwh),
     cloudCoverPercent: nullableNumberFrom(inventory, bindings.cloudCoverPercent),
   });
   const baseSamples = history.map((sample) =>
@@ -471,6 +376,19 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
       correctionPercent: adaptiveForecast.correctionPercent,
       confidence: adaptiveForecast.confidence,
       explanation: adaptiveForecast.explanation,
+    },
+    tariff: {
+      plan: sanitizeTariffPlan(selected.dossier.tariffPlan),
+      offPeakPeriods: parseStoredTariff(
+        selected.dossier.offPeakPeriodsJson,
+        sanitizeOffPeakPeriods,
+        [],
+      ),
+      prices: parseStoredTariff(
+        selected.dossier.energyTariffJson,
+        sanitizeEnergyTariff,
+        sanitizeEnergyTariff({}),
+      ),
     },
     predictivePlan,
     predictivePlans,

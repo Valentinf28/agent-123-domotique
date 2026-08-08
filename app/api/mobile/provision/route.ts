@@ -3,6 +3,12 @@ import { getDb } from "../../../../db";
 import { installationDossiers, mobilePairingCodes, plannedDevices } from "../../../../db/schema";
 import { sha256 } from "../../../../lib/agent-auth";
 import { subscriptionSummary } from "../../../../lib/subscription";
+import {
+  parseStoredTariff,
+  sanitizeEnergyTariff,
+  sanitizeOffPeakPeriods,
+  sanitizeTariffPlan,
+} from "../../../../lib/energy-tariff-profile";
 
 const viewCatalog = {
   home: { key: "home", label: "Maison", icon: "home-variant-outline", path: "/app" },
@@ -53,6 +59,9 @@ export async function POST(request: Request) {
       portalUrl: `${origin}/ma-maison`,
       apiBaseUrl: `${origin}/api`,
       subscription: subscriptionSummary(dossier),
+      tariffPlan: sanitizeTariffPlan(dossier.tariffPlan),
+      offPeakPeriods: parseStoredTariff(dossier.offPeakPeriodsJson, sanitizeOffPeakPeriods, []),
+      energyTariff: parseStoredTariff(dossier.energyTariffJson, sanitizeEnergyTariff, sanitizeEnergyTariff({})),
       modules,
       views,
       configuredDevices: configuredDevices

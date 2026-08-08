@@ -110,6 +110,14 @@ type EnergyConfiguration = {
   solarPeakWatts: number;
   batteryCapacityWh: number;
   batteryReservePercent: number;
+  allowGridExport: boolean;
+  tariffPlan: "base" | "hp_hc" | "tempo";
+  offPeakPeriods: Array<{ start: string; end: string }>;
+  energyTariff: {
+    basePrice: number | null;
+    peakPrice: number | null;
+    offPeakPrice: number | null;
+  };
   flexibleLoads: FlexibleLoadConfiguration[];
 };
 type AgentInventoryItem = {
@@ -493,7 +501,7 @@ export default function Portal({
       <main>
         <header className="topbar">
           <div>
-            <p>Jeudi 23 juillet</p>
+            <p>{new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Paris" }).format(new Date())}</p>
             <h1>{view === "Accueil" ? "Bonjour Valentin" : view}</h1>
           </div>
           <div className="top-actions">
@@ -586,6 +594,10 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
     solarPeakWatts: 0,
     batteryCapacityWh: 0,
     batteryReservePercent: 25,
+    allowGridExport: true,
+    tariffPlan: "base",
+    offPeakPeriods: [],
+    energyTariff: { basePrice: null, peakPrice: null, offPeakPrice: null },
     flexibleLoads: [],
   });
   const [saveState, setSaveState] = useState<"saved" | "saving" | "offline">("saving");
@@ -676,7 +688,7 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
   }
 
   function updateEnergySetting(key: keyof EnergyConfiguration, value: number) {
-    if (key === "flexibleLoads") return;
+    if (key === "flexibleLoads" || key === "allowGridExport") return;
     const next = { ...energyConfiguration, [key]: Math.max(0, Math.round(value || 0)) };
     setEnergyConfiguration(next);
     void save(plannedItems, enabledModules, next);
@@ -751,6 +763,50 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
         <label><span>Capacité utile batterie</span><div><input type="number" min="0" max="500000" value={energyConfiguration.batteryCapacityWh} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryCapacityWh: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryCapacityWh", Number(event.target.value))} /><em>Wh</em></div></label>
         <label><span>Réserve minimale</span><div><input type="number" min="5" max="80" value={energyConfiguration.batteryReservePercent} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryReservePercent: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryReservePercent", Number(event.target.value))} /><em>%</em></div></label>
       </div>
+      <div className="grid-export-setting">
+        <div>
+          <small>INJECTION RÉSEAU</small>
+          <h4>Autoriser l’injection du surplus</h4>
+          <p>{energyConfiguration.allowGridExport
+            ? "Le surplus photovoltaïque peut être envoyé sur le réseau."
+            : "La box limite l’injection lorsque la voiture ne charge pas."}</p>
+        </div>
+        <div className="grid-export-options" role="group" aria-label="Autorisation de l’injection réseau">
+          <button type="button" className={energyConfiguration.allowGridExport ? "active" : ""} onClick={() => void save(plannedItems, enabledModules, { ...energyConfiguration, allowGridExport: true })}>Autorisée</button>
+          <button type="button" className={!energyConfiguration.allowGridExport ? "active" : ""} onClick={() => void save(plannedItems, enabledModules, { ...energyConfiguration, allowGridExport: false })}>Interdite</button>
+        </div>
+      </div>
+      <div className="grid-export-setting">
+        <div>
+          <small>CONTRAT ÉLECTRIQUE</small>
+          <h4>Tarification validée pour cette maison</h4>
+          <p>Le Coach chiffre uniquement les conseils dont le prix TTC a été confirmé.</p>
+        </div>
+        <div className="grid-export-options" role="group" aria-label="Type de contrat électrique">
+          {(["base", "hp_hc", "tempo"] as const).map((plan) => <button
+            type="button"
+            key={plan}
+            className={energyConfiguration.tariffPlan === plan ? "active" : ""}
+            onClick={() => void save(plannedItems, enabledModules, { ...energyConfiguration, tariffPlan: plan })}
+          >{plan === "base" ? "Base" : plan === "hp_hc" ? "HP / HC" : "Tempo"}</button>)}
+        </div>
+      </div>
+      <div className="predictive-fields">
+        {energyConfiguration.tariffPlan === "base" ? <label><span>Prix du kWh TTC</span><div><input type="number" min="0" max="5" step="0.00001" value={energyConfiguration.energyTariff.basePrice ?? ""} onChange={(event) => setEnergyConfiguration({ ...energyConfiguration, energyTariff: { ...energyConfiguration.energyTariff, basePrice: event.target.value === "" ? null : Number(event.target.value) } })} onBlur={() => void save(plannedItems, enabledModules, energyConfiguration)} /><em>€</em></div></label> : <>
+          <label><span>Prix heures pleines TTC</span><div><input type="number" min="0" max="5" step="0.00001" value={energyConfiguration.energyTariff.peakPrice ?? ""} onChange={(event) => setEnergyConfiguration({ ...energyConfiguration, energyTariff: { ...energyConfiguration.energyTariff, peakPrice: event.target.value === "" ? null : Number(event.target.value) } })} onBlur={() => void save(plannedItems, enabledModules, energyConfiguration)} /><em>€</em></div></label>
+          <label><span>Prix heures creuses TTC</span><div><input type="number" min="0" max="5" step="0.00001" value={energyConfiguration.energyTariff.offPeakPrice ?? ""} onChange={(event) => setEnergyConfiguration({ ...energyConfiguration, energyTariff: { ...energyConfiguration.energyTariff, offPeakPrice: event.target.value === "" ? null : Number(event.target.value) } })} onBlur={() => void save(plannedItems, enabledModules, energyConfiguration)} /><em>€</em></div></label>
+        </>}
+      </div>
+      {energyConfiguration.tariffPlan !== "base" && <div className="flexible-load-heading">
+        <div><small>PLAGES HEURES CREUSES</small><h4>Créneaux figurant sur le contrat du client</h4></div>
+        <button type="button" onClick={() => void save(plannedItems, enabledModules, { ...energyConfiguration, offPeakPeriods: [...energyConfiguration.offPeakPeriods, { start: "22:00", end: "06:00" }].slice(0, 4) })}>＋ Ajouter</button>
+      </div>}
+      {energyConfiguration.tariffPlan !== "base" && <div className="flexible-load-list">{energyConfiguration.offPeakPeriods.map((period, index) => <article key={`${index}-${period.start}-${period.end}`} className="enabled">
+        <span className="flexible-load-icon">◷</span>
+        <label><span>Début</span><input type="time" value={period.start} onChange={(event) => setEnergyConfiguration({ ...energyConfiguration, offPeakPeriods: energyConfiguration.offPeakPeriods.map((item, itemIndex) => itemIndex === index ? { ...item, start: event.target.value } : item) })} onBlur={() => void save(plannedItems, enabledModules, energyConfiguration)} /></label>
+        <label><span>Fin</span><input type="time" value={period.end} onChange={(event) => setEnergyConfiguration({ ...energyConfiguration, offPeakPeriods: energyConfiguration.offPeakPeriods.map((item, itemIndex) => itemIndex === index ? { ...item, end: event.target.value } : item) })} onBlur={() => void save(plannedItems, enabledModules, energyConfiguration)} /></label>
+        <button type="button" className="flexible-load-remove" aria-label="Retirer cette plage" onClick={() => void save(plannedItems, enabledModules, { ...energyConfiguration, offPeakPeriods: energyConfiguration.offPeakPeriods.filter((_, itemIndex) => itemIndex !== index) })}>×</button>
+      </article>)}</div>}
       <div className="flexible-load-heading">
         <div><small>APPAREILS FLEXIBLES</small><h4>Ce que la maison peut décaler intelligemment</h4></div>
         <span>{energyConfiguration.flexibleLoads.filter((load) => load.enabled).length} actif{energyConfiguration.flexibleLoads.filter((load) => load.enabled).length > 1 ? "s" : ""}</span>
@@ -1318,7 +1374,7 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
     <section className="home-modules">
       <article><span className="module-symbol hot-water">♨</span><div><small>Ballon d’eau chaude</small><strong>{overview?.comfort?.hotWaterTemperature ?? "—"}</strong><p>{overview?.comfort?.hotWaterMode ?? "En attente"} · {overview?.comfort?.hotWaterAvailable ?? "—"} disponible</p></div><em>{overview?.comfort?.hotWaterPower ?? "0 W"}</em></article>
       <article><span className="module-symbol comfort">⌂</span><div><small>Confort</small><strong>{overview?.comfort?.indoorTemperature ?? "—"}</strong><p>Consigne {overview?.comfort?.heatingSetpoint ?? "—"}</p></div><em>Chauffage</em></article>
-      <article><span className="module-symbol pool">≋</span><div><small>Piscine simulée</small><strong>{overview?.comfort?.poolTemperature ?? "—"}</strong><p>Consigne {overview?.comfort?.poolSetpoint ?? "—"}</p></div><em>Démo</em></article>
+      <article><span className="module-symbol pool">≋</span><div><small>Piscine</small><strong>{overview?.comfort?.poolTemperature ?? "—"}</strong><p>Consigne {overview?.comfort?.poolSetpoint ?? "—"}</p></div><em>{overview?.energy.filtration ?? "—"}</em></article>
       <article><span className="module-symbol vehicle">◇</span><div><small>Tesla</small><strong>{overview?.comfort?.teslaBattery ?? "—"}</strong><p>Recharge {overview?.comfort?.teslaPower ?? "0 W"}</p></div><em>Véhicule</em></article>
     </section>
     <section className="hero">
@@ -1327,29 +1383,24 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
     </section>
     <div className="metrics">
       <article><span className="metric-icon yellow">◫</span><div><small>Appareils</small><strong>{devices.length}</strong><p><i /> {available} disponibles</p></div><button onClick={() => setView("Appareils")}>›</button></article>
-      <article><span className="metric-icon blue">ϟ</span><div><small>Énergie aujourd’hui</small><strong>8,4 <em>kWh</em></strong><p className="positive">↓ 12 % vs hier</p></div></article>
+      <article><span className="metric-icon blue">ϟ</span><div><small>Énergie aujourd’hui</small><strong>{overview?.energy.dailyConsumption ?? "—"}</strong><p>{liveStatus === "connected" ? "Consommation mesurée" : "Mesure indisponible"}</p></div></article>
       <article className="warning-card"><span className="metric-icon orange">!</span><div><small>À vérifier</small><strong>{lowBattery} alerte{lowBattery > 1 ? "s" : ""}</strong><p>{lowBattery ? "Batterie faible détectée" : "Aucune batterie faible"}</p></div><button onClick={() => setModal("alertes")}>›</button></article>
-      <article><span className="metric-icon purple">⌁</span><div><small>Automatisations</small><strong>6 actives</strong><p>3 exécutées aujourd’hui</p></div><button onClick={() => setView("Automatisations")}>›</button></article>
+      <article><span className="metric-icon purple">⌁</span><div><small>Automatisations</small><strong>—</strong><p>Ouvrir le détail réel</p></div><button onClick={() => setView("Automatisations")}>›</button></article>
     </div>
     <div className="dashboard-grid">
       <section className="panel rooms">
         <div className="panel-title"><div><small>Vue d’ensemble</small><h3>Pièces</h3></div><button onClick={() => setView("Appareils")}>Voir tous les appareils <span>→</span></button></div>
-        <div className="room-grid">
-          {[["Salon", "8 appareils", "21,5°", "◎"], ["Cuisine", "5 appareils", "20,8°", "⌂"], ["Chambre", "6 appareils", "19,5°", "▣"], ["Extérieur", "5 appareils", "12°", "⌁"]].map(([name, count, temp, icon], i) =>
-            <button className="room-card" key={name} onClick={() => setView("Appareils")}><span className={`room-visual room-${i}`}>{icon}</span><b>{name}</b><small>{count}<em>{temp}</em></small></button>)}
+        <div className="room-grid">{Array.from(new Map(devices.map((device) => [device.room, devices.filter((item) => item.room === device.room).length])).entries()).slice(0, 4).map(([name, count], i) =>
+          <button className="room-card" key={name} onClick={() => setView("Appareils")}><span className={`room-visual room-${i}`}>⌂</span><b>{name}</b><small>{count} appareil{count > 1 ? "s" : ""}<em>—</em></small></button>)}
         </div>
+        {!devices.length && <div className="checklist-empty">Les pièces apparaîtront après la connexion de la maison.</div>}
       </section>
       <section className="panel activity">
         <div className="panel-title"><div><small>En direct</small><h3>Activité récente</h3></div><button onClick={() => setView("Journal")}>Tout voir</button></div>
-        <ul>
-          <li><span className="activity-icon">☼</span><div><b>Volets du salon ouverts</b><small>Automatisation « Réveil »</small></div><time>07:32</time></li>
-          <li><span className="activity-icon">♨</span><div><b>Température ajustée à 21°</b><small>Thermostat principal</small></div><time>06:45</time></li>
-          <li><span className="activity-icon">⌁</span><div><b>Portail fermé</b><small>Action de Valentin</small></div><time>Hier</time></li>
-          <li><span className="activity-icon warn">!</span><div><b>Batterie faible détectée</b><small>Détecteur fenêtre salon</small></div><time>Hier</time></li>
-        </ul>
+        <div className="checklist-empty">Le journal réel est disponible dans l’onglet dédié.</div>
       </section>
     </div>
-    <section className="energy-strip"><div><span className="metric-icon blue">ϟ</span><div><small>Consommation instantanée</small><strong>1,24 kW</strong></div></div><div className="bars">{[24,32,28,42,38,56,48,64,52,60,44,38,30,26,34,48,62,76,55,40].map((h,i)=><i key={i} style={{height:`${h}%`}} />)}</div><div><small>Estimation du mois</small><strong>68,40 €</strong><button onClick={() => notify("Le détail énergétique sera disponible après raccordement")}>Voir le détail →</button></div></section>
+    <section className="energy-strip"><div><span className="metric-icon blue">ϟ</span><div><small>Consommation instantanée</small><strong>{overview?.energy.home ?? "—"}</strong></div></div><div><small>Source</small><strong>{liveStatus === "connected" ? "Mesure maison" : "En attente de connexion"}</strong></div><div><small>Estimation du mois</small><strong>—</strong><button onClick={() => notify("Le coût sera calculé après validation du tarif et de l’historique")}>Voir le détail →</button></div></section>
   </div>;
 }
 

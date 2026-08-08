@@ -357,9 +357,12 @@ export async function getPortalHome() {
     const entity = resolve(states, overviewBindings[key]);
     const state = entity?.state.toLowerCase() ?? "unavailable";
     return {
+      publicId: entity ? publicId(entity.entity_id, "commande") : `commande_${key}`,
       label,
+      icon: label === "PAC piscine" ? "♨" : label.includes("Filtration") ? "≋" : "⌁",
       active: ["on", "open", "heat", "heating", "unlocked"].includes(state),
       available: !["unavailable", "unknown"].includes(state),
+      controllable: false,
     };
   };
 

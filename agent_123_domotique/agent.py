@@ -306,6 +306,7 @@ def shelly_daily_energy_inventory(
                 "domain": "sensor",
                 "state": str(delta),
                 "deviceClass": "energy",
+                "unit": str((current.get("attributes") or {}).get("unit_of_measurement", "Wh")),
             })
         return entries
     except Exception as error:
@@ -357,6 +358,7 @@ def home_assistant_summary(
             "domain": entity_id.split(".", 1)[0] if "." in entity_id else "",
             "state": str(state.get("state", "")),
             "deviceClass": attributes.get("device_class"),
+            "unit": attributes.get("unit_of_measurement"),
         })
     if full_inventory:
         inventory.extend(shelly_daily_energy_inventory(
@@ -604,6 +606,7 @@ def fallback_solar_forecast_inventory(
             "domain": "sensor",
             "state": str(round(values[index])),
             "deviceClass": "energy",
+            "unit": "Wh",
         }
         for index, slot in enumerate(slots)
     ]
@@ -650,6 +653,7 @@ def solar_forecast_inventory(
                 "domain": "sensor",
                 "state": str(round(watt_hours)),
                 "deviceClass": "energy",
+                "unit": "Wh",
             })
         if not entries:
             entries = fallback_solar_forecast_inventory(states)

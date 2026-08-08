@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       inventoryMode?: "full" | "delta";
       inventory?: Array<{
         entityId?: string; name?: string; domain?: string;
-        state?: string; deviceClass?: string | null;
+        state?: string; deviceClass?: string | null; unit?: string | null;
       }>;
       commandResults?: Array<{
         id?: string;
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
       domain: String(item.domain ?? "").slice(0, 40),
       state: String(item.state ?? "").slice(0, 80),
       deviceClass: String(item.deviceClass ?? "").slice(0, 80) || null,
+      unit: String(item.unit ?? "").slice(0, 24) || null,
     })).filter((item) => item.entityId.includes(".")) : [];
     let inventory = incomingInventory;
     if (body.inventoryMode === "delta") {

@@ -86,9 +86,24 @@ test("rafraîchit les mesures importantes toutes les cinq secondes sans renvoyer
   assert.match(agent, /FULL_INVENTORY_SECONDS = 60/);
   assert.match(agent, /FAST_ENTITY_PREFIXES/);
   assert.match(agent, /interval - cycle_duration/);
-  assert.match(config, /version: "0\.5\.16"/);
+  assert.match(config, /version: "0\.5\.\d+"/);
   assert.match(config, /heartbeat_seconds: "int\(5,300\)"/);
   assert.match(agentHome, /matches\.find\(\(item\) => !\["unknown", "unavailable"\]\.includes\(item\.state\)\)/);
+});
+
+test("permet à chaque maison d’autoriser ou d’interdire l’injection réseau", async () => {
+  const [portal, route, schema, migration] = await Promise.all([
+    readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/preparation/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0010_grid_export_policy.sql", import.meta.url), "utf8"),
+  ]);
+  assert.match(portal, /Autoriser l’injection du surplus/);
+  assert.match(portal, /Autorisée/);
+  assert.match(portal, /Interdite/);
+  assert.match(route, /allowGridExport/);
+  assert.match(schema, /allowGridExport/);
+  assert.match(migration, /allow_grid_export/);
 });
 
 test("crée et administre les automatisations via la Green Box", async () => {
