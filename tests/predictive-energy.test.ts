@@ -166,3 +166,24 @@ test("une confiance faible empêche de conseiller un démarrage anticipé", () =
   assert.notEqual(plan.status, "ready_now");
   assert.equal(plan.confidence, "low");
 });
+
+test("n’ajoute pas le compteur solaire de la veille à la prévision après minuit", () => {
+  const midnight = new Date("2026-08-08T22:05:00.000Z");
+  const adaptive = buildAdaptiveSolarForecast({
+    now: midnight,
+    forecast: [1, 2, 3, 4, 5, 6].map((hour, index) => ({
+      startsAt: new Date(midnight.getTime() + index * 60 * 60 * 1000).toISOString(),
+      estimatedWh: hour * 500,
+    })),
+    actualSolarWatts: 0,
+    forecastSolarWatts: 0,
+    actualTodayWh: 82_400,
+    forecastTodayWh: 46_500,
+    forecastRemainingWh: 46_500,
+    cloudCoverPercent: 20,
+  });
+
+  assert.equal(adaptive.rawTodayWh, 46_500);
+  assert.ok(adaptive.prudentTodayWh < adaptive.rawTodayWh);
+  assert.ok(adaptive.prudentTodayWh <= 46_500);
+});

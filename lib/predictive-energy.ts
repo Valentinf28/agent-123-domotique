@@ -124,6 +124,20 @@ export function buildAdaptiveSolarForecast(
   const actualTodayWh = Math.max(0, finite(input.actualTodayWh));
   const forecastTodayWh = Math.max(0, finite(input.forecastTodayWh));
   const forecastRemainingWh = Math.max(0, finite(input.forecastRemainingWh));
+  const localHourFormatter = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris",
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
+  const localHour = Number(
+    localHourFormatter.formatToParts(input.now).find((part) => part.type === "hour")?.value,
+  );
+  // Certains compteurs journaliers ne se remettent à zéro que quelques
+  // minutes après minuit. Ne jamais additionner la production de la veille à
+  // la prévision du nouveau jour.
+  const alignedActualTodayWh = localHour < 3 && forecastTodayWh > 0 && actualTodayWh > forecastTodayWh
+    ? 0
+    : actualTodayWh;
   const expectedElapsedWh = Math.max(0, forecastTodayWh - forecastRemainingWh);
   const cloudCover = input.cloudCoverPercent == null
     ? null
@@ -132,7 +146,7 @@ export function buildAdaptiveSolarForecast(
     ? clamp(actualSolarWatts / forecastSolarWatts, 0.08, 1.1)
     : null;
   const elapsedRatio = expectedElapsedWh >= 250
-    ? clamp(actualTodayWh / expectedElapsedWh, 0.08, 1.1)
+    ? clamp(alignedActualTodayWh / expectedElapsedWh, 0.08, 1.1)
     : null;
 
   let nearTermFactor = baselineFactor;
@@ -174,7 +188,7 @@ export function buildAdaptiveSolarForecast(
 
   const rawPlanningWh = rawSlots.reduce((sum, slot) => sum + slot.estimatedWh, 0);
   const prudentPlanningWh = prudentSlots.reduce((sum, slot) => sum + slot.estimatedWh, 0);
-  const rawTodayWh = forecastTodayWh || actualTodayWh + rawPlanningWh;
+  const rawTodayWh = forecastTodayWh || alignedActualTodayWh + rawPlanningWh;
   const rawRemainingWh = forecastRemainingWh || rawPlanningWh;
   const todayRecoveryFactor = clamp(
     nearTermFactor + (farTermFactor - nearTermFactor) * 0.55,
@@ -182,7 +196,10 @@ export function buildAdaptiveSolarForecast(
     0.95,
   );
   const prudentRemainingWh = Math.round(rawRemainingWh * todayRecoveryFactor);
-  const prudentTodayWh = Math.round(actualTodayWh + prudentRemainingWh);
+  const prudentTodayWh = Math.min(
+    Math.round(rawTodayWh),
+    Math.round(alignedActualTodayWh + prudentRemainingWh),
+  );
   const correctionPercent = rawRemainingWh > 0
     ? Math.round((1 - prudentRemainingWh / rawRemainingWh) * 100)
     : 0;
@@ -207,7 +224,7 @@ export function buildAdaptiveSolarForecast(
     ? "La prévision prudente applique les pertes habituelles de l’installation jusqu’à disposer de suffisamment de mesures réelles."
     : observedGap >= 10
       ? elapsedRatio !== null
-        ? `${cloudCover !== null && cloudCover >= 85 ? "Ciel très couvert : " : ""}${formatEnergyKwh(actualTodayWh)} kWh produits pour ${formatEnergyKwh(expectedElapsedWh)} kWh initialement prévus à cette heure (${observedGap} % de moins).`
+        ? `${cloudCover !== null && cloudCover >= 85 ? "Ciel très couvert : " : ""}${formatEnergyKwh(alignedActualTodayWh)} kWh produits pour ${formatEnergyKwh(expectedElapsedWh)} kWh initialement prévus à cette heure (${observedGap} % de moins).`
         : `${cloudCover !== null && cloudCover >= 85 ? "Ciel très couvert : " : ""}${Math.round(actualSolarWatts)} W produits pour ${Math.round(forecastSolarWatts)} W attendus à cet instant (${observedGap} % de moins).`
       : null;
 
