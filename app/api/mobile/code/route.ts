@@ -2,11 +2,11 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { installationDossiers, mobilePairingCodes } from "../../../../db/schema";
 import { enrollmentCode, sha256 } from "../../../../lib/agent-auth";
-import { portalApiAuthorized } from "../../../../lib/portal-api-auth";
+import { portalApiAdminAuthorized } from "../../../../lib/portal-api-auth";
 
 export async function POST(request: Request) {
-  if (!await portalApiAuthorized()) {
-    return Response.json({ error: "Authentification requise" }, { status: 401 });
+  if (!await portalApiAdminAuthorized()) {
+    return Response.json({ error: "Accès installateur requis" }, { status: 403 });
   }
   const db = getDb();
   const requested = new URL(request.url).searchParams.get("dossier");

@@ -1,5 +1,5 @@
 import { resolveRingCameraForDossier } from "../../../../../../lib/agent-home";
-import { portalApiAuthorized } from "../../../../../../lib/portal-api-auth";
+import { portalApiAuthorized, portalHouseAuthorized } from "../../../../../../lib/portal-api-auth";
 
 export async function GET(
   request: Request,
@@ -22,6 +22,9 @@ export async function GET(
   try {
     const { id } = await context.params;
     const dossierPublicId = new URL(request.url).searchParams.get("dossier");
+    if (!dossierPublicId || !await portalHouseAuthorized(dossierPublicId)) {
+      return new Response("Accès refusé pour cette maison", { status: 403 });
+    }
     const camera = await resolveRingCameraForDossier(id, dossierPublicId);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25_000);

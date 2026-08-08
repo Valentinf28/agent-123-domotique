@@ -2,9 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { CLIENT_EXPERIENCE } from "../lib/client-experience.generated";
+import { createEnergyFlowState, flowDurationMs, formatKilowatts, formatKwh, formatWatts } from "../lib/energy-allocation.generated.js";
+import { createEnergySceneLayout } from "../lib/energy-scene.generated.js";
+import { addEnergyDays, energyDateKey, formatEnergyDay, isEnergyToday } from "../lib/energy-period.generated.js";
+import { MOON_PHASE_GLYPHS, MOON_PHASE_LABELS, moonDisplayPhase } from "../lib/moon-phase";
 
 type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
-type HomeTab = "Accueil" | "Énergie" | "Confort" | "Piscine" | "Sécurité" | "Véhicule";
+type HomeTab = (typeof CLIENT_EXPERIENCE.tabs)[number]["label"];
 type Device = {
   id: string; name: string; room: string; areaPublicId: string | null;
   category: string; state: string;
@@ -26,6 +31,10 @@ type EnergyCoachInsight = {
   id: string; icon: string; tone: "positive" | "attention" | "tip";
   title: string; description: string; impact: string; action: string;
 };
+type ConsumptionBreakdownItem = {
+  id: string; name: string; category: string; icon: string;
+  watts: number; sharePercent: number;
+};
 type CoachReply = {
   answer: string;
   automationProposal: {
@@ -37,7 +46,43 @@ type CoachMessage = {
   id: string; role: "client" | "coach"; text: string;
   proposal?: CoachReply["automationProposal"];
 };
+type AssistantAutomationRule = {
+  version: 1;
+  name: string;
+  triggerType: "time" | "sunrise" | "sunset";
+  time: string | null;
+  weekdays: string[];
+  publicDeviceId: string;
+  deviceName: string;
+  desiredActive: boolean;
+  triggerLabel: string;
+  actionLabel: string;
+};
+type AssistantAutomationHelp = {
+  documentation?: { title: string; steps: string[] };
+  supportTicket?: { available: boolean; subject: string };
+};
+type AssistantAutomationPreview = {
+  result?: {
+    status: "ready" | "needs_clarification" | "unsupported" | "refused";
+    message?: string;
+    proposal?: AssistantAutomationRule;
+    summary?: string;
+  };
+  confirmationToken?: string;
+  requiresConfirmation?: boolean;
+  expiresInSeconds?: number;
+  help?: AssistantAutomationHelp;
+  error?: string;
+  code?: string;
+};
 type SolarForecastSlot = { startsAt: string; estimatedWh: number };
+type CoachWeekSummary = {
+  productionWh: number;
+  consumptionWh: number;
+  historySamples: number;
+  observedDays: number;
+};
 type SolarForecastSummary = {
   rawTodayWh: number;
   prudentTodayWh: number;
@@ -45,7 +90,7 @@ type SolarForecastSummary = {
   prudentRemainingWh: number;
   correctionPercent: number;
   confidence: "low" | "medium" | "high";
-  explanation: string;
+  explanation: string | null;
 };
 type PredictiveEnergyPlan = {
   loadId: string;
@@ -65,6 +110,14 @@ type PredictiveEnergyPlan = {
   confidence: "low" | "medium" | "high";
 };
 type MobileOverview = {
+  flow?: {
+    solarWatts: number;
+    homeWatts: number;
+    gridWatts: number;
+    batteryWatts: number;
+    vehicleWatts: number;
+    vehiclePlugged: boolean;
+  };
   energy: Record<string, string>;
   controls: {
     publicId: string; label: string; icon: string;
@@ -78,11 +131,24 @@ type MobileOverview = {
   }[];
   comfort?: {
     indoorTemperature: string; heatingSetpoint: string;
+    bedroomTemperature?: string;
     poolTemperature: string; poolSetpoint: string;
+    poolAirTemperature?: string;
     hotWaterTemperature: string; hotWaterAvailable: string;
     hotWaterPower: string; hotWaterMode: string;
     teslaBattery: string; teslaPower: string; teslaPlugged?: string; demoMode: string;
+    teslaOnline?: string; teslaCharging?: string; teslaDoors?: string;
+    teslaClimate?: string; teslaSentry?: string;
   };
+  strategy?: {
+    tariffPlan: "base" | "hp_hc";
+    offPeakPeriods: OffPeakPeriod[];
+  };
+};
+type EnergyHistoryPoint = {
+  capturedAt: string;
+  solarWatts: number; homeWatts: number; gridWatts: number;
+  batteryWatts: number; batteryPercent: number;
 };
 type CompatibilityLevel = "Automatique" | "Assistée" | "Expert";
 type CatalogItem = {
@@ -105,26 +171,60 @@ type FlexibleLoadConfiguration = {
   minimumRunMinutes: number;
   priority: number;
   enabled: boolean;
+  powerEntityId?: string;
+  showInConsumption?: boolean;
+};
+type OffPeakPeriod = {
+  id: string;
+  label: string;
+  start: string;
+  end: string;
 };
 type EnergyConfiguration = {
   solarPeakWatts: number;
+  solarArrays: Array<{
+    id: string; label: string; peakWatts: number;
+    orientation: string; inclinationDegrees: number | null;
+  }>;
   batteryCapacityWh: number;
   batteryReservePercent: number;
-  allowGridExport: boolean;
-  tariffPlan: "base" | "hp_hc" | "tempo";
-  offPeakPeriods: Array<{ start: string; end: string }>;
-  energyTariff: {
-    basePrice: number | null;
-    peakPrice: number | null;
-    offPeakPrice: number | null;
-  };
   flexibleLoads: FlexibleLoadConfiguration[];
+  tariffPlan: "base" | "hp_hc";
+  offPeakPeriods: OffPeakPeriod[];
+  allowGridExport: boolean;
 };
 type AgentInventoryItem = {
   entityId: string; name: string; domain: string; state: string; deviceClass?: string | null;
 };
+type DiscoveryCandidate = {
+  entityId: string; name: string; domain: string; state: string; score: number;
+};
+type DiscoverySuggestion = {
+  key: string; label: string; room: string; category?: string;
+  entityId: string; entityName: string; candidates: DiscoveryCandidate[]; source?: "manual";
+};
+type DiscoveryReport = {
+  inventoryCount: number;
+  preserved: Array<{ key: string; label: string; room: string; entityId: string; entityName: string }>;
+  certain: DiscoverySuggestion[];
+  ambiguous: Array<DiscoverySuggestion & { requiresConfirmation: true }>;
+  missing: Array<{ key: string; label: string; room: string; category: string }>;
+  bindings: {
+    total: number;
+    ready: boolean;
+    resolved: DiscoverySuggestion[];
+    ambiguous: Array<DiscoverySuggestion & { requiresConfirmation: true }>;
+    missing: Array<{ key: string; label: string }>;
+    bindings: Record<string, string>;
+  };
+};
 type InstallationDossier = {
   publicId: string; reference: string; customerName: string; status: string; updatedAt: string;
+};
+type ErpDossierOption = {
+  id: number; reference: string; title: string; customerName: string;
+  city?: string | null; postalCode?: string | null; status?: string | null;
+  solarPeakKwc?: string | number | null; hasBattery?: boolean;
 };
 type SubscriptionSummary = {
   status: "not_started" | "trialing" | "active" | "past_due" | "suspended" | "cancelled";
@@ -138,7 +238,13 @@ type SubscriptionSummary = {
 };
 
 const HOME_REFRESH_MS = 5_000;
-const homeTabs: HomeTab[] = ["Accueil", "Énergie", "Confort", "Piscine", "Sécurité", "Véhicule"];
+const homeTabs = CLIENT_EXPERIENCE.tabs.map((tab) => tab.label);
+const homeTabMeta = Object.fromEntries(
+  CLIENT_EXPERIENCE.tabs.map((tab) => [tab.label, { icon: tab.portalIcon, eyebrow: tab.eyebrow }]),
+) as Record<HomeTab, { icon: string; eyebrow: string }>;
+const homeTabKeys = Object.fromEntries(
+  CLIENT_EXPERIENCE.tabs.map((tab) => [tab.label, tab.key]),
+) as Record<HomeTab, (typeof CLIENT_EXPERIENCE.tabs)[number]["key"]>;
 
 const appModules: { key: AppModule; label: string; description: string; icon: string; required?: boolean }[] = [
   { key: "home", label: "Maison", description: "Résumé et raccourcis essentiels", icon: "⌂", required: true },
@@ -150,11 +256,11 @@ const appModules: { key: AppModule; label: string; description: string; icon: st
 ];
 
 const flexibleLoadPresets: FlexibleLoadConfiguration[] = [
-  { id: "pac-piscine", name: "PAC piscine", category: "pool", icon: "≋", powerWatts: 2000, minimumRunMinutes: 60, priority: 2, enabled: true },
-  { id: "chauffe-eau", name: "Chauffe-eau", category: "hot_water", icon: "♨", powerWatts: 2400, minimumRunMinutes: 120, priority: 1, enabled: true },
-  { id: "recharge-vehicule", name: "Recharge véhicule", category: "vehicle", icon: "◇", powerWatts: 7400, minimumRunMinutes: 120, priority: 3, enabled: true },
-  { id: "filtration-piscine", name: "Filtration piscine", category: "filtration", icon: "≋", powerWatts: 700, minimumRunMinutes: 120, priority: 4, enabled: true },
-  { id: "chauffage-maison", name: "Chauffage maison", category: "heating", icon: "♨", powerWatts: 3000, minimumRunMinutes: 60, priority: 1, enabled: true },
+  { id: "pac-piscine", name: "PAC piscine", category: "pool", icon: "≋", powerWatts: 2000, minimumRunMinutes: 60, priority: 2, enabled: true, showInConsumption: true },
+  { id: "chauffe-eau", name: "Chauffe-eau", category: "hot_water", icon: "♨", powerWatts: 2400, minimumRunMinutes: 120, priority: 1, enabled: true, showInConsumption: true },
+  { id: "recharge-vehicule", name: "Recharge véhicule", category: "vehicle", icon: "◇", powerWatts: 7400, minimumRunMinutes: 120, priority: 3, enabled: true, showInConsumption: true },
+  { id: "filtration-piscine", name: "Filtration piscine", category: "filtration", icon: "≋", powerWatts: 700, minimumRunMinutes: 120, priority: 4, enabled: true, showInConsumption: true },
+  { id: "chauffage-maison", name: "PAC maison", category: "heating", icon: "♨", powerWatts: 3000, minimumRunMinutes: 60, priority: 1, enabled: true, showInConsumption: true },
   { id: "appareil-flexible", name: "Autre appareil", category: "other", icon: "ϟ", powerWatts: 1000, minimumRunMinutes: 60, priority: 3, enabled: true },
 ];
 
@@ -174,22 +280,6 @@ const catalogItems: CatalogItem[] = [
   { id: "onvif-camera", brand: "ONVIF", model: "Caméra IP", category: "Sécurité", protocol: "Réseau", level: "Expert", method: "Découverte ONVIF locale", prerequisites: "Identifiants locaux et accès au flux vidéo", estimatedMinutes: 8, icon: "◉" },
   { id: "ring-cameras", brand: "Ring", model: "Caméras", category: "Sécurité", protocol: "Wi-Fi", level: "Assistée", method: "Association sécurisée du compte Ring", prerequisites: "Accès au compte Ring et code à deux facteurs", estimatedMinutes: 8, icon: "◉" },
   { id: "tesla-vehicle", brand: "Tesla", model: "Véhicule", category: "Véhicule", protocol: "Réseau", level: "Assistée", method: "Association sécurisée du compte Tesla", prerequisites: "Compte Tesla et véhicule autorisé", estimatedMinutes: 8, icon: "◇" },
-];
-
-const demoDevices: Device[] = [
-  { id: "demo_1", name: "Suspension du salon", room: "Salon", areaPublicId: null, category: "Éclairage", state: "Allumée", detail: "48 %", online: true, visible: true, icon: "◉" },
-  { id: "demo_2", name: "Thermostat principal", room: "Salon", areaPublicId: null, category: "Climat", state: "Confort", detail: "21,5 °C", battery: 82, online: true, visible: true, icon: "♨" },
-  { id: "demo_3", name: "Détecteur fenêtre", room: "Salon", areaPublicId: null, category: "Sécurité", state: "Fermée", detail: "Aucune anomalie", battery: 14, online: true, visible: true, icon: "▣" },
-  { id: "demo_4", name: "Lampe chevet gauche", room: "Chambre", areaPublicId: null, category: "Éclairage", state: "Éteinte", detail: "Prête", online: true, visible: true, icon: "◉" },
-  { id: "demo_5", name: "Prise lave-linge", room: "Buanderie", areaPublicId: null, category: "Énergie", state: "En veille", detail: "0,3 W", online: true, visible: false, icon: "ϟ" },
-  { id: "demo_6", name: "Capteur de jardin", room: "Extérieur", areaPublicId: null, category: "Capteurs", state: "Indisponible", detail: "Vu il y a 2 h", battery: 36, online: false, visible: false, icon: "⌁" },
-];
-
-const demoAutomations: Automation[] = [
-  { id: "demo_a1", name: "Départ de la maison", trigger: "Quand le dernier occupant part", action: "Éteindre 8 appareils", active: true, icon: "↗" },
-  { id: "demo_a2", name: "Soirée douce", trigger: "Quand il est 20 h 30", action: "Salon à 35 % · 20 °C", active: true, icon: "☾" },
-  { id: "demo_a3", name: "Alerte fenêtre", trigger: "Quand une fenêtre reste ouverte", action: "Notifier après 10 minutes", active: true, icon: "!" },
-  { id: "demo_a4", name: "Arrosage intelligent", trigger: "Quand l’humidité est basse", action: "Arroser pendant 12 minutes", active: false, icon: "⌁" },
 ];
 
 const nav: { label: View; icon: string }[] = [
@@ -214,19 +304,19 @@ export default function Portal({
   const [toast, setToast] = useState("");
   const [modal, setModal] = useState<string | null>(null);
   const [guideStep, setGuideStep] = useState(1);
-  const [devices, setDevices] = useState<Device[]>(demoDevices);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
-  const [automationItems, setAutomationItems] = useState<Automation[]>(demoAutomations);
+  const [automationItems, setAutomationItems] = useState<Automation[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [selectedAutomation, setSelectedAutomation] = useState<Automation | null>(null);
   const [liveStatus, setLiveStatus] = useState<"loading" | "connected" | "demo">("loading");
   const [mobileOverview, setMobileOverview] = useState<MobileOverview | null>(null);
+  const [enabledHomeModules, setEnabledHomeModules] = useState<AppModule[]>(["home"]);
+  const [subscription, setSubscription] = useState<SubscriptionSummary | null>(null);
+  const [premiumSaving, setPremiumSaving] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [homeRefreshToken, setHomeRefreshToken] = useState(0);
-  const [plannedItems, setPlannedItems] = useState<PlannedItem[]>([
-    { ...catalogItems[5], quantity: 1, room: "Local technique", status: "Prêt" },
-    { ...catalogItems[6], quantity: 4, room: "Salon", status: "À préparer" },
-  ]);
+  const [plannedItems, setPlannedItems] = useState<PlannedItem[]>([]);
   const [dossiers, setDossiers] = useState<InstallationDossier[]>([]);
   const [selectedDossierId, setSelectedDossierId] = useState("");
   const [newDossierOpen, setNewDossierOpen] = useState(false);
@@ -301,6 +391,13 @@ export default function Portal({
             icon: "⌁",
           })));
           setMobileOverview(payload.home.mobileOverview ?? null);
+          setSubscription(payload.home.subscription ?? null);
+          if (payload.home.dossier?.publicId) {
+            setSelectedDossierId((current) => current || payload.home.dossier.publicId);
+          }
+          setEnabledHomeModules(Array.isArray(payload.home.enabledModules)
+            ? payload.home.enabledModules
+            : ["home"]);
           setLastSyncedAt(new Date());
           setLiveStatus("connected");
         })
@@ -327,9 +424,68 @@ export default function Portal({
     window.setTimeout(() => setToast(""), 2600);
   }
 
-  async function createDossier() {
-    const reference = newDossierReference.trim().toUpperCase();
-    const customerName = newDossierCustomer.trim();
+  async function openPremiumCheckout(interval: "monthly" | "yearly") {
+    if (!selectedDossierId) return notify("Maison en cours d’association");
+    setPremiumSaving(true);
+    try {
+      const response = await fetch(`/api/subscriptions/${encodeURIComponent(selectedDossierId)}/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ interval }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.url) throw new Error(payload.error || "Paiement indisponible");
+      window.location.assign(payload.url);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Paiement indisponible");
+      setPremiumSaving(false);
+    }
+  }
+
+  async function openBillingPortal() {
+    if (!selectedDossierId) return notify("Maison en cours d’association");
+    setPremiumSaving(true);
+    try {
+      const response = await fetch(`/api/subscriptions/${encodeURIComponent(selectedDossierId)}/billing-portal`, {
+        method: "POST", headers: { Accept: "application/json" },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.url) throw new Error(payload.error || "Gestion indisponible");
+      window.location.assign(payload.url);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Gestion indisponible");
+      setPremiumSaving(false);
+    }
+  }
+
+  async function startPremiumTrial() {
+    if (!selectedDossierId) return notify("Maison en cours d’association");
+    setPremiumSaving(true);
+    try {
+      const response = await fetch(`/api/subscriptions/${encodeURIComponent(selectedDossierId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ action: "start_trial" }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.subscription) {
+        throw new Error(payload?.error || "Essai indisponible");
+      }
+      setSubscription(payload.subscription as SubscriptionSummary);
+      setModal(null);
+      notify("Votre mois Premium offert est activé");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Essai indisponible");
+    } finally {
+      setPremiumSaving(false);
+    }
+  }
+
+  async function createDossier(fromErp = false) {
+    const reference = fromErp
+      ? `IMPORT-${Date.now().toString().slice(-8)}`
+      : newDossierReference.trim().toUpperCase();
+    const customerName = fromErp ? "Nouvelle maison" : newDossierCustomer.trim();
     if (reference.length < 3 || customerName.length < 2) {
       notify("Renseignez une référence et un nom");
       return;
@@ -352,7 +508,7 @@ export default function Portal({
       setNewDossierReference("");
       setNewDossierCustomer("");
       setView("Préparation");
-      notify(`Dossier ${dossier.reference} créé`);
+      notify(fromErp ? "Sélectionnez maintenant le dossier ERP" : `Dossier ${dossier.reference} créé`);
     } catch {
       notify("La création du dossier a échoué");
     } finally {
@@ -367,7 +523,7 @@ export default function Portal({
     const response = await fetch(`/api/devices/${encodeURIComponent(device.id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(update),
+      body: JSON.stringify({ ...update, dossierPublicId: selectedDossierId }),
     });
     if (!response.ok) throw new Error("update");
     const area = update.areaPublicId === undefined
@@ -478,8 +634,8 @@ export default function Portal({
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell ${customerOnly ? "customer-shell" : ""}`}>
+      {!customerOnly && <aside className="sidebar">
         <button className="brand" onClick={() => setView("Accueil")} aria-label="Retour à l’accueil">
           <span className="brand-mark">M</span><span>Ma Maison</span>
         </button>
@@ -496,14 +652,17 @@ export default function Portal({
             <span>VF</span><b>Valentin Fettig<small>{customerOnly ? "Application client" : `${role} · Basculer`}</small></b>{!customerOnly && <em>⌄</em>}
           </button>
         </div>
-      </aside>
+      </aside>}
 
       <main>
-        <header className="topbar">
-          <div>
+        <header className={`topbar ${customerOnly ? "customer-topbar" : ""}`}>
+          {customerOnly ? <div className="customer-brand">
+            <img src="/brand/logo-123-home.png" alt="" />
+            <span><small>1.2.3. HOME</small><strong>Maison de Valentin</strong></span>
+          </div> : <div>
             <p>{new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Paris" }).format(new Date())}</p>
             <h1>{view === "Accueil" ? "Bonjour Valentin" : view}</h1>
-          </div>
+          </div>}
           <div className="top-actions">
             {customerOnly && allowHouseSwitch && dossiers.length > 1 && <div className="house-source-switch" role="group" aria-label="Maison affichée">
               {dossiers.map((dossier) => {
@@ -527,16 +686,23 @@ export default function Portal({
             </label>}
             {role === "Installateur" && <button className="icon-button" aria-label="Créer un dossier" title="Créer un dossier" onClick={() => setNewDossierOpen(true)}>＋</button>}
             {!customerOnly && <Link className="dashboard-link" href="/ma-maison">Vue client</Link>}
+            {customerOnly && <button className="premium-pill" onClick={() => setModal("premium")}><span>✦</span> Premium</button>}
             <button className="icon-button" aria-label="Actualiser" onClick={() => {
               setHomeRefreshToken((value) => value + 1);
               notify("Actualisation demandée");
             }}>↻</button>
-            <button className="icon-button notification" aria-label="Notifications" onClick={() => setModal("alertes")}>♢<i /></button>
-            <button className="primary" onClick={() => setView("Ajouter")}><span>＋</span> Ajouter un appareil</button>
+            {!customerOnly && <button className="icon-button notification" aria-label="Notifications" onClick={() => setModal("alertes")}>♢<i /></button>}
+            {!customerOnly && <button className="primary" onClick={() => setView("Ajouter")}><span>＋</span> Ajouter un appareil</button>}
           </div>
         </header>
 
-        {view === "Accueil" && <Dashboard dossierId={selectedDossierId} setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} lastSyncedAt={lastSyncedAt} onControl={setHomeControl} />}
+        {customerOnly && view !== "Accueil" && <nav className="customer-section-nav" aria-label="Navigation client">
+          <button type="button" onClick={() => setView("Accueil")}><span>⌂</span> Maison</button>
+          <button type="button" className={view === "Automatisations" ? "active" : ""} onClick={() => setView("Automatisations")}><span>✦</span> Coach & règles</button>
+          <button type="button" className={view === "Appareils" ? "active" : ""} onClick={() => setView("Appareils")}><span>◫</span> Appareils</button>
+        </nav>}
+
+        {view === "Accueil" && <Dashboard dossierId={selectedDossierId} enabledModules={enabledHomeModules} setView={setView} setModal={setModal} notify={notify} devices={devices} liveStatus={liveStatus} overview={mobileOverview} lastSyncedAt={lastSyncedAt} onControl={setHomeControl} />}
         {view === "Préparation" && <Preparation dossierId={selectedDossierId} plannedItems={plannedItems} setPlannedItems={setPlannedItems} notify={notify} setView={setView} />}
         {view === "Installation" && <Installation dossierId={selectedDossierId} notify={notify} />}
         {view === "Appareils" && <Devices filtered={filtered} areas={areas} search={search} setSearch={setSearch} room={room} setRoom={setRoom} notify={notify} manage={(device) => { setSelectedDevice(device); setModal("appareil"); }} updateDevice={updateDevice} />}
@@ -545,10 +711,13 @@ export default function Portal({
         {view === "Journal" && <Journal role={role} />}
       </main>
 
-      <nav className="mobile-nav" aria-label="Navigation mobile">
-        {nav.filter((item) => !["Préparation", "Installation"].includes(item.label)).slice(0, 4).map((item) => <button key={item.label} className={view === item.label ? "active" : ""} onClick={() => setView(item.label)}>
-          <span>{item.icon}</span><small>{item.label}</small>
-        </button>)}
+      <nav className={`mobile-nav ${customerOnly ? "customer-mobile-nav" : ""}`} aria-label="Navigation mobile">
+        {(customerOnly
+          ? [{ label: "Accueil" as View, icon: "⌂", copy: "Maison" }, { label: "Automatisations" as View, icon: "✦", copy: "Coach" }, { label: "Appareils" as View, icon: "◫", copy: "Appareils" }]
+          : nav.filter((item) => !["Préparation", "Installation"].includes(item.label)).slice(0, 4).map((item) => ({ ...item, copy: item.label })))
+          .map((item) => <button key={item.label} className={view === item.label ? "active" : ""} onClick={() => setView(item.label)}>
+            <span>{item.icon}</span><small>{item.copy}</small>
+          </button>)}
       </nav>
 
       {toast && <div className="toast">✓ {toast}</div>}
@@ -559,6 +728,10 @@ export default function Portal({
           <small>NOUVELLE INSTALLATION</small>
           <h3 id="new-dossier-title">Créer un dossier</h3>
           <p>Créez une identité distincte avant d’enrôler la box. Une box restaurée ne doit jamais conserver l’identité de l’installation source.</p>
+          <button className="erp-start-button" disabled={creatingDossier} onClick={() => void createDossier(true)}>
+            <span>↗</span><b>Créer depuis un dossier ERP<small>Nom, adresse, solaire, batterie et équipements seront repris automatiquement.</small></b>
+          </button>
+          <div className="modal-separator"><span>ou créer manuellement</span></div>
           <label className="field">Référence
             <input value={newDossierReference} onChange={(event) => setNewDossierReference(event.target.value)} placeholder="SHOWROOM-123" autoFocus />
           </label>
@@ -567,13 +740,21 @@ export default function Portal({
           </label>
           <div className="modal-actions">
             <button onClick={() => setNewDossierOpen(false)}>Annuler</button>
-            <button className="primary" disabled={creatingDossier} onClick={() => void createDossier()}>
+            <button className="primary" disabled={creatingDossier} onClick={() => void createDossier(false)}>
               {creatingDossier ? "Création…" : "Créer le dossier"}
             </button>
           </div>
         </section>
       </div>}
-      {modal && <Modal key={`${modal}:${selectedDevice?.id ?? selectedAutomation?.id ?? "none"}`} type={modal} close={() => setModal(null)} notify={notify} device={selectedDevice} devices={devices} areas={areas} saveDevice={updateDevice} automation={selectedAutomation} createAutomation={createAutomation} deleteAutomation={deleteAutomation} />}
+      {modal === "premium" && <PremiumModal
+        subscription={subscription}
+        saving={premiumSaving}
+        close={() => setModal(null)}
+        startTrial={startPremiumTrial}
+        checkout={openPremiumCheckout}
+        manage={openBillingPortal}
+      />}
+      {modal && modal !== "premium" && <Modal key={`${modal}:${selectedDevice?.id ?? selectedAutomation?.id ?? "none"}`} type={modal} close={() => setModal(null)} notify={notify} device={selectedDevice} devices={devices} areas={areas} saveDevice={updateDevice} automation={selectedAutomation} createAutomation={createAutomation} deleteAutomation={deleteAutomation} />}
     </div>
   );
 }
@@ -588,17 +769,26 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
   const [query, setQuery] = useState("");
   const [protocol, setProtocol] = useState("Tous");
   const [selectedRoom, setSelectedRoom] = useState("Salon");
-  const [dossier, setDossier] = useState({ reference: "Chargement…", customerName: "" });
+  const [dossier, setDossier] = useState<{
+    reference: string; customerName: string; customerAddress?: string | null;
+    erpDossierId?: number | null; erpImportedAt?: string | null;
+  }>({ reference: "Chargement…", customerName: "" });
+  const [tunnelStep, setTunnelStep] = useState(0);
+  const [erpQuery, setErpQuery] = useState("");
+  const [erpOptions, setErpOptions] = useState<ErpDossierOption[]>([]);
+  const [erpState, setErpState] = useState<"idle" | "searching" | "importing" | "error">("idle");
+  const [erpMessage, setErpMessage] = useState("");
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [enabledModules, setEnabledModules] = useState<AppModule[]>(["home", "solar", "heating", "access", "vehicle"]);
   const [energyConfiguration, setEnergyConfiguration] = useState<EnergyConfiguration>({
     solarPeakWatts: 0,
+    solarArrays: [],
     batteryCapacityWh: 0,
     batteryReservePercent: 25,
-    allowGridExport: true,
+    flexibleLoads: [],
     tariffPlan: "base",
     offPeakPeriods: [],
-    energyTariff: { basePrice: null, peakPrice: null, offPeakPrice: null },
-    flexibleLoads: [],
+    allowGridExport: true,
   });
   const [saveState, setSaveState] = useState<"saved" | "saving" | "offline">("saving");
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
@@ -617,7 +807,17 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
         setDossier(payload.dossier);
         setPlannedItems(payload.items);
         if (Array.isArray(payload.dossier.enabledModules)) setEnabledModules(payload.dossier.enabledModules);
-        if (payload.dossier.energyConfiguration) setEnergyConfiguration(payload.dossier.energyConfiguration);
+        if (payload.dossier.energyConfiguration) setEnergyConfiguration({
+          ...payload.dossier.energyConfiguration,
+          solarArrays: Array.isArray(payload.dossier.energyConfiguration.solarArrays)
+            ? payload.dossier.energyConfiguration.solarArrays
+            : [],
+          tariffPlan: payload.dossier.energyConfiguration.tariffPlan === "hp_hc" ? "hp_hc" : "base",
+          offPeakPeriods: Array.isArray(payload.dossier.energyConfiguration.offPeakPeriods)
+            ? payload.dossier.energyConfiguration.offPeakPeriods
+            : [],
+          allowGridExport: payload.dossier.energyConfiguration.allowGridExport !== false,
+        });
         setSaveState("saved");
       })
       .catch(() => {
@@ -687,10 +887,118 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
     void save(plannedItems, next);
   }
 
-  function updateEnergySetting(key: keyof EnergyConfiguration, value: number) {
-    if (key === "flexibleLoads" || key === "allowGridExport") return;
+  async function searchErp() {
+    setErpState("searching");
+    setErpMessage("");
+    try {
+      const response = await fetch(`/api/erp/dossiers?q=${encodeURIComponent(erpQuery)}`, { headers: { Accept: "application/json" } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Recherche indisponible");
+      setErpOptions(Array.isArray(payload.dossiers) ? payload.dossiers : []);
+      setErpState("idle");
+      if (!payload.dossiers?.length) setErpMessage("Aucun dossier 1.2.3. correspondant");
+    } catch (error) {
+      setErpState("error");
+      setErpMessage(error instanceof Error ? error.message : "ERP indisponible");
+    }
+  }
+
+  async function importErp(erpDossierId: number) {
+    setErpState("importing");
+    setErpMessage("");
+    try {
+      const response = await fetch("/api/erp/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ erpDossierId, dossierPublicId: dossierId }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Import impossible");
+      setDossier(payload.dossier);
+      setPlannedItems(payload.items);
+      setEnabledModules(payload.enabledModules);
+      setEnergyConfiguration(payload.energyConfiguration);
+      setImportWarnings(Array.isArray(payload.warnings) ? payload.warnings : []);
+      setErpState("idle");
+      setTunnelStep(1);
+      notify(`Dossier ${payload.dossier.reference} importé depuis l’ERP`);
+    } catch (error) {
+      setErpState("error");
+      setErpMessage(error instanceof Error ? error.message : "Import impossible");
+    }
+  }
+
+  function updateSolarArray(index: number, update: Partial<EnergyConfiguration["solarArrays"][number]>, persist = false) {
+    const solarArrays = energyConfiguration.solarArrays.map((array, arrayIndex) => arrayIndex === index ? { ...array, ...update } : array);
+    const next = { ...energyConfiguration, solarArrays, solarPeakWatts: solarArrays.reduce((sum, array) => sum + Math.max(0, Number(array.peakWatts) || 0), 0) };
+    setEnergyConfiguration(next);
+    if (persist) void save(plannedItems, enabledModules, next);
+  }
+
+  function addSolarArray() {
+    const index = energyConfiguration.solarArrays.length + 1;
+    let suffix = index;
+    while (energyConfiguration.solarArrays.some((array) => array.id === `pan-${suffix}`)) suffix += 1;
+    const next = { ...energyConfiguration, solarArrays: [...energyConfiguration.solarArrays, { id: `pan-${suffix}`, label: `Pan ${index}`, peakWatts: 0, orientation: "Sud", inclinationDegrees: 30 }] };
+    void save(plannedItems, enabledModules, next);
+  }
+
+  function removeSolarArray(index: number) {
+    const solarArrays = energyConfiguration.solarArrays.filter((_, arrayIndex) => arrayIndex !== index);
+    const next = { ...energyConfiguration, solarArrays, solarPeakWatts: solarArrays.reduce((sum, array) => sum + array.peakWatts, 0) };
+    void save(plannedItems, enabledModules, next);
+  }
+
+  function updateEnergySetting(key: "solarPeakWatts" | "batteryCapacityWh" | "batteryReservePercent", value: number) {
     const next = { ...energyConfiguration, [key]: Math.max(0, Math.round(value || 0)) };
     setEnergyConfiguration(next);
+    void save(plannedItems, enabledModules, next);
+  }
+
+  function setTariffPlan(tariffPlan: "base" | "hp_hc") {
+    const next = {
+      ...energyConfiguration,
+      tariffPlan,
+      offPeakPeriods: tariffPlan === "hp_hc" && energyConfiguration.offPeakPeriods.length === 0
+        ? [{ id: "nuit", label: "Nuit", start: "22:30", end: "06:30" }]
+        : energyConfiguration.offPeakPeriods,
+    };
+    void save(plannedItems, enabledModules, next);
+  }
+
+  function addOffPeakPeriod() {
+    if (energyConfiguration.offPeakPeriods.length >= 4) return;
+    const index = energyConfiguration.offPeakPeriods.length + 1;
+    let sequence = 1;
+    while (energyConfiguration.offPeakPeriods.some((period) => period.id === `hc-${sequence}`)) sequence += 1;
+    const next = {
+      ...energyConfiguration,
+      offPeakPeriods: [...energyConfiguration.offPeakPeriods, {
+        id: `hc-${sequence}`,
+        label: `Plage ${index}`,
+        start: "12:00",
+        end: "14:00",
+      }],
+    };
+    void save(plannedItems, enabledModules, next);
+  }
+
+  function updateOffPeakPeriod(id: string, update: Partial<OffPeakPeriod>, persist = false) {
+    const next = {
+      ...energyConfiguration,
+      offPeakPeriods: energyConfiguration.offPeakPeriods.map((period) =>
+        period.id === id ? { ...period, ...update } : period
+      ),
+    };
+    setEnergyConfiguration(next);
+    if (persist) void save(plannedItems, enabledModules, next);
+  }
+
+  function removeOffPeakPeriod(id: string) {
+    const next = {
+      ...energyConfiguration,
+      offPeakPeriods: energyConfiguration.offPeakPeriods.filter((period) => period.id !== id),
+    };
     void save(plannedItems, enabledModules, next);
   }
 
@@ -732,9 +1040,99 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
 
   return <div className="content preparation">
     <div className="section-intro split">
-      <div><span className="eyebrow">Dossier {dossier.reference} · {dossier.customerName}</span><h2>Préparer les objets à connecter</h2><p>La liste commerciale est transformée en procédure d’installation. Complétez les modèles avant le départ.</p></div>
+      <div><span className="eyebrow">Dossier {dossier.reference} · {dossier.customerName}</span><h2>Configurer une nouvelle maison</h2><p>Importez le dossier ERP, contrôlez les données utiles, puis générez la préparation du technicien.</p></div>
       <div className="prep-heading-actions"><span className={`save-state ${saveState}`}>{saveState === "saved" ? "✓ Liste enregistrée" : saveState === "saving" ? "Enregistrement…" : "Sauvegarde à reprendre"}</span><button className="primary" onClick={() => setView("Installation")}>Ouvrir la checklist</button></div>
     </div>
+    <section className="house-tunnel">
+      <nav className="house-tunnel-steps" aria-label="Étapes de configuration">
+        {["Dossier ERP", "Énergie", "Équipements", "Application", "Validation"].map((label, index) =>
+          <button type="button" key={label} className={index === tunnelStep ? "active" : index < tunnelStep ? "done" : ""} onClick={() => setTunnelStep(index)}>
+            <i>{index < tunnelStep ? "✓" : index + 1}</i><span>{label}</span>
+          </button>
+        )}
+      </nav>
+
+      {tunnelStep === 0 && <div className="tunnel-panel erp-import-panel">
+        <div className="tunnel-copy"><small>ÉTAPE 1 · SOURCE UNIQUE</small><h3>Importer le dossier depuis 1.2.3. Gestion</h3><p>La fiche client, la puissance solaire, la batterie, les pans de toiture et la liste domotique seront repris sans ressaisie.</p></div>
+        {dossier.erpDossierId ? <div className="erp-linked">
+          <span>✓</span><div><b>{dossier.reference} · {dossier.customerName}</b><small>{dossier.customerAddress || "Adresse à vérifier"}</small></div><em>ERP n° {dossier.erpDossierId}</em>
+        </div> : null}
+        <div className="erp-search"><label><span>⌕</span><input value={erpQuery} onChange={event => setErpQuery(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void searchErp(); }} placeholder="Référence, nom du client ou chantier…" /></label><button type="button" onClick={() => void searchErp()} disabled={erpState === "searching"}>{erpState === "searching" ? "Recherche…" : "Rechercher dans l’ERP"}</button></div>
+        {erpMessage && <p className={`erp-message ${erpState}`}>{erpMessage}</p>}
+        <div className="erp-results">{erpOptions.map(option => <article key={option.id}>
+          <div><small>{option.reference}</small><b>{option.customerName}</b><span>{[option.postalCode, option.city].filter(Boolean).join(" ") || option.title}</span></div>
+          <div className="erp-result-energy"><span>{option.solarPeakKwc ? `${option.solarPeakKwc} kWc` : "Puissance à vérifier"}</span><em>{option.hasBattery ? "Batterie" : "Sans batterie"}</em></div>
+          <button type="button" onClick={() => void importErp(option.id)} disabled={erpState === "importing"}>{erpState === "importing" ? "Import…" : "Importer"}</button>
+        </article>)}</div>
+        <div className="tunnel-actions"><span>Le technicien pourra corriger les données manquantes à l’étape suivante.</span><button type="button" className="primary" onClick={() => setTunnelStep(1)}>Continuer manuellement</button></div>
+      </div>}
+
+      {tunnelStep === 1 && <div className="tunnel-panel energy-tunnel-panel">
+        <div className="tunnel-copy"><small>ÉTAPE 2 · PRODUCTION ET STOCKAGE</small><h3>Vérifier l’installation énergétique</h3><p>Les pans servent aux prévisions de production. Leur somme doit correspondre à la puissance réellement installée.</p></div>
+        {importWarnings.length > 0 && <div className="import-warnings">{importWarnings.map(warning => <span key={warning}>! {warning}</span>)}</div>}
+        <div className="solar-array-list">{energyConfiguration.solarArrays.map((array, index) => <article key={array.id}>
+          <div className="solar-array-number">☀<small>Pan {index + 1}</small></div>
+          <label><span>Nom</span><input value={array.label} onChange={event => updateSolarArray(index, { label: event.target.value })} onBlur={() => updateSolarArray(index, {}, true)} /></label>
+          <label><span>Puissance</span><div><input type="number" min="0" value={array.peakWatts} onChange={event => updateSolarArray(index, { peakWatts: Number(event.target.value) })} onBlur={() => updateSolarArray(index, {}, true)} /><em>Wc</em></div></label>
+          <label><span>Orientation</span><select value={array.orientation} onChange={event => updateSolarArray(index, { orientation: event.target.value }, true)}>{["Nord","Nord-Est","Est","Sud-Est","Sud","Sud-Ouest","Ouest","Nord-Ouest","À vérifier"].map(value => <option key={value}>{value}</option>)}</select></label>
+          <label><span>Inclinaison</span><div><input type="number" min="0" max="90" value={array.inclinationDegrees ?? ""} onChange={event => updateSolarArray(index, { inclinationDegrees: event.target.value === "" ? null : Number(event.target.value) })} onBlur={() => updateSolarArray(index, {}, true)} /><em>°</em></div></label>
+          <button type="button" aria-label={`Supprimer ${array.label}`} onClick={() => removeSolarArray(index)}>×</button>
+        </article>)}</div>
+        {!energyConfiguration.solarArrays.length && <div className="solar-array-empty">Aucun pan importé. Ajoutez au moins un pan pour activer la prévision solaire.</div>}
+        <button type="button" className="solar-array-add" onClick={addSolarArray}>＋ Ajouter un pan de toiture</button>
+        <div className="energy-tunnel-summary">
+          <label><span>Puissance totale</span><div><input type="number" value={energyConfiguration.solarPeakWatts} onChange={event => setEnergyConfiguration({ ...energyConfiguration, solarPeakWatts: Number(event.target.value) })} onBlur={event => updateEnergySetting("solarPeakWatts", Number(event.target.value))} /><em>Wc</em></div><small>{energyConfiguration.solarArrays.length ? "Calculée depuis les pans" : "Saisie manuelle"}</small></label>
+          <label><span>Capacité utile batterie</span><div><input type="number" min="0" value={energyConfiguration.batteryCapacityWh} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryCapacityWh: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryCapacityWh", Number(event.target.value))} /><em>Wh</em></div><small>0 Wh si aucune batterie</small></label>
+          <label><span>Réserve minimale</span><div><input type="number" min="5" max="80" value={energyConfiguration.batteryReservePercent} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryReservePercent: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryReservePercent", Number(event.target.value))} /><em>%</em></div><small>Protection du stockage</small></label>
+        </div>
+        <div className="grid-export-configuration">
+          <div><small>INJECTION DU SURPLUS</small><h4>Le client autorise-t-il l’injection réseau ?</h4><p>Ce choix pilote la règle installée sur la box Home Assistant.</p></div>
+          <div className="grid-export-choice" role="group" aria-label="Autorisation d’injection réseau">
+            <button type="button" className={energyConfiguration.allowGridExport ? "selected" : ""} onClick={() => void save(undefined, undefined, { ...energyConfiguration, allowGridExport: true })}><b>Autorisée</b><small>Le surplus peut être envoyé sur le réseau. Aucune règle de blocage.</small></button>
+            <button type="button" className={!energyConfiguration.allowGridExport ? "selected blocked" : ""} onClick={() => void save(undefined, undefined, { ...energyConfiguration, allowGridExport: false })}><b>Interdite</b><small>La box bloque l’injection lorsque la voiture ne charge pas.</small></button>
+          </div>
+        </div>
+        <div className="tunnel-actions"><button type="button" onClick={() => setTunnelStep(0)}>Retour</button><button type="button" className="primary" onClick={() => setTunnelStep(2)}>Valider l’énergie</button></div>
+      </div>}
+
+      {tunnelStep === 2 && <div className="tunnel-panel devices-tunnel-panel">
+        <div className="tunnel-copy"><small>ÉTAPE 3 · LISTE COMMERCIALE</small><h3>Contrôler les équipements à connecter</h3><p>Les modèles encore inconnus restent signalés « à confirmer » afin que le technicien prépare ses accès avant le rendez-vous.</p></div>
+        <div className="tunnel-device-list">{plannedItems.map((item, index) => <article key={`${item.id}-${index}`}>
+          <i>{item.icon}</i><div><small>{item.category} · {item.room}</small><b>{item.brand} {item.model}</b><span>{item.prerequisites}</span></div>
+          <label><span>Quantité</span><input type="number" min="1" max="99" value={item.quantity} onChange={event => void save(plannedItems.map((planned, itemIndex) => itemIndex === index ? { ...planned, quantity: Math.max(1, Number(event.target.value)) } : planned))} /></label>
+          <em className={item.model === item.category || item.brand === "Marque à confirmer" ? "warning" : ""}>{item.protocol}</em>
+          <button type="button" aria-label={`Retirer ${item.model}`} onClick={() => void save(plannedItems.filter((_, itemIndex) => itemIndex !== index))}>×</button>
+        </article>)}</div>
+        {!plannedItems.length && <div className="solar-array-empty">Aucun équipement n’est prévu dans le dossier ERP. Utilisez les réglages avancés pour en ajouter.</div>}
+        <div className="tunnel-actions"><button type="button" onClick={() => setTunnelStep(1)}>Retour</button><button type="button" className="primary" onClick={() => setTunnelStep(3)}>Valider les équipements</button></div>
+      </div>}
+
+      {tunnelStep === 3 && <div className="tunnel-panel modules-tunnel-panel">
+        <div className="tunnel-copy"><small>ÉTAPE 4 · EXPÉRIENCE CLIENT</small><h3>Choisir les onglets de l’application</h3><p>La sélection est proposée automatiquement d’après les équipements. Le client ne verra que ce qui existe réellement chez lui.</p></div>
+        <div className="module-grid">{appModules.map(module => {
+          const enabled = enabledModules.includes(module.key);
+          return <button key={module.key} type="button" className={enabled ? "enabled" : ""} onClick={() => toggleModule(module.key)} aria-pressed={enabled}>
+            <i>{module.icon}</i><span><b>{module.label}</b><small>{module.description}</small></span><em>{module.required ? "Toujours actif" : enabled ? "Activé" : "Masqué"}</em>
+          </button>;
+        })}</div>
+        <div className="tunnel-actions"><button type="button" onClick={() => setTunnelStep(2)}>Retour</button><button type="button" className="primary" onClick={() => setTunnelStep(4)}>Voir le récapitulatif</button></div>
+      </div>}
+
+      {tunnelStep === 4 && <div className="tunnel-panel review-tunnel-panel">
+        <div className="tunnel-copy"><small>ÉTAPE 5 · PRÊT POUR LE TECHNICIEN</small><h3>Valider la préparation de {dossier.customerName}</h3><p>Un dernier contrôle évite toute ressaisie et signale ce qui devra être confirmé sur place.</p></div>
+        <div className="review-grid">
+          <article><i>⌂</i><span><small>Maison</small><b>{dossier.reference}</b><em>{dossier.customerAddress || "Adresse à vérifier"}</em></span></article>
+          <article className={energyConfiguration.solarPeakWatts > 0 ? "ok" : "warning"}><i>☀</i><span><small>Photovoltaïque</small><b>{energyConfiguration.solarPeakWatts.toLocaleString("fr-FR")} Wc</b><em>{energyConfiguration.solarArrays.length} pan{energyConfiguration.solarArrays.length > 1 ? "s" : ""} de toiture</em></span></article>
+          <article className={energyConfiguration.batteryCapacityWh > 0 ? "ok" : "neutral"}><i>▥</i><span><small>Batterie</small><b>{energyConfiguration.batteryCapacityWh > 0 ? `${(energyConfiguration.batteryCapacityWh / 1000).toLocaleString("fr-FR")} kWh` : "Non prévue"}</b><em>Réserve {energyConfiguration.batteryReservePercent} %</em></span></article>
+          <article className={plannedItems.length ? "ok" : "warning"}><i>◇</i><span><small>Équipements</small><b>{totalObjects} objet{totalObjects > 1 ? "s" : ""}</b><em>{plannedItems.filter(item => item.brand === "Marque à confirmer").length} à préciser</em></span></article>
+          <article className="ok"><i>▣</i><span><small>Application</small><b>{enabledModules.length} onglets</b><em>{enabledModules.map(value => appModules.find(module => module.key === value)?.label).filter(Boolean).join(" · ")}</em></span></article>
+        </div>
+        <div className="final-check"><span>✓</span><div><b>La configuration est enregistrée</b><p>La checklist d’installation reprend ces données et guidera ensuite la détection automatique des appareils.</p></div></div>
+        <div className="tunnel-actions"><button type="button" onClick={() => setTunnelStep(3)}>Retour</button><button type="button" className="primary" onClick={() => setView("Installation")}>Générer la checklist</button></div>
+      </div>}
+    </section>
+    <details className="preparation-advanced">
+      <summary>Réglages avancés et catalogue manuel <span>À utiliser uniquement pour compléter le dossier ERP</span></summary>
     <section className="prep-summary">
       <div><small>Objets prévus</small><strong>{totalObjects}</strong><span>{plannedItems.length} références</span></div>
       <div><small>Temps estimé</small><strong>{estimated} min</strong><span>hors câblage</span></div>
@@ -763,50 +1161,30 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
         <label><span>Capacité utile batterie</span><div><input type="number" min="0" max="500000" value={energyConfiguration.batteryCapacityWh} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryCapacityWh: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryCapacityWh", Number(event.target.value))} /><em>Wh</em></div></label>
         <label><span>Réserve minimale</span><div><input type="number" min="5" max="80" value={energyConfiguration.batteryReservePercent} onChange={event => setEnergyConfiguration({ ...energyConfiguration, batteryReservePercent: Number(event.target.value) })} onBlur={event => updateEnergySetting("batteryReservePercent", Number(event.target.value))} /><em>%</em></div></label>
       </div>
-      <div className="grid-export-setting">
-        <div>
-          <small>INJECTION RÉSEAU</small>
-          <h4>Autoriser l’injection du surplus</h4>
-          <p>{energyConfiguration.allowGridExport
-            ? "Le surplus photovoltaïque peut être envoyé sur le réseau."
-            : "La box limite l’injection lorsque la voiture ne charge pas."}</p>
+      <div className="tariff-configuration">
+        <div className="tariff-heading">
+          <div><small>CONTRAT D’ÉLECTRICITÉ</small><h4>Tarif et heures creuses du client</h4></div>
+          <span>Utilisé pour les replis automatiques</span>
         </div>
-        <div className="grid-export-options" role="group" aria-label="Autorisation de l’injection réseau">
-          <button type="button" className={energyConfiguration.allowGridExport ? "active" : ""} onClick={() => void save(plannedItems, enabledModules, { ...energyConfiguration, allowGridExport: true })}>Autorisée</button>
-          <button type="button" className={!energyConfiguration.allowGridExport ? "active" : ""} onClick={() => void save(plannedItems, enabledModules, { ...energyConfiguration, allowGridExport: false })}>Interdite</button>
+        <div className="tariff-choice" role="group" aria-label="Type de contrat électrique">
+          <button type="button" className={energyConfiguration.tariffPlan === "base" ? "selected" : ""} onClick={() => setTariffPlan("base")}>
+            <b>Option Base</b><small>Un tarif identique toute la journée</small>
+          </button>
+          <button type="button" className={energyConfiguration.tariffPlan === "hp_hc" ? "selected" : ""} onClick={() => setTariffPlan("hp_hc")}>
+            <b>Heures pleines / creuses</b><small>Les appareils peuvent se replier sur les HC</small>
+          </button>
         </div>
+        {energyConfiguration.tariffPlan === "hp_hc" && <div className="off-peak-editor">
+          <div className="off-peak-list">{energyConfiguration.offPeakPeriods.map((period) => <article key={period.id}>
+            <label><span>Nom</span><input value={period.label} onChange={event => updateOffPeakPeriod(period.id, { label: event.target.value })} onBlur={() => updateOffPeakPeriod(period.id, {}, true)} /></label>
+            <label><span>Début</span><input type="time" value={period.start} onChange={event => updateOffPeakPeriod(period.id, { start: event.target.value })} onBlur={() => updateOffPeakPeriod(period.id, {}, true)} /></label>
+            <label><span>Fin</span><input type="time" value={period.end} onChange={event => updateOffPeakPeriod(period.id, { end: event.target.value })} onBlur={() => updateOffPeakPeriod(period.id, {}, true)} /></label>
+            <button type="button" aria-label={`Supprimer ${period.label}`} onClick={() => removeOffPeakPeriod(period.id)}>×</button>
+          </article>)}</div>
+          <button type="button" className="off-peak-add" disabled={energyConfiguration.offPeakPeriods.length >= 4} onClick={addOffPeakPeriod}>＋ Ajouter une plage d’heures creuses</button>
+          <p>Les plages qui traversent minuit sont acceptées, par exemple 22:30 → 06:30.</p>
+        </div>}
       </div>
-      <div className="grid-export-setting">
-        <div>
-          <small>CONTRAT ÉLECTRIQUE</small>
-          <h4>Tarification validée pour cette maison</h4>
-          <p>Le Coach chiffre uniquement les conseils dont le prix TTC a été confirmé.</p>
-        </div>
-        <div className="grid-export-options" role="group" aria-label="Type de contrat électrique">
-          {(["base", "hp_hc", "tempo"] as const).map((plan) => <button
-            type="button"
-            key={plan}
-            className={energyConfiguration.tariffPlan === plan ? "active" : ""}
-            onClick={() => void save(plannedItems, enabledModules, { ...energyConfiguration, tariffPlan: plan })}
-          >{plan === "base" ? "Base" : plan === "hp_hc" ? "HP / HC" : "Tempo"}</button>)}
-        </div>
-      </div>
-      <div className="predictive-fields">
-        {energyConfiguration.tariffPlan === "base" ? <label><span>Prix du kWh TTC</span><div><input type="number" min="0" max="5" step="0.00001" value={energyConfiguration.energyTariff.basePrice ?? ""} onChange={(event) => setEnergyConfiguration({ ...energyConfiguration, energyTariff: { ...energyConfiguration.energyTariff, basePrice: event.target.value === "" ? null : Number(event.target.value) } })} onBlur={() => void save(plannedItems, enabledModules, energyConfiguration)} /><em>€</em></div></label> : <>
-          <label><span>Prix heures pleines TTC</span><div><input type="number" min="0" max="5" step="0.00001" value={energyConfiguration.energyTariff.peakPrice ?? ""} onChange={(event) => setEnergyConfiguration({ ...energyConfiguration, energyTariff: { ...energyConfiguration.energyTariff, peakPrice: event.target.value === "" ? null : Number(event.target.value) } })} onBlur={() => void save(plannedItems, enabledModules, energyConfiguration)} /><em>€</em></div></label>
-          <label><span>Prix heures creuses TTC</span><div><input type="number" min="0" max="5" step="0.00001" value={energyConfiguration.energyTariff.offPeakPrice ?? ""} onChange={(event) => setEnergyConfiguration({ ...energyConfiguration, energyTariff: { ...energyConfiguration.energyTariff, offPeakPrice: event.target.value === "" ? null : Number(event.target.value) } })} onBlur={() => void save(plannedItems, enabledModules, energyConfiguration)} /><em>€</em></div></label>
-        </>}
-      </div>
-      {energyConfiguration.tariffPlan !== "base" && <div className="flexible-load-heading">
-        <div><small>PLAGES HEURES CREUSES</small><h4>Créneaux figurant sur le contrat du client</h4></div>
-        <button type="button" onClick={() => void save(plannedItems, enabledModules, { ...energyConfiguration, offPeakPeriods: [...energyConfiguration.offPeakPeriods, { start: "22:00", end: "06:00" }].slice(0, 4) })}>＋ Ajouter</button>
-      </div>}
-      {energyConfiguration.tariffPlan !== "base" && <div className="flexible-load-list">{energyConfiguration.offPeakPeriods.map((period, index) => <article key={`${index}-${period.start}-${period.end}`} className="enabled">
-        <span className="flexible-load-icon">◷</span>
-        <label><span>Début</span><input type="time" value={period.start} onChange={(event) => setEnergyConfiguration({ ...energyConfiguration, offPeakPeriods: energyConfiguration.offPeakPeriods.map((item, itemIndex) => itemIndex === index ? { ...item, start: event.target.value } : item) })} onBlur={() => void save(plannedItems, enabledModules, energyConfiguration)} /></label>
-        <label><span>Fin</span><input type="time" value={period.end} onChange={(event) => setEnergyConfiguration({ ...energyConfiguration, offPeakPeriods: energyConfiguration.offPeakPeriods.map((item, itemIndex) => itemIndex === index ? { ...item, end: event.target.value } : item) })} onBlur={() => void save(plannedItems, enabledModules, energyConfiguration)} /></label>
-        <button type="button" className="flexible-load-remove" aria-label="Retirer cette plage" onClick={() => void save(plannedItems, enabledModules, { ...energyConfiguration, offPeakPeriods: energyConfiguration.offPeakPeriods.filter((_, itemIndex) => itemIndex !== index) })}>×</button>
-      </article>)}</div>}
       <div className="flexible-load-heading">
         <div><small>APPAREILS FLEXIBLES</small><h4>Ce que la maison peut décaler intelligemment</h4></div>
         <span>{energyConfiguration.flexibleLoads.filter((load) => load.enabled).length} actif{energyConfiguration.flexibleLoads.filter((load) => load.enabled).length > 1 ? "s" : ""}</span>
@@ -822,6 +1200,8 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
           <span className="flexible-load-icon">{load.icon}</span>
           <label><span>Appareil</span><input value={load.name} onChange={event => updateFlexibleLoad(load.id, { name: event.target.value })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /></label>
           <label><span>Puissance</span><div><input type="number" min="0" max="50000" value={load.powerWatts} onChange={event => updateFlexibleLoad(load.id, { powerWatts: Number(event.target.value) })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /><em>W</em></div></label>
+          <label><span>Mesure Home Assistant</span><input placeholder="sensor.appareil_puissance" value={load.powerEntityId || ""} onChange={event => updateFlexibleLoad(load.id, { powerEntityId: event.target.value })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /></label>
+          <label><span>Répartition</span><select value={load.showInConsumption === false ? "no" : "yes"} onChange={event => updateFlexibleLoad(load.id, { showInConsumption: event.target.value === "yes" }, true)}><option value="yes">Afficher</option><option value="no">Masquer</option></select></label>
           <label><span>Cycle minimum</span><div><input type="number" min="15" max="720" value={load.minimumRunMinutes} onChange={event => updateFlexibleLoad(load.id, { minimumRunMinutes: Number(event.target.value) })} onBlur={() => updateFlexibleLoad(load.id, {}, true)} /><em>min</em></div></label>
           <label><span>Priorité</span><select value={load.priority} onChange={event => updateFlexibleLoad(load.id, { priority: Number(event.target.value) }, true)}>{[1,2,3,4,5].map((priority) => <option value={priority} key={priority}>{priority}</option>)}</select></label>
           <button type="button" className="flexible-load-remove" aria-label={`Retirer ${load.name}`} onClick={() => removeFlexibleLoad(load.id)}>×</button>
@@ -849,6 +1229,7 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
         <div className="discovery-note"><span>⌁</span><div><b>Recherche automatique sur place</b><p>Les appareils réseau seront rapprochés par modèle, numéro de série et adresse MAC. L’adresse IP ne sera demandée qu’en dernier recours.</p></div></div>
       </aside>
     </div>
+    </details>
   </div>;
 }
 
@@ -864,6 +1245,7 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
   const [mobilePairing, setMobilePairing] = useState<{ code: string; expiresAt: string } | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionSummary | null>(null);
   const [subscriptionSaving, setSubscriptionSaving] = useState(false);
+  const [discoveryReport, setDiscoveryReport] = useState<DiscoveryReport | null>(null);
   const associableInventory = (agent?.inventory ?? []).filter((entity) =>
     !["unknown", "unavailable"].includes(String(entity.state).toLowerCase())
   );
@@ -915,7 +1297,7 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
     void save(items.map(current => current.id === item.id && current.room === item.room ? { ...current, status } : current), `${item.id}:${item.room}`);
   }
 
-  function discover() {
+  async function discover() {
     if (!agent || agent.status !== "online") {
       notify("La box doit être connectée pour lancer la découverte");
       return;
@@ -925,50 +1307,53 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
       notify("L’inventaire est en cours de remontée par la box");
       return;
     }
-    const domainByCategory: Record<string, string[]> = {
-      "Éclairage": ["light", "switch"],
-      "Capteur": ["sensor", "binary_sensor"],
-      "Sécurité": ["binary_sensor", "lock", "alarm_control_panel", "camera"],
-      "Recharge": ["sensor", "switch", "number"],
-      "Chauffage": ["climate", "water_heater", "sensor"],
-      "Solaire": ["sensor"],
-      "Piscine": ["switch", "sensor", "climate"],
-      "Eau chaude": ["switch", "sensor", "water_heater"],
-      "Véhicule": ["device_tracker", "sensor", "binary_sensor", "climate", "lock"],
-    };
-    const genericTerms = new Set([
-      "plus", "gen", "pro", "smart", "bridge", "camera", "cameras", "lock",
-      "vehicle", "vehicule", "sun", "1pm",
-    ]);
-    let detected = 0;
-    const next = items.map((item) => {
-      if (["Associé", "Testé"].includes(item.status)) return item;
-      const terms = [item.brand, item.model]
-        .flatMap((value) => value.toLowerCase().split(/[\s/+-]+/))
-        .map((value) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
-        .filter((value) => value.length >= 3 && !genericTerms.has(value));
-      const domains = domainByCategory[item.category] ?? [];
-      const match = inventory.find((entity) => {
-        const haystack = `${entity.entityId} ${entity.name} ${entity.deviceClass ?? ""} ${entity.state}`.toLowerCase();
-        return domains.includes(entity.domain) && terms.some((term) => haystack.includes(term));
+    setSavingId("discovery");
+    try {
+      const response = await fetch("/api/preparation/discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ dossierPublicId: dossierId, applyCertain: true }),
       });
-      if (!match) {
-        return item.status === "Détecté"
-          ? { ...item, status: "À préparer" as InstallationStatus, matchedEntityId: null, matchedEntityName: null }
-          : item;
-      }
-      detected += item.quantity;
-      return {
-        ...item,
-        status: "Détecté" as InstallationStatus,
-        matchedEntityId: match.entityId,
-        matchedEntityName: match.name,
-      };
-    });
-    void save(next, "discovery");
-    notify(detected
-      ? `${detected} équipement${detected > 1 ? "s" : ""} rapproché${detected > 1 ? "s" : ""} automatiquement`
-      : "Inventaire analysé : aucun rapprochement certain");
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Découverte impossible");
+      setDiscoveryReport(payload.report);
+      const refreshed = await fetch(`/api/preparation?dossier=${encodeURIComponent(dossierId)}`, {
+        headers: { Accept: "application/json" }, cache: "no-store",
+      });
+      if (refreshed.ok) setItems((await refreshed.json()).items);
+      const applied = Array.isArray(payload.applied) ? payload.applied.length : 0;
+      notify(applied
+        ? `${applied} association${applied > 1 ? "s" : ""} certaine${applied > 1 ? "s" : ""} enregistrée${applied > 1 ? "s" : ""}`
+        : "Inventaire analysé : consultez le rapport de découverte");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Découverte impossible");
+    } finally {
+      setSavingId("");
+    }
+  }
+
+  async function confirmBinding(key: string, entityId: string) {
+    if (!entityId) return;
+    setSavingId(`binding:${key}`);
+    try {
+      const response = await fetch("/api/preparation/discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          dossierPublicId: dossierId,
+          bindingConfirmations: [{ key, entityId }],
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Association impossible");
+      setDiscoveryReport(payload.report);
+      const entity = associableInventory.find(candidate => candidate.entityId === entityId);
+      notify(`${entity?.name || entityId} est maintenant utilisé pour cette maison`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Association impossible");
+    } finally {
+      setSavingId("");
+    }
   }
 
   async function createEnrollment() {
@@ -1058,6 +1443,38 @@ function Installation({ dossierId, notify }: { dossierId: string; notify: (value
       <div><small>RECETTE DE LA MAISON</small><h3>{tested} objet{tested > 1 ? "s" : ""} testé{tested > 1 ? "s" : ""} sur {total}</h3><div className="progress-bar"><i style={{ width: `${progress}%` }} /></div><p>{blocked ? `${blocked} blocage${blocked > 1 ? "s" : ""} à résoudre avant la remise client.` : "Aucun blocage signalé."}</p></div>
       <div className={`box-state ${agent?.status === "online" ? "online" : ""}`}><i /><span>Agent de la box<strong>{agent?.status === "online" ? `Connecté · HA ${agent.haVersion || "détecté"} · ${agent.inventoryCount} entités` : enrollment ? `Code ${enrollment.code} · valable 30 min` : "En attente d’association"}</strong></span><button onClick={agent ? () => notify(`Dernier contact : ${agent.lastSeenAt ? new Date(agent.lastSeenAt).toLocaleString("fr-FR") : "inconnu"}`) : createEnrollment}>{agent ? "Voir l’état" : enrollment ? "Nouveau code" : "Associer la box"}</button></div>
     </section>
+    {discoveryReport && <section className="discovery-report">
+      <div className="panel-title"><div><small>Inventaire Home Assistant · {discoveryReport.inventoryCount} entités</small><h3>Rapport de découverte</h3></div><span>{discoveryReport.certain.length} sûre{discoveryReport.certain.length > 1 ? "s" : ""}</span></div>
+      <div className="discovery-report-grid">
+        <article className="discovery-safe"><b>Associations enregistrées</b><strong>{discoveryReport.certain.length}</strong><small>Les choix existants sont conservés.</small></article>
+        <article className="discovery-ambiguous"><b>À confirmer</b><strong>{discoveryReport.ambiguous.length}</strong><small>Aucune association ambiguë n’est appliquée seule.</small></article>
+        <article className="discovery-missing"><b>Éléments manquants</b><strong>{discoveryReport.missing.length}</strong><small>À connecter ou à rechercher sur place.</small></article>
+      </div>
+      <div className="discovery-list">
+        <b>Capteurs essentiels de la maison</b>
+        <p>
+          <span>{discoveryReport.bindings.ready ? "✓ Configuration énergétique prête" : "Configuration énergétique à terminer"}</span>
+          <small>{discoveryReport.bindings.resolved.length}/{discoveryReport.bindings.total} capteurs reconnus automatiquement</small>
+        </p>
+        {discoveryReport.bindings.resolved.filter(item => item.source === "manual").map(item => <p key={item.key}><span>✓ Validé · {item.label}</span><small>{item.entityName}</small></p>)}
+        {discoveryReport.bindings.ambiguous.map(item => <p key={item.key}>
+          <span>À confirmer · {item.label}</span>
+          <select aria-label={`Choisir le capteur pour ${item.label}`} disabled={savingId === `binding:${item.key}`} defaultValue="" onChange={event => void confirmBinding(item.key, event.target.value)}>
+            <option value="">Sélectionner la bonne mesure…</option>
+            {item.candidates.map(candidate => <option key={candidate.entityId} value={candidate.entityId}>{candidate.name} · {candidate.entityId}</option>)}
+          </select>
+        </p>)}
+        {discoveryReport.bindings.missing.map(item => <p key={item.key}>
+          <span>Manquant · {item.label}</span>
+          <select aria-label={`Choisir le capteur pour ${item.label}`} disabled={savingId === `binding:${item.key}`} defaultValue="" onChange={event => void confirmBinding(item.key, event.target.value)}>
+            <option value="">Rechercher dans les entités disponibles…</option>
+            {associableInventory.map(entity => <option key={entity.entityId} value={entity.entityId}>{entity.name} · {entity.entityId}</option>)}
+          </select>
+        </p>)}
+      </div>
+      {discoveryReport.ambiguous.length > 0 && <div className="discovery-list"><b>Suggestions à confirmer dans la checklist</b>{discoveryReport.ambiguous.map(item => <p key={item.key}><span>{item.label} · {item.room}</span><small>{item.candidates.slice(0, 3).map(candidate => candidate.name).join(" · ")}</small></p>)}</div>}
+      {discoveryReport.missing.length > 0 && <div className="discovery-list missing"><b>Non trouvés dans cette maison</b>{discoveryReport.missing.map(item => <p key={item.key}><span>{item.label} · {item.room}</span><small>{item.category}</small></p>)}</div>}
+    </section>}
     {loading ? <div className="checklist-empty">Chargement de la checklist…</div> : !items.length ? <div className="checklist-empty">Aucun équipement n’a encore été préparé pour ce dossier.</div> :
       <section className="installation-list">{items.map(item => {
         const activeIndex = installationStages.indexOf(item.status);
@@ -1126,6 +1543,41 @@ function SubscriptionCard({ subscription, saving, update }: {
       </>}
     </div>
   </section>;
+}
+
+function PremiumModal({ subscription, saving, close, startTrial, checkout, manage }: {
+  subscription: SubscriptionSummary | null;
+  saving: boolean;
+  close: () => void;
+  startTrial: () => Promise<void>;
+  checkout: (interval: "monthly" | "yearly") => Promise<void>;
+  manage: () => Promise<void>;
+}) {
+  const active = subscription?.status === "active";
+  const trialing = subscription?.status === "trialing";
+  return <div className="modal-backdrop premium-backdrop" onMouseDown={close}>
+    <section className="modal premium-modal" onMouseDown={(event) => event.stopPropagation()}>
+      <button className="modal-close" aria-label="Fermer" onClick={close}>×</button>
+      <span className="premium-symbol">✦</span>
+      <small>1.2.3 HOME PREMIUM</small>
+      <h3>{active ? "Votre forfait est actif" : trialing ? "Profitez pleinement de votre essai" : "Votre maison, partout avec vous"}</h3>
+      <p>Accès 4G/5G, assistant domotique, coach énergie et recommandations intelligentes. Le fonctionnement local reste toujours disponible.</p>
+      {trialing && <div className="premium-trial"><b>{subscription?.remainingDays ?? 0} jours offerts restants</b><span>Le prélèvement commencera seulement à la fin de l’essai.</span></div>}
+      <div className="premium-features">
+        <span><i>↗</i><b>Accès distant</b><small>Wi-Fi, 4G et 5G</small></span>
+        <span><i>✦</i><b>Assistant domotique</b><small>Règles en langage naturel</small></span>
+        <span><i>⌁</i><b>Coach énergie</b><small>Conseils personnalisés</small></span>
+      </div>
+      {active ? <button className="primary full" disabled={saving} onClick={() => void manage()}>{saving ? "Ouverture…" : "Gérer mon abonnement"}</button> : subscription?.status === "not_started" ? <div className="premium-start-trial">
+        <button className="primary full" disabled={saving} onClick={() => void startTrial()}>{saving ? "Activation…" : "Démarrer mon mois offert"}</button>
+        <small>Sans prélèvement aujourd’hui · vous choisirez votre formule ensuite.</small>
+      </div> : <div className="premium-offers">
+        <button disabled={saving} onClick={() => void checkout("monthly")}><b>9,90 €</b><span>par mois</span></button>
+        <button className="recommended" disabled={saving} onClick={() => void checkout("yearly")}><em>2 mois offerts</em><b>99 €</b><span>par an</span></button>
+      </div>}
+      <small className="premium-note">Paiement sécurisé · résiliable à tout moment</small>
+    </section>
+  </div>;
 }
 
 function friendlyState(state: string) {
@@ -1290,8 +1742,9 @@ function SecurityCameraStream({ publicId, dossierId, label }: {
   </div>;
 }
 
-function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, overview, lastSyncedAt, onControl }: {
+function Dashboard({ dossierId, enabledModules, setView, setModal, notify, devices, liveStatus, overview, lastSyncedAt, onControl }: {
   dossierId: string;
+  enabledModules: AppModule[];
   setView: (v: View) => void; setModal: (v: string) => void;
   notify: (v: string) => void; devices: Device[];
   liveStatus: "loading" | "connected" | "demo";
@@ -1302,36 +1755,64 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
     enabled: boolean,
   ) => Promise<void>;
 }) {
-  const [homeTab, setHomeTab] = useState<HomeTab>("Accueil");
+  const [homeTab, setHomeTab] = useState<HomeTab>("Maison");
+  const detectedPool = Boolean(
+    overview?.controls?.some((control) =>
+      CLIENT_EXPERIENCE.controlLabelsByTab.pool.includes(
+        control.label as (typeof CLIENT_EXPERIENCE.controlLabelsByTab.pool)[number],
+      )
+    ),
+  );
+  const visibleHomeTabs = useMemo(() => homeTabs.filter((tab) => {
+    const moduleKey = homeTabKeys[tab];
+    return moduleKey === "home" || moduleKey === "coach" || enabledModules.includes(moduleKey as AppModule) || (moduleKey === "pool" && detectedPool);
+  }), [detectedPool, enabledModules]);
+  const activeHomeTab = visibleHomeTabs.includes(homeTab) ? homeTab : "Maison";
   const [openCameraId, setOpenCameraId] = useState<string | null>(null);
   const available = devices.filter((device) => device.online).length;
   const lowBattery = devices.filter((device) => device.battery !== undefined && device.battery < 20).length;
-  const controls = overview?.controls ?? [
-    {publicId:"demo-heat",label:"Chauffage",icon:"♨",active:false,available:false},
-    {publicId:"demo-filter",label:"Filtration",icon:"≋",active:false,available:false},
-    {publicId:"demo-pool",label:"PAC piscine",icon:"♨",active:false,available:false},
-    {publicId:"demo-lock",label:"Serrure Nuki",icon:"▣",active:false,available:false},
-    {publicId:"demo-camera",label:"Caméras",icon:"◉",active:false,available:false},
-    {publicId:"demo-water",label:"Ballon d’eau chaude",icon:"♨",active:false,available:false},
-  ];
-  const controlLabels: Partial<Record<HomeTab, string[]>> = {
-    Confort: ["Chauffage", "Ballon d’eau chaude"],
-    Piscine: ["Filtration", "PAC piscine"],
-    Sécurité: ["Serrure Nuki", "Caméras"],
-  };
-  const visibleControls = homeTab === "Accueil"
+  // Une maison ne doit jamais afficher des équipements fictifs pendant une
+  // reconnexion : la liste reste vide jusqu'au retour des données de sa box.
+  const controls = overview?.controls ?? [];
+  const controlLabels = Object.fromEntries(
+    visibleHomeTabs.map((tab) => [
+      tab,
+      CLIENT_EXPERIENCE.controlLabelsByTab[
+        homeTabKeys[tab] as keyof typeof CLIENT_EXPERIENCE.controlLabelsByTab
+      ] ?? [],
+    ]),
+  ) as Partial<Record<HomeTab, readonly string[]>>;
+  const visibleControls = activeHomeTab === "Maison"
     ? controls
-    : controls.filter((control) => controlLabels[homeTab]?.includes(control.label));
+    : controls.filter((control) => controlLabels[activeHomeTab]?.includes(control.label));
+  const hotWaterControl = controls.find((control) => control.label === "Ballon d’eau chaude");
+  const hotWaterPower = powerNumber(overview?.comfort?.hotWaterPower);
+  const hotWaterStatus = hotWaterPower >= 50
+    ? "En chauffe"
+    : hotWaterControl?.active ? "Prêt · thermostat en attente" : "Arrêté";
+  const offPeakCopy = overview?.strategy?.tariffPlan === "hp_hc"
+    ? overview.strategy.offPeakPeriods.map((period) => `${period.start}–${period.end}`).join(" · ") || "Plages HC à renseigner"
+    : "Option Base";
 
-  return <div className="content app-home">
+  return <div className="content app-home app-client-content">
     <section className="app-preview">
-      <div className="app-tabs">{homeTabs.map((tab) => <button key={tab} className={homeTab === tab ? "selected" : ""} onClick={() => setHomeTab(tab)}>{tab}</button>)}</div>
-      <div className="app-connection"><i />{liveStatus === "connected" ? `Maison connectée · mise à jour automatique toutes les 5 s${lastSyncedAt ? ` · ${lastSyncedAt.toLocaleTimeString("fr-FR")}` : ""}` : liveStatus === "loading" ? "Connexion en cours…" : "Mode démonstration"}</div>
-      {(homeTab === "Accueil" || homeTab === "Énergie") && <EnergyScene overview={overview} />}
-      {homeTab === "Confort" && <div className="home-tab-summary"><span className="module-symbol comfort">⌂</span><div><small>Température intérieure</small><strong>{overview?.comfort?.indoorTemperature ?? "—"}</strong><p>Consigne de chauffage · {overview?.comfort?.heatingSetpoint ?? "—"}</p></div><div><small>Eau chaude</small><strong>{overview?.comfort?.hotWaterTemperature ?? "—"}</strong><p>{overview?.comfort?.hotWaterAvailable ?? "—"} disponible · {overview?.comfort?.hotWaterPower ?? "0 W"}</p></div></div>}
-      {homeTab === "Piscine" && <div className="home-tab-summary"><span className="module-symbol pool">≋</span><div><small>Température piscine</small><strong>{overview?.comfort?.poolTemperature ?? "—"}</strong><p>Consigne · {overview?.comfort?.poolSetpoint ?? "—"}</p></div><div><small>Filtration</small><strong>{overview?.energy.filtration ?? "0 W"}</strong><p>Installation simulée pour la démonstration</p></div></div>}
-      {homeTab === "Sécurité" && <div className="home-tab-summary"><span className="module-symbol">▣</span><div><small>Protection de la maison</small><strong>Sécurité</strong><p>Serrure et caméras pilotées depuis le portail</p></div><div><small>État</small><strong>{visibleControls.every((control) => control.available) ? "Connecté" : "À vérifier"}</strong><p>{visibleControls.length} équipements supervisés</p></div></div>}
-      {homeTab === "Sécurité" && Boolean(overview?.security?.length) && <div className="security-device-grid">
+      <div className="app-tabs" role="tablist">{visibleHomeTabs.map((tab) => <button key={tab} role="tab" aria-selected={activeHomeTab === tab} className={activeHomeTab === tab ? "selected" : ""} onClick={() => {
+        if (tab === "Coach") {
+          setView("Automatisations");
+          return;
+        }
+        setHomeTab(tab);
+      }}><span>{homeTabMeta[tab].icon}</span><b>{tab}</b></button>)}</div>
+      <div className="app-connection"><i className={liveStatus === "connected" ? "online" : ""} />{liveStatus === "connected" ? `Maison connectée en direct${lastSyncedAt ? ` · ${lastSyncedAt.toLocaleTimeString("fr-FR")}` : ""}` : liveStatus === "loading" ? "Connexion en cours…" : "Données momentanément indisponibles"}</div>
+      {activeHomeTab === "Maison" && <EnergyScene overview={overview} />}
+      {activeHomeTab === "Solaire" && <SolarPortalView overview={overview} tariffCopy={offPeakCopy} dossierId={dossierId} />}
+      {activeHomeTab === "Chauffage" && <HeatingPortalView overview={overview} hotWaterStatus={hotWaterStatus} tariffCopy={offPeakCopy} />}
+      {activeHomeTab === "Piscine" && <PoolPortalView overview={overview} controls={controls} onControl={onControl} />}
+      {activeHomeTab === "Équipements" && <div className="equipment-premium mobile-section">
+        <PortalCategoryHeader eyebrow="ÉQUIPEMENTS" title="Votre maison" subtitle="Lumières, volets, accès et surveillance." icon="◉" />
+        <div className="equipment-overview"><article><small>ÉQUIPEMENTS DISPONIBLES</small><strong>{available}<em> / {devices.length}</em></strong><span>Synchronisés avec Home Assistant</span></article><article><small>ÉTAT DE LA MAISON</small><strong>{lowBattery ? `${lowBattery} alerte${lowBattery > 1 ? "s" : ""}` : "Tout va bien"}</strong><span>{lowBattery ? "Batteries à vérifier" : "Aucune anomalie détectée"}</span></article></div>
+      </div>}
+      {activeHomeTab === "Équipements" && Boolean(overview?.security?.length) && <div className="security-device-grid">
         {overview?.security?.map((device) => <article key={device.publicId}>
           <div className="security-device-head">
             <span>{device.kind === "doorbell" ? "▣" : "◉"}</span>
@@ -1354,7 +1835,7 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
           </button>
         </article>)}
       </div>}
-      {homeTab === "Véhicule" && <div className="home-tab-summary"><span className="module-symbol vehicle">◇</span><div><small>Tesla</small><strong>{overview?.comfort?.teslaBattery ?? "—"}</strong><p>Niveau de batterie</p></div><div><small>Recharge</small><strong>{overview?.comfort?.teslaPower ?? "0 W"}</strong><p>Puissance instantanée</p></div></div>}
+      {activeHomeTab === "Véhicule" && <VehiclePortalView overview={overview} controls={controls} onControl={onControl} />}
       {visibleControls.length > 0 && <div className="mobile-controls">
         {visibleControls.map((control) => <button key={control.publicId} disabled={!control.available || control.controllable === false} onClick={() => void onControl(control, !control.active)}>
           <span className={control.active ? "control-state active" : "control-state"}>{
@@ -1369,38 +1850,236 @@ function Dashboard({ dossierId, setView, setModal, notify, devices, liveStatus, 
           <i>{control.icon}</i><b>{control.label}</b>
         </button>)}
       </div>}
-      {(homeTab === "Accueil" || homeTab === "Énergie") && <div className="today-energy"><div><small>Aujourd’hui</small><strong>{overview?.energy.dailyProduction ?? "—"}</strong><span>Production</span></div><div><small>Consommation</small><strong>{overview?.energy.dailyConsumption ?? "—"}</strong><span>Maison</span></div><button onClick={() => setHomeTab("Énergie")}>Voir l’énergie →</button></div>}
     </section>
-    <section className="home-modules">
-      <article><span className="module-symbol hot-water">♨</span><div><small>Ballon d’eau chaude</small><strong>{overview?.comfort?.hotWaterTemperature ?? "—"}</strong><p>{overview?.comfort?.hotWaterMode ?? "En attente"} · {overview?.comfort?.hotWaterAvailable ?? "—"} disponible</p></div><em>{overview?.comfort?.hotWaterPower ?? "0 W"}</em></article>
-      <article><span className="module-symbol comfort">⌂</span><div><small>Confort</small><strong>{overview?.comfort?.indoorTemperature ?? "—"}</strong><p>Consigne {overview?.comfort?.heatingSetpoint ?? "—"}</p></div><em>Chauffage</em></article>
-      <article><span className="module-symbol pool">≋</span><div><small>Piscine</small><strong>{overview?.comfort?.poolTemperature ?? "—"}</strong><p>Consigne {overview?.comfort?.poolSetpoint ?? "—"}</p></div><em>{overview?.energy.filtration ?? "—"}</em></article>
-      <article><span className="module-symbol vehicle">◇</span><div><small>Tesla</small><strong>{overview?.comfort?.teslaBattery ?? "—"}</strong><p>Recharge {overview?.comfort?.teslaPower ?? "0 W"}</p></div><em>Véhicule</em></article>
+  </div>;
+}
+
+function PortalCategoryHeader({ eyebrow, title, subtitle, icon, color = "#f4c430" }: {
+  eyebrow: string; title: string; subtitle: string; icon: string; color?: string;
+}) {
+  return <header className="portal-category-header">
+    <span style={{ color }}>{icon}</span>
+    <div><small style={{ color }}>{eyebrow}</small><h2>{title}</h2><p>{subtitle}</p></div>
+  </header>;
+}
+
+function integrateHistory(points: EnergyHistoryPoint[], field: keyof EnergyHistoryPoint, predicate = (_value: number) => true) {
+  if (points.length < 2) return null;
+  const orderedPoints = [...points].sort((a, b) => Date.parse(a.capturedAt) - Date.parse(b.capturedAt));
+  let wattHours = 0;
+  for (let index = 0; index < orderedPoints.length - 1; index += 1) {
+    const value = Number(orderedPoints[index][field]);
+    if (!Number.isFinite(value) || !predicate(value)) continue;
+    const elapsedHours = Math.min(15 * 60 * 1000, Math.max(0, Date.parse(orderedPoints[index + 1].capturedAt) - Date.parse(orderedPoints[index].capturedAt))) / 3_600_000;
+    wattHours += Math.abs(value) * elapsedHours;
+  }
+  return wattHours / 1000;
+}
+
+function PortalEnergyChart({ history, date }: { history: EnergyHistoryPoint[]; date: string }) {
+  const width = 720; const height = 270; const left = 45; const right = 705; const top = 18; const bottom = 228;
+  const orderedHistory = useMemo(() => [...history].sort((a, b) => Date.parse(a.capturedAt) - Date.parse(b.capturedAt)), [history]);
+  const defaultIndex = Math.max(0, orderedHistory.length - 1);
+  const [cursorIndex, setCursorIndex] = useState(defaultIndex);
+  const values = orderedHistory.flatMap((point) => [point.solarWatts, point.homeWatts, point.gridWatts, point.batteryWatts]);
+  const maximum = Math.ceil(Math.max(1000, ...values.map((value) => Math.max(0, Number(value) || 0))) / 1000) * 1000;
+  const minimum = Math.floor(Math.min(-1000, ...values.map((value) => Math.min(0, Number(value) || 0))) / 1000) * 1000;
+  const x = (timestamp: string) => {
+    const point = new Date(timestamp);
+    const minutes = Number(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(point).find((part) => part.type === "hour")?.value) * 60 + Number(new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", minute: "2-digit" }).formatToParts(point).find((part) => part.type === "minute")?.value);
+    return left + minutes / 1440 * (right - left);
+  };
+  const y = (value: number) => top + (maximum - value) / (maximum - minimum) * (bottom - top);
+  const ySoc = (value: number) => bottom - Math.max(0, Math.min(100, value)) / 100 * (bottom - top);
+  const line = (field: keyof EnergyHistoryPoint) => orderedHistory.map((point, index) => `${index ? "L" : "M"}${x(point.capturedAt).toFixed(1)} ${y(Number(point[field]) || 0).toFixed(1)}`).join(" ");
+  const socLine = orderedHistory.map((point, index) => `${index ? "L" : "M"}${x(point.capturedAt).toFixed(1)} ${ySoc(Number(point.batteryPercent) || 0).toFixed(1)}`).join(" ");
+  const solarArea = orderedHistory.length
+    ? `${line("solarWatts")} L${x(orderedHistory[orderedHistory.length - 1].capturedAt).toFixed(1)} ${y(0).toFixed(1)} L${x(orderedHistory[0].capturedAt).toFixed(1)} ${y(0).toFixed(1)} Z`
+    : "";
+  const selected = orderedHistory[Math.min(cursorIndex, defaultIndex)] ?? null;
+  const cursorPosition = selected ? x(selected.capturedAt) : right;
+  const selectedTime = selected ? new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(new Date(selected.capturedAt)) : "—";
+  const updateCursor = (clientX: number, target: SVGSVGElement) => {
+    if (!orderedHistory.length) return;
+    const bounds = target.getBoundingClientRect();
+    const viewX = Math.max(left, Math.min(right, (clientX - bounds.left) / bounds.width * width));
+    let nearest = 0; let nearestDistance = Number.POSITIVE_INFINITY;
+    orderedHistory.forEach((point, index) => {
+      const distance = Math.abs(x(point.capturedAt) - viewX);
+      if (distance < nearestDistance) { nearest = index; nearestDistance = distance; }
+    });
+    setCursorIndex(nearest);
+  };
+  if (orderedHistory.length < 2) return <section className="portal-energy-chart empty"><header><div><small>{formatEnergyDay(new Date(`${date}T12:00:00`)).toUpperCase()}</small><h3>Profil de puissance</h3></div></header><p>Les mesures de cette journée ne sont pas encore disponibles.</p></section>;
+  const signedPower = (value: number) => `${value < 0 ? "−" : ""}${formatWatts(value)}`;
+  return <section className="portal-energy-chart"><header><div><small>{formatEnergyDay(new Date(`${date}T12:00:00`)).toUpperCase()}</small><h3>Profil de puissance</h3></div><span>Mesures toutes les 5 min</span></header><div className="portal-energy-readout"><strong>{selectedTime}</strong><span><i className="solar" />Production <b>{formatWatts(selected?.solarWatts ?? 0)}</b></span><span><i className="home" />Consommation <b>{formatWatts(selected?.homeWatts ?? 0)}</b></span><span><i className="grid" />Réseau <b>{signedPower(selected?.gridWatts ?? 0)}</b></span><span><i className="battery" />Batterie <b>{signedPower(selected?.batteryWatts ?? 0)}</b></span><span><i className="soc" />SOC <b>{Math.round(selected?.batteryPercent ?? 0)} %</b></span></div><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Courbes de puissance de la journée" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); updateCursor(event.clientX, event.currentTarget); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) updateCursor(event.clientX, event.currentTarget); }}>
+    {[top, (top + bottom) / 2, bottom].map((position) => <line key={position} x1={left} x2={right} y1={position} y2={position} className="grid-line" />)}
+    <line x1={left} x2={right} y1={y(0)} y2={y(0)} className="zero-line" />
+    <path d={solarArea} className="solar-area" /><path d={line("solarWatts")} className="solar-line" /><path d={line("homeWatts")} className="home-line" /><path d={line("gridWatts")} className="grid-power-line" /><path d={line("batteryWatts")} className="battery-line" /><path d={socLine} className="soc-line" />
+    <text x={left - 6} y={top + 4} textAnchor="end">{Math.round(maximum / 100) / 10} kW</text><text x={left - 6} y={bottom + 4} textAnchor="end">{Math.round(minimum / 100) / 10} kW</text><text x={right + 6} y={top + 4} className="soc-axis">100 %</text><text x={right + 6} y={bottom + 4} className="soc-axis">0 %</text>
+    <line x1={cursorPosition} x2={cursorPosition} y1={top} y2={bottom} className="cursor-line" />
+    {[0, 6, 12, 18, 24].map((hour) => <text key={hour} x={left + hour / 24 * (right - left)} y="255" textAnchor={hour === 0 ? "start" : hour === 24 ? "end" : "middle"}>{String(hour).padStart(2, "0")}:00</text>)}
+  </svg></section>;
+}
+
+function SolarPortalView({ overview, tariffCopy, dossierId }: { overview: MobileOverview | null; tariffCopy: string; dossierId: string }) {
+  const [period, setPeriod] = useState<"day" | "month" | "year">("day");
+  const [selectedDate, setSelectedDate] = useState(() => energyDateKey());
+  const [history, setHistory] = useState<EnergyHistoryPoint[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active) setHistoryLoading(true); });
+    const query = new URLSearchParams({ date: selectedDate });
+    if (dossierId) query.set("dossier", dossierId);
+    fetch(`/api/home/history?${query}`, { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((payload) => { if (active) setHistory(Array.isArray(payload.history) ? payload.history : []); })
+      .catch(() => { if (active) setHistory([]); })
+      .finally(() => { if (active) setHistoryLoading(false); });
+    return () => { active = false; };
+  }, [dossierId, selectedDate]);
+  const energy = overview?.energy ?? {};
+  const historicalDay = !isEnergyToday(new Date(`${selectedDate}T12:00:00`));
+  const historicalProduction = integrateHistory(history, "solarWatts", (value) => value >= 0);
+  const historicalConsumption = integrateHistory(history, "homeWatts", (value) => value >= 0);
+  const historicalImport = integrateHistory(history, "gridWatts", (value) => value > 0);
+  const historicalExport = integrateHistory(history, "gridWatts", (value) => value < 0);
+  const historicalSelfConsumed = historicalProduction === null
+    ? null
+    : Math.max(0, historicalProduction - (historicalExport ?? 0));
+  const historicalSelfConsumption = historicalProduction && historicalProduction > 0 && historicalSelfConsumed !== null
+    ? `${Math.round(historicalSelfConsumed / historicalProduction * 100)} %`
+    : "—";
+  const historicalAutonomy = historicalConsumption && historicalConsumption > 0
+    ? `${Math.round(Math.max(0, 1 - (historicalImport ?? 0) / historicalConsumption) * 100)} %`
+    : "—";
+  const historicalSavings = historicalSelfConsumed === null
+    ? "—"
+    : `${new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 2 }).format(historicalSelfConsumed * 0.194)}`;
+  const periodValues = {
+    day: {
+      label: historicalDay ? formatEnergyDay(new Date(`${selectedDate}T12:00:00`)) : "Aujourd’hui",
+      production: historicalDay ? formatKwh(historicalProduction) : energy.dailyProduction,
+      consumption: historicalDay ? formatKwh(historicalConsumption) : energy.dailyConsumption,
+      imported: historicalDay ? formatKwh(historicalImport) : energy.dailyImport,
+      exported: historicalDay ? formatKwh(historicalExport) : energy.dailyExport,
+    },
+    month: {
+      label: "Ce mois",
+      production: energy.monthlyProduction,
+      consumption: energy.monthlyConsumption,
+      imported: energy.monthlyImport,
+      exported: energy.monthlyExport,
+    },
+    year: {
+      label: "Cette année",
+      production: energy.yearlyProduction,
+      consumption: energy.yearlyConsumption,
+      imported: energy.yearlyImport,
+      exported: energy.yearlyExport,
+    },
+  }[period];
+  const livePower = Math.max(0, powerNumber(energy.solar));
+  const installedPower = Math.max(1, powerNumber(energy.installedPower) || 9635);
+  const liveRatio = Math.min(100, Math.max(1, livePower / installedPower * 100));
+
+  return <div className="mobile-section solar-mobile-section">
+    <PortalCategoryHeader eyebrow="PRODUCTION" title="Solaire premium" subtitle="Production, autonomie et économies en un coup d’œil." icon="☀" />
+    <section className="solar-live-card">
+      <div className="solar-live-heading"><span>☀</span><div><small>PRODUCTION EN DIRECT</small><strong>{energy.solar ?? "0 W"}</strong></div><em><i /> TEMPS RÉEL</em></div>
+      <div className="solar-capacity"><i style={{ width: `${liveRatio}%` }} /></div>
+      <footer><span><small>INSTALLATION</small><b>{energy.installedPower ?? "9 635 Wc"}</b></span><span><small>CAPACITÉ UTILISÉE</small><b>{Math.round(Math.max(0, livePower / installedPower * 100))} %</b></span></footer>
     </section>
-    <section className="hero">
-      <div><span className="eyebrow"><i /> {liveStatus === "connected" ? "Maison connectée en direct" : liveStatus === "loading" ? "Connexion en cours" : "Mode démonstration"}</span><h2>Votre maison est calme<br />et sous contrôle.</h2><p>{liveStatus === "connected" ? `${available} appareils sur ${devices.length} sont disponibles.` : "Les informations de démonstration sont affichées temporairement."}</p></div>
-      <div className="hero-temperature"><span>{overview?.comfort?.demoMode ?? "Maison"}</span><strong>{overview?.comfort?.indoorTemperature ?? "—"}</strong><small>Consigne · {overview?.comfort?.heatingSetpoint ?? "—"}</small></div>
+    <div className="period-tabs">{([['day', 'Jour'], ['month', 'Mois'], ['year', 'Année']] as const).map(([key, label]) => <button key={key} className={period === key ? "selected" : ""} onClick={() => setPeriod(key)}>{label}</button>)}</div>
+    {period === "day" && <div className="portal-date-navigation"><button aria-label="Jour précédent" onClick={() => setSelectedDate(energyDateKey(addEnergyDays(new Date(`${selectedDate}T12:00:00`), -1)))}>‹</button><label><span>▣</span><strong>{formatEnergyDay(new Date(`${selectedDate}T12:00:00`))}</strong><input type="date" max={energyDateKey()} value={selectedDate} onChange={(event) => event.target.value && setSelectedDate(event.target.value)} /></label><button aria-label="Jour suivant" disabled={isEnergyToday(new Date(`${selectedDate}T12:00:00`))} onClick={() => setSelectedDate(energyDateKey(addEnergyDays(new Date(`${selectedDate}T12:00:00`), 1)))}>›</button>{historyLoading && <em>Actualisation…</em>}</div>}
+    <section className="solar-stat-grid">
+      <article><span className="solar-stat-icon">☀</span><small>{period === "day" ? "Utilisée sur place" : "Production"}</small><strong>{period === "day" ? historicalDay ? formatKwh(historicalSelfConsumed) : energy.selfConsumed ?? "—" : periodValues.production ?? "—"}</strong><p>{period === "day" ? "Production consommée directement" : periodValues.label}</p></article>
+      <article><span className="solar-stat-icon teal">€</span><small>Économies</small><strong>{historicalDay ? historicalSavings : energy.savings ?? "—"}</strong><p>{historicalDay ? "Estimation au tarif de référence" : "Valorisation de l’énergie locale"}</p></article>
+      <article><span className="solar-stat-icon blue">⌂</span><small>Autoconsommation</small><strong>{historicalDay ? historicalSelfConsumption : energy.selfConsumption ?? "—"}</strong><p>Production utilisée sur place</p></article>
+      <article><span className="solar-stat-icon pink">▰</span><small>Autonomie</small><strong>{historicalDay ? historicalAutonomy : energy.autonomy ?? "—"}</strong><p>Consommation couverte sans réseau</p></article>
     </section>
-    <div className="metrics">
-      <article><span className="metric-icon yellow">◫</span><div><small>Appareils</small><strong>{devices.length}</strong><p><i /> {available} disponibles</p></div><button onClick={() => setView("Appareils")}>›</button></article>
-      <article><span className="metric-icon blue">ϟ</span><div><small>Énergie aujourd’hui</small><strong>{overview?.energy.dailyConsumption ?? "—"}</strong><p>{liveStatus === "connected" ? "Consommation mesurée" : "Mesure indisponible"}</p></div></article>
-      <article className="warning-card"><span className="metric-icon orange">!</span><div><small>À vérifier</small><strong>{lowBattery} alerte{lowBattery > 1 ? "s" : ""}</strong><p>{lowBattery ? "Batterie faible détectée" : "Aucune batterie faible"}</p></div><button onClick={() => setModal("alertes")}>›</button></article>
-      <article><span className="metric-icon purple">⌁</span><div><small>Automatisations</small><strong>—</strong><p>Ouvrir le détail réel</p></div><button onClick={() => setView("Automatisations")}>›</button></article>
-    </div>
-    <div className="dashboard-grid">
-      <section className="panel rooms">
-        <div className="panel-title"><div><small>Vue d’ensemble</small><h3>Pièces</h3></div><button onClick={() => setView("Appareils")}>Voir tous les appareils <span>→</span></button></div>
-        <div className="room-grid">{Array.from(new Map(devices.map((device) => [device.room, devices.filter((item) => item.room === device.room).length])).entries()).slice(0, 4).map(([name, count], i) =>
-          <button className="room-card" key={name} onClick={() => setView("Appareils")}><span className={`room-visual room-${i}`}>⌂</span><b>{name}</b><small>{count} appareil{count > 1 ? "s" : ""}<em>—</em></small></button>)}
-        </div>
-        {!devices.length && <div className="checklist-empty">Les pièces apparaîtront après la connexion de la maison.</div>}
-      </section>
-      <section className="panel activity">
-        <div className="panel-title"><div><small>En direct</small><h3>Activité récente</h3></div><button onClick={() => setView("Journal")}>Tout voir</button></div>
-        <div className="checklist-empty">Le journal réel est disponible dans l’onglet dédié.</div>
-      </section>
-    </div>
-    <section className="energy-strip"><div><span className="metric-icon blue">ϟ</span><div><small>Consommation instantanée</small><strong>{overview?.energy.home ?? "—"}</strong></div></div><div><small>Source</small><strong>{liveStatus === "connected" ? "Mesure maison" : "En attente de connexion"}</strong></div><div><small>Estimation du mois</small><strong>—</strong><button onClick={() => notify("Le coût sera calculé après validation du tarif et de l’historique")}>Voir le détail →</button></div></section>
+    {period === "day" && !historicalDay && <section className="energy-balance-card"><header><div><small>PRÉVISION</small><h3>Prévision contre production réelle</h3></div><span>✦</span></header><div>
+      <article><i>☀</i><strong>{energy.dailyProduction ?? "—"}</strong><small>Produit aujourd’hui</small></article>
+      <article><i>◎</i><strong>{energy.forecastToday ?? "—"}</strong><small>Objectif prévisionnel</small></article>
+      <article><i>◔</i><strong>{energy.forecastRemaining ?? "—"}</strong><small>Reste à produire</small></article>
+      <article><i>☁</i><strong>{energy.cloudCover ?? "—"}</strong><small>Couverture nuageuse</small></article>
+    </div></section>}
+    <section className="energy-balance-card"><header><div><small>{periodValues.label.toUpperCase()}</small><h3>Bilan énergétique</h3></div><span>↔</span></header><div>
+      <article><i>⌂</i><strong>{periodValues.consumption ?? "—"}</strong><small>Consommée</small></article>
+      <article><i>↓</i><strong>{periodValues.imported ?? "—"}</strong><small>Achetée</small></article>
+      <article><i>↑</i><strong>{periodValues.exported ?? "—"}</strong><small>Injectée</small></article>
+      <article><i>♧</i><strong>{energy.co2Avoided ?? "—"}</strong><small>CO₂ évité</small></article>
+    </div></section>
+    {period === "day" && <PortalEnergyChart key={selectedDate} history={history} date={selectedDate} />}
+    {period === "day" && !historicalDay && <section className="solar-advice-card"><header><span>✦</span><div><small>ASSISTANT ÉNERGIE</small><h3>Meilleurs créneaux</h3></div></header><article><b>Solaire en priorité</b><p>Les appareils flexibles sont proposés quand le surplus est suffisant. Le tarif du client sert de solution de secours.</p><em>{tariffCopy}</em></article></section>}
+    <section className="energy-balance-card"><header><div><small>INSTALLATION</small><h3>Détail des panneaux</h3></div><span>☀</span></header><div>
+      <article><i>1</i><strong>{energy.pv1 ?? "0 W"}</strong><small>String PV1</small></article>
+      <article><i>2</i><strong>{energy.pv2 ?? "0 W"}</strong><small>String PV2</small></article>
+      <article><i>3</i><strong>{energy.pv3 ?? "0 W"}</strong><small>String PV3</small></article>
+      <article><i>↗</i><strong>{energy.peakPower ?? "0 W"}</strong><small>Pic du jour</small></article>
+    </div></section>
+  </div>;
+}
+
+function HeatingPortalView({ overview, hotWaterStatus, tariffCopy }: {
+  overview: MobileOverview | null; hotWaterStatus: string; tariffCopy: string;
+}) {
+  const current = overview?.comfort?.indoorTemperature ?? "—";
+  const target = overview?.comfort?.heatingSetpoint ?? "—";
+  return <div className="mobile-section heating-mobile-section">
+    <PortalCategoryHeader eyebrow="CONFORT" title="Chauffage" subtitle="La bonne température, pièce par pièce." icon="♨" color="#ff8169" />
+    <section className="heating-layout compact-category-layout">
+      <article className="thermostat-card"><div className="thermostat-state"><i /> Température maintenue</div><div className="thermostat-dial"><div><span>♨</span><strong>{current}</strong><small>Température actuelle</small></div></div><small>TEMPÉRATURE SOUHAITÉE</small><div className="target-temperature"><button disabled>−</button><strong>{target}</strong><button disabled>＋</button></div><p>Chambre · {overview?.comfort?.bedroomTemperature ?? "—"}</p></article>
+      <article className="hot-water-card"><header><span>♨</span><div><small>EAU CHAUDE</small><h3>Ballon intelligent</h3></div><em>{hotWaterStatus}</em></header><div className="hot-water-main"><strong>{overview?.comfort?.hotWaterPower ?? "0 W"}</strong><span>Puissance instantanée</span></div><div className="hot-water-data"><span><small>Consommation du jour</small><b>{overview?.energy.hotWaterToday ?? "—"}</b></span><span><small>Mode</small><b>{overview?.comfort?.hotWaterMode ?? "Automatique"}</b></span></div><footer><b>Solaire prioritaire</b><span>{tariffCopy} en secours</span></footer></article>
+    </section>
+  </div>;
+}
+
+function PoolPortalView({ overview, controls, onControl }: {
+  overview: MobileOverview | null;
+  controls: MobileOverview["controls"];
+  onControl: (control: MobileOverview["controls"][number], enabled: boolean) => Promise<void>;
+}) {
+  const hour = new Date().getHours();
+  const isDay = hour >= 7 && hour < 20;
+  const filtration = controls.find((control) => control.label === "Filtration");
+  const heatPump = controls.find((control) => control.label === "PAC piscine");
+  const light = controls.find((control) => /éclairage piscine|lumière piscine/i.test(control.label));
+  const statusButton = (control: MobileOverview["controls"][number] | undefined, label: string, tone: string) => <button disabled={!control?.available || control.controllable === false} className={`pool-status ${control?.active ? "active" : ""}`} style={{ "--pool-tone": tone } as CSSProperties} onClick={() => control && void onControl(control, !control.active)}><i /><span><b>{label}</b><small>{!control?.available ? "Indisponible" : control.active ? "En marche" : "Arrêté"}</small></span></button>;
+  return <div className="mobile-section pool-mobile-section">
+    <div className="pool-visual"><img src={isDay ? "/pool/pool-day.png" : "/pool/pool-night-lit.png"} alt="Piscine et local technique" /><div className="pool-visual-shade" /><div className="pool-statuses">{statusButton(heatPump, "PAC", "#ff6f61")}{statusButton(filtration, "Filtration", "#f4c430")}{light && statusButton(light, "Éclairage", "#4ed6f5")}</div></div>
+    <section className="pool-metrics"><article><small>EAU</small><strong>{overview?.comfort?.poolTemperature ?? "—"}</strong></article><article><small>AIR</small><strong>{overview?.comfort?.poolAirTemperature ?? "—"}</strong></article><article><small>PH</small><strong>{overview?.energy.poolPh ?? "—"}</strong></article><article><small>CHLORE</small><strong>{overview?.energy.poolChlorine ?? "—"}</strong></article></section>
+    <section className="pool-target"><button disabled>−</button><div><small>CONSIGNE PAC</small><strong>{overview?.comfort?.poolSetpoint ?? "—"}</strong><div><span><small>FILTRATION</small><b>{overview?.energy.filtration ?? "0 W"}</b><em>{overview?.energy.filtrationToday ?? "—"} aujourd’hui</em></span><span><small>PAC</small><b>{overview?.energy.poolHeatPump ?? "0 W"}</b><em>{overview?.energy.poolHeatPumpToday ?? "—"} aujourd’hui</em></span></div></div><button disabled>＋</button></section>
+  </div>;
+}
+
+function VehiclePortalView({ overview, controls, onControl }: {
+  overview: MobileOverview | null;
+  controls: MobileOverview["controls"];
+  onControl: (control: MobileOverview["controls"][number], enabled: boolean) => Promise<void>;
+}) {
+  const battery = overview?.comfort?.teslaBattery ?? "—";
+  const plugged = overview?.comfort?.teslaPlugged?.toLowerCase() ?? "";
+  const connected = ["on", "connected", "charging", "complete", "stopped", "branchée"].some((state) => plugged.includes(state));
+  const onlineState = overview?.comfort?.teslaOnline?.toLowerCase() ?? "";
+  const online = !["off", "unavailable", "unknown", "hors ligne"].includes(onlineState);
+  const actionDefinitions = [
+    ["❄", "Climatisation", "Climatisation Tesla"],
+    ["ϟ", "Recharge", "Recharge Tesla"],
+    ["▣", "Portières", "Portières Tesla"],
+    ["◉", "Trappe de charge", "Trappe Tesla"],
+    ["⬡", "Mode Sentinelle", "Mode Sentinelle"],
+  ] as const;
+  return <div className="mobile-section vehicle-mobile-section">
+    <PortalCategoryHeader eyebrow="MOBILITÉ" title="Véhicule" subtitle="Batterie, recharge et autonomie." icon="◇" color="#55c8bd" />
+    <section className="vehicle-premium-card"><header><div><h3>Model X</h3><span><i className={online ? "" : "offline"} /> {online ? "En ligne" : "Hors ligne"}</span></div><em>✓ SÉCURISÉ</em></header><img src="/vehicles/tesla-model-x-grey.png" alt="Tesla Model X grise" /></section>
+    <section className="vehicle-metric-row"><article><span>▰</span><div><strong>{battery}</strong><small>Batterie</small></div></article><article><span>↗</span><div><strong>{overview?.energy.teslaRange ?? "—"}</strong><small>Autonomie</small></div></article><article><span>♨</span><div><strong>{overview?.energy.teslaCabinTemperature ?? "—"}</strong><small>Habitacle</small></div></article><article><i className={online ? "" : "offline"} /><div><strong>{online ? "En ligne" : "Hors ligne"}</strong><small>Connexion</small></div></article></section>
+    <div className={`vehicle-charge-state ${connected ? "connected" : ""}`}><span>ϟ</span><b>{connected ? `Branchée · ${overview?.comfort?.teslaPower ?? "0 W"}` : "Prête à charger"}</b></div>
+    <section className="vehicle-actions-web"><header><h3>Commandes</h3><span>Actions sécurisées Tesla</span></header>{actionDefinitions.map(([icon, label, controlLabel]) => {
+      const control = controls.find((candidate) => candidate.label === controlLabel);
+      return <button key={label} disabled={!control?.available || control.controllable === false} onClick={() => control && void onControl(control, !control.active)}><span>{icon}</span><div><b>{label}</b><small>{!control?.available ? "Indisponible" : control.active ? "Actif" : "Arrêté"}</small></div><em>›</em></button>;
+    })}</section>
   </div>;
 }
 
@@ -1413,17 +2092,9 @@ function powerNumber(value?: string) {
   return /kw/i.test(normalized) ? numeric * 1000 : numeric;
 }
 
-function formatWatts(value: number) {
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(value))} W`;
-}
-
-function flowDuration(value: number) {
-  const pixelsPerSecond = 6 + Math.min(Math.abs(value), 10_000) * 0.009;
-  return Math.max(500, Math.round(32_000 / pixelsPerSecond));
-}
-
-function SceneFlow({ route, active, reverse, color, power }: {
+function SceneFlow({ route, d, active, reverse, color, power }: {
   route: "solar" | "grid" | "home" | "battery" | "vehicle";
+  d: string;
   active: boolean;
   reverse?: boolean;
   color: string;
@@ -1431,16 +2102,17 @@ function SceneFlow({ route, active, reverse, color, power }: {
 }) {
   const style = {
     "--flow-color": color,
-    "--flow-duration": `${flowDuration(power)}ms`,
+    "--flow-duration": `${flowDurationMs(power)}ms`,
   } as CSSProperties;
-  const segmentCount = route === "solar" || route === "battery" ? 1 : 3;
-  return <div
+  return <g
     className={`scene-flow route-${route}${active ? " is-active" : ""}${reverse ? " is-reverse" : ""}`}
     style={style}
     aria-hidden="true"
   >
-    {Array.from({ length: segmentCount }, (_, index) => <span key={index} />)}
-  </div>;
+    <path className="scene-flow-base" d={d} />
+    {active && <path className="scene-flow-glow" d={d} />}
+    {active && <path className="scene-flow-dashes" d={d} />}
+  </g>;
 }
 
 function SceneLabel({ className, icon, title, value, sub, color }: {
@@ -1459,69 +2131,105 @@ function SceneLabel({ className, icon, title, value, sub, color }: {
 }
 
 function EnergyScene({ overview }: { overview: MobileOverview | null }) {
-  const [isDay, setIsDay] = useState(true);
+  const [scenePeriod, setScenePeriod] = useState<"dawn" | "day" | "dusk" | "night">("day");
 
   useEffect(() => {
     const updateDaylight = () => {
       const hour = new Date().getHours();
-      setIsDay(hour >= 7 && hour < 20);
+      const hours = CLIENT_EXPERIENCE.energyScene.daylightHours;
+      setScenePeriod(
+        hour >= hours.dayStart && hour < hours.duskStart
+          ? "day"
+          : hour >= hours.dawnStart && hour < hours.dayStart
+            ? "dawn"
+            : hour >= hours.duskStart && hour < hours.nightStart
+              ? "dusk"
+              : "night",
+      );
     };
     updateDaylight();
     const timer = window.setInterval(updateDaylight, 60_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  const solarWatts = powerNumber(overview?.energy.solar);
-  const homeWatts = powerNumber(overview?.energy.home);
-  const gridWatts = powerNumber(overview?.energy.grid);
-  const batteryWatts = powerNumber(overview?.energy.batteryPower);
-  const vehicleWatts = Math.max(0, powerNumber(overview?.comfort?.teslaPower));
+  const solarWatts = overview?.flow?.solarWatts ?? powerNumber(overview?.energy.solar);
+  const homeWatts = overview?.flow?.homeWatts ?? powerNumber(overview?.energy.home);
+  const gridWatts = overview?.flow?.gridWatts ?? powerNumber(overview?.energy.grid);
+  const batteryWatts = overview?.flow?.batteryWatts ?? powerNumber(overview?.energy.batteryPower);
+  const vehicleWatts = overview?.flow?.vehicleWatts
+    ?? Math.max(0, powerNumber(overview?.energy.vehiclePower ?? overview?.comfort?.teslaPower));
   const pluggedState = overview?.comfort?.teslaPlugged?.toLowerCase() ?? "";
-  const vehiclePlugged = vehicleWatts > 5
-    || ["on", "connected", "charging", "complete", "stopped", "no_power", "starting", "branchée"].some((state) => pluggedState.includes(state));
-  const inverterY = isDay ? "52.22%" : "50.16%";
-  const batteryEndY = isDay ? "58.41%" : "56.51%";
-
+  const vehiclePlugged = overview?.flow?.vehiclePlugged ?? (vehicleWatts > 5
+    || ["on", "connected", "charging", "complete", "stopped", "no_power", "starting", "branchée"].some((state) => pluggedState.includes(state)));
+  const vehicleBattery = overview?.comfort?.teslaBattery ?? "";
+  const hasVehicleBattery = /\d/.test(vehicleBattery);
+  const flowState = createEnergyFlowState({
+    solarWatts,
+    homeWatts,
+    gridWatts,
+    batteryWatts,
+    vehicleWatts,
+    vehiclePlugged,
+    activationWatts: CLIENT_EXPERIENCE.energyScene.flowActivationWatts,
+  });
+  const isDay = scenePeriod !== "night";
+  const sceneLayout = createEnergySceneLayout(scenePeriod, 370, 630);
+  const labelTop = (base: number) => `${((base + sceneLayout.verticalOffset) / 630) * 100}%`;
+  const sceneImage = CLIENT_EXPERIENCE.energyScene.portalImages[scenePeriod];
+  const moonPhase = moonDisplayPhase(overview?.energy.moonPhase);
   return <div className="energy-scene-wrap">
     <div
       className={`energy-scene-card ${isDay ? "is-day" : "is-night"}`}
-      style={{
-        "--inverter-y": inverterY,
-        "--battery-end-y": batteryEndY,
-      } as CSSProperties}
     >
       <img
-        src={isDay ? "/energy/energy-home-day.png" : "/energy/energy-home-night.png"}
+        src={sceneImage}
         alt=""
         className="energy-scene-house"
       />
       <div className="energy-scene-shade" />
+      {!isDay && <span
+        className="portal-moon-phase"
+        role="img"
+        aria-label={MOON_PHASE_LABELS[moonPhase]}
+        title={MOON_PHASE_LABELS[moonPhase]}
+      >
+        {MOON_PHASE_GLYPHS[moonPhase]}
+      </span>}
 
-      <SceneFlow route="solar" active={solarWatts > 5} color="#ffe700" power={solarWatts} />
-      <SceneFlow route="grid" active={Math.abs(gridWatts) > 5} reverse={gridWatts > 0} color="#438ed0" power={gridWatts} />
-      <SceneFlow route="home" active={homeWatts > 5} color="#55c8bd" power={homeWatts} />
-      <SceneFlow route="battery" active={Math.abs(batteryWatts) > 5} reverse={batteryWatts > 0} color="#f05d9b" power={batteryWatts} />
-      <SceneFlow route="vehicle" active={vehiclePlugged && vehicleWatts > 5} color="#4ed6f5" power={vehicleWatts} />
-      <span className="scene-inverter-hub" aria-hidden="true" />
+      <svg className="scene-flow-svg" viewBox="0 0 370 630" preserveAspectRatio="none" aria-hidden="true">
+        <SceneFlow route="solar" d={sceneLayout.paths.solar} {...flowState.solar} color="#ffe700" power={solarWatts} />
+        <SceneFlow route="grid" d={sceneLayout.paths.grid} {...flowState.grid} color="#438ed0" power={gridWatts} />
+        <SceneFlow route="home" d={sceneLayout.paths.home} {...flowState.home} color="#55c8bd" power={homeWatts} />
+        <SceneFlow route="battery" d={sceneLayout.paths.battery} {...flowState.battery} color="#f05d9b" power={batteryWatts} />
+        <SceneFlow route="vehicle" d={sceneLayout.paths.vehicle} {...flowState.vehicle} color="#4ed6f5" power={vehicleWatts} />
+        <circle className="scene-inverter-hub" cx={sceneLayout.inverterHub.x} cy={sceneLayout.inverterHub.y} r="6" />
+      </svg>
 
-      <SceneLabel className="scene-production" icon="☀" title="Production" value={formatWatts(solarWatts)} color="#ffe700" />
-      <SceneLabel
+      <div style={{ top: labelTop(58) }} className="scene-label-anchor"><SceneLabel className="scene-production" icon="☀" title="Production" value={formatWatts(solarWatts)} color="#ffe700" /></div>
+      <div style={{ top: labelTop(238) }} className="scene-label-anchor"><SceneLabel
         className="scene-grid"
         icon="♜"
         title="Réseau"
-        value={Math.abs(gridWatts) < 5 ? "0 W" : `${gridWatts > 0 ? "→ " : "← "}${formatWatts(gridWatts)}`}
+        value={!flowState.grid.active ? "0 W" : `${flowState.grid.arrow} ${formatWatts(gridWatts)}`}
         color="#438ed0"
-      />
-      <SceneLabel className="scene-home" icon="⌂" title="Consommation" value={formatWatts(homeWatts)} color="#55c8bd" />
-      <SceneLabel
+      /></div>
+      <div style={{ top: labelTop(268) }} className="scene-label-anchor"><SceneLabel className="scene-home" icon="⌂" title="Consommation" value={formatWatts(homeWatts)} color="#55c8bd" /></div>
+      <div style={{ top: labelTop(424) }} className="scene-label-anchor"><SceneLabel
         className="scene-battery"
         icon="▰"
         title="Batterie"
         value={overview?.energy.battery ?? "0 %"}
-        sub={Math.abs(batteryWatts) < 5 ? "0 W" : `${batteryWatts > 0 ? "↑ " : "↓ "}${formatWatts(batteryWatts)}`}
+        sub={!flowState.battery.active ? "0 W" : `${flowState.battery.arrow} ${formatWatts(batteryWatts)}`}
         color="#f05d9b"
-      />
-      {vehiclePlugged && <SceneLabel className="scene-vehicle" icon="◇" title="Voiture" value={formatWatts(vehicleWatts)} color="#4ed6f5" />}
+      /></div>
+      {vehiclePlugged && <div style={{ top: labelTop(448) }} className="scene-label-anchor"><SceneLabel
+        className="scene-vehicle"
+        icon="◇"
+        title="Voiture"
+        value={vehicleWatts > CLIENT_EXPERIENCE.energyScene.flowActivationWatts && hasVehicleBattery ? vehicleBattery : formatWatts(vehicleWatts)}
+        sub={vehicleWatts > CLIENT_EXPERIENCE.energyScene.flowActivationWatts && hasVehicleBattery ? formatWatts(vehicleWatts) : undefined}
+        color="#4ed6f5"
+      /></div>}
     </div>
   </div>;
 }
@@ -1566,8 +2274,15 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
   const [coachOpen, setCoachOpen] = useState(false);
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachQuestion, setCoachQuestion] = useState("");
+  const [assistantRequest, setAssistantRequest] = useState("");
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantPreview, setAssistantPreview] = useState<AssistantAutomationPreview | null>(null);
+  const [assistantCreated, setAssistantCreated] = useState<string | null>(null);
+  const [supportBusy, setSupportBusy] = useState(false);
   const [coachInsights, setCoachInsights] = useState<EnergyCoachInsight[]>([]);
+  const [consumptionBreakdown, setConsumptionBreakdown] = useState<ConsumptionBreakdownItem[]>([]);
   const [solarForecast, setSolarForecast] = useState<SolarForecastSlot[]>([]);
+  const [coachWeek, setCoachWeek] = useState<CoachWeekSummary | null>(null);
   const [solarForecastSummary, setSolarForecastSummary] = useState<SolarForecastSummary | null>(null);
   const [predictivePlan, setPredictivePlan] = useState<PredictiveEnergyPlan | null>(null);
   const [predictivePlans, setPredictivePlans] = useState<PredictiveEnergyPlan[]>([]);
@@ -1583,6 +2298,11 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       text: "Bonjour ! J’analyse la maison et je peux vous aider à réduire la consommation sans sacrifier votre confort.",
     },
   ]);
+  const assistantExamples = [
+    "Allume la filtration en semaine à 10h30",
+    "Allume la lumière piscine au coucher du soleil le week-end",
+    "Coupe le ballon d’eau chaude tous les jours à 16h",
+  ];
 
   useEffect(() => {
     let active = true;
@@ -1595,9 +2315,23 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       .then((payload) => {
         if (active && Array.isArray(payload?.coach?.insights)) {
           setCoachInsights(payload.coach.insights);
+          setConsumptionBreakdown(Array.isArray(payload?.coach?.consumptionBreakdown)
+            ? payload.coach.consumptionBreakdown
+            : []);
           setSolarForecast(Array.isArray(payload?.coach?.solarForecast?.slots)
             ? payload.coach.solarForecast.slots
             : []);
+          const week = payload?.coach?.week;
+          setCoachWeek(
+            week && Number.isFinite(week.productionWh) && Number.isFinite(week.consumptionWh)
+              ? {
+                productionWh: week.productionWh,
+                consumptionWh: week.consumptionWh,
+                historySamples: Number(payload?.coach?.historySamples) || 0,
+                observedDays: Math.max(1, Number(week.observedDays) || 1),
+              }
+              : null,
+          );
           const summary = payload?.coach?.solarForecast;
           setSolarForecastSummary(
             summary && Number.isFinite(summary.rawTodayWh) && Number.isFinite(summary.prudentTodayWh)
@@ -1666,18 +2400,93 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
     }
   }
 
+  async function prepareAssistantAutomation(requestOverride?: string) {
+    const message = (requestOverride ?? assistantRequest).trim();
+    if (message.length < 3 || assistantBusy) return;
+    setAssistantRequest(message);
+    setAssistantCreated(null);
+    setAssistantBusy(true);
+    try {
+      const response = await fetch("/api/assistant/automation/propose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ message, dossierPublicId: dossierId }),
+      });
+      const payload = await response.json() as AssistantAutomationPreview;
+      setAssistantPreview(payload);
+      if (!response.ok) notify(payload.error ?? "La proposition ne peut pas être préparée");
+    } catch {
+      setAssistantPreview({ error: "La Green Box ne répond pas pour le moment." });
+    } finally {
+      setAssistantBusy(false);
+    }
+  }
+
+  async function confirmAssistantAutomation() {
+    if (!assistantPreview?.confirmationToken || assistantBusy) return;
+    setAssistantBusy(true);
+    try {
+      const response = await fetch("/api/assistant/automation/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          confirmationToken: assistantPreview.confirmationToken,
+          confirmed: true,
+        }),
+      });
+      const payload = await response.json() as { message?: string; error?: string };
+      if (!response.ok) {
+        setAssistantPreview((preview) => preview ? { ...preview, error: payload.error } : null);
+        return;
+      }
+      const message = payload.message ?? "Automatisation envoyée à la Green Box.";
+      setAssistantCreated(message);
+      setAssistantPreview(null);
+      setAssistantRequest("");
+      notify(message);
+    } catch {
+      setAssistantPreview((preview) => preview ? { ...preview, error: "La confirmation n’a pas pu être envoyée." } : null);
+    } finally {
+      setAssistantBusy(false);
+    }
+  }
+
+  async function createSupportTicket() {
+    if (supportBusy) return;
+    setSupportBusy(true);
+    try {
+      const reason = assistantPreview?.result?.message ?? assistantPreview?.error ?? "Automatisation à préciser";
+      const response = await fetch("/api/assistant/automation/support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          dossierPublicId: dossierId,
+          message: assistantRequest,
+          reason,
+        }),
+      });
+      const payload = await response.json() as { message?: string; error?: string };
+      notify(response.ok ? (payload.message ?? "Ticket transmis au support") : (payload.error ?? "Le support n’est pas encore configuré"));
+    } catch {
+      notify("Le support n’est pas joignable pour le moment");
+    } finally {
+      setSupportBusy(false);
+    }
+  }
+
   const forecastMaximum = Math.max(1, ...solarForecast.slice(0, 12).map((slot) => slot.estimatedWh));
   const forecastTime = (value: string | null) => value
     ? new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
     : "—";
-  const forecastKwh = (value: number) =>
-    `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value / 1000)} kWh`;
+  const forecastKwh = (value: number) => value >= 1000
+    ? `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value / 1000)} kWh`
+    : `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.max(0, value))} Wh`;
   const confidenceLabel = solarForecastSummary?.confidence === "high"
     ? "Élevée"
     : solarForecastSummary?.confidence === "medium" ? "Moyenne" : "Faible";
 
   return <div className="content">
-    <div className="section-intro split"><div><span className="eyebrow">Simple et puissant</span><h2>Les habitudes qui travaillent pour vous</h2><p>Créez des règles faciles à comprendre, sans réglage technique.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
+    <div className="section-intro split"><div><span className="eyebrow">Votre avantage Premium</span><h2>Coach énergie et maison intelligente</h2><p>Comprenez ce qui consomme, recevez des conseils chiffrés et créez vos règles en langage simple.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
     <section className="home-assistant-card">
       <div className="home-assistant-symbol">✦</div>
       <div>
@@ -1686,6 +2495,74 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
         <p>Le coach analyse vos habitudes, chiffre les économies possibles et peut préparer une automatisation. Rien n’est activé sans votre accord.</p>
       </div>
       <button onClick={() => setCoachOpen((open) => !open)}>{coachOpen ? "Fermer le coach" : "Parler au coach"} <span>{coachOpen ? "×" : "→"}</span></button>
+    </section>
+    <section className="coach-quick-start" aria-label="Démarrer avec le Coach énergie">
+      <div><small>COMMENCER EN UN GESTE</small><strong>Que voulez-vous améliorer aujourd’hui ?</strong></div>
+      {coachSuggestions.map((suggestion) => <button type="button" key={suggestion} disabled={coachLoading} onClick={() => void askCoach(suggestion)}>{suggestion}<span>→</span></button>)}
+    </section>
+    {coachWeek && coachWeek.historySamples >= 4 && <section className="coach-week-summary" aria-label="Bilan énergétique récent">
+      <div><small>BILAN SUR {coachWeek.observedDays} JOUR{coachWeek.observedDays > 1 ? "S" : ""}</small><strong>Votre maison en un coup d’œil</strong><span>{coachWeek.historySamples} relevés analysés</span></div>
+      <article><small>Production solaire</small><strong>{forecastKwh(coachWeek.productionWh)}</strong><span>Énergie produite</span></article>
+      <article><small>Consommation</small><strong>{forecastKwh(coachWeek.consumptionWh)}</strong><span>Énergie utilisée</span></article>
+      <article><small>Couverture solaire</small><strong>{coachWeek.consumptionWh > 0 ? Math.min(100, Math.round(coachWeek.productionWh / coachWeek.consumptionWh * 100)) : 0} %</strong><span>Indicateur théorique</span></article>
+    </section>}
+    <section className="automation-assistant" id="assistant-domotique" aria-label="Assistant de création d’automatisations">
+      <header>
+        <div><span>✦</span><div><small>ASSISTANT DOMOTIQUE PREMIUM</small><h3>Dites simplement ce que vous voulez</h3><p>L’assistant prépare une règle sûre. Il ne crée rien avant votre confirmation explicite.</p></div></div>
+        <em>Aperçu obligatoire</em>
+      </header>
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        void prepareAssistantAutomation();
+      }}>
+        <textarea
+          value={assistantRequest}
+          maxLength={600}
+          onChange={(event) => {
+            setAssistantRequest(event.target.value);
+            setAssistantPreview(null);
+            setAssistantCreated(null);
+          }}
+          placeholder="Ex. Allume la filtration tous les jours à 10h30"
+          aria-label="Décrivez l’automatisation souhaitée"
+        />
+        <button className="primary" disabled={assistantBusy || assistantRequest.trim().length < 3}>
+          {assistantBusy ? "Préparation…" : "Préparer l’aperçu"}
+        </button>
+      </form>
+      <div className="assistant-examples" aria-label="Exemples de règles compatibles">
+        <small>ESSAYEZ PAR EXEMPLE</small>
+        <div>{assistantExamples.map((example) => <button type="button" key={example} onClick={() => {
+          setAssistantRequest(example);
+          setAssistantPreview(null);
+          setAssistantCreated(null);
+        }}>{example}</button>)}</div>
+      </div>
+      {assistantCreated && <div className="assistant-result success" role="status"><span>✓</span><div><b>Demande confirmée</b><p>{assistantCreated}</p></div></div>}
+      {assistantPreview?.result?.status === "ready" && assistantPreview.result.proposal && <article className="assistant-preview">
+        <div className="assistant-preview-heading"><div><small>APERÇU À CONFIRMER · NON ACTIVÉ</small><h4>{assistantPreview.result.proposal.name}</h4></div><span>Valable 10 min</span></div>
+        <p>{assistantPreview.result.summary}</p>
+        <div className="assistant-rule"><span><b>QUAND</b>{assistantPreview.result.proposal.triggerLabel}</span><i>→</i><span><b>ALORS</b>{assistantPreview.result.proposal.actionLabel}</span></div>
+        {assistantPreview.error && <p className="assistant-error">{assistantPreview.error}</p>}
+        <div className="assistant-preview-actions">
+          <button type="button" onClick={() => setAssistantPreview(null)}>Modifier la demande</button>
+          <button type="button" className="primary" disabled={assistantBusy} onClick={() => void confirmAssistantAutomation()}>{assistantBusy ? "Confirmation…" : "Confirmer et créer"}</button>
+        </div>
+        <small className="assistant-safety-note">En confirmant, seule la règle affichée ci-dessus sera envoyée à votre Green Box.</small>
+      </article>}
+      {assistantPreview?.result && assistantPreview.result.status !== "ready" && <div className={`assistant-result ${assistantPreview.result.status === "refused" ? "refused" : "attention"}`} role="status">
+        <span>{assistantPreview.result?.status === "refused" ? "!" : "?"}</span>
+        <div><b>{assistantPreview.result?.status === "refused" ? "Action non autorisée" : "Il me manque une précision"}</b><p>{assistantPreview.result?.message ?? assistantPreview.error}</p></div>
+      </div>}
+      {assistantPreview?.error && !assistantPreview.result && <div className="assistant-result attention" role="status"><span>!</span><div><b>Assistant indisponible</b><p>{assistantPreview.error}</p></div></div>}
+      {assistantPreview?.result && assistantPreview.result.status !== "ready" && <div className="assistant-help">
+        <div><small>{assistantPreview.help?.documentation?.title ?? "Pour réussir votre demande"}</small><ol>{(assistantPreview.help?.documentation?.steps ?? [
+          "Vérifiez que l’appareil est en ligne dans Équipements.",
+          "Indiquez une action, un appareil et une heure précise.",
+          "Relisez l’aperçu avant de confirmer.",
+        ]).map((step) => <li key={step}>{step}</li>)}</ol></div>
+        <button type="button" disabled={supportBusy} onClick={() => void createSupportTicket()}>{supportBusy ? "Envoi…" : "Créer un ticket support"}</button>
+      </div>}
     </section>
     {predictivePlan && <section className={`predictive-plan status-${predictivePlan.status}`} aria-label="Plan énergétique prédictif">
       {predictivePlans.length > 1 && <div className="predictive-load-tabs">{predictivePlans.map((plan) =>
@@ -1711,7 +2588,7 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
         <div><small>Prévision météo</small><strong>{forecastKwh(solarForecastSummary.rawTodayWh)}</strong><span>Estimation brute du jour</span></div>
         <div className="prudent"><small>Prévision prudente</small><strong>{forecastKwh(solarForecastSummary.prudentTodayWh)}</strong><span>{solarForecastSummary.correctionPercent > 0 ? `Corrigée de −${solarForecastSummary.correctionPercent} %` : "Aucune correction nécessaire"}</span></div>
         <div className={`confidence-${solarForecastSummary.confidence}`}><small>Niveau de confiance</small><strong>{confidenceLabel}</strong><span>Calculé avec la production réelle</span></div>
-        <p>{solarForecastSummary.explanation}</p>
+        {solarForecastSummary.explanation && <p>{solarForecastSummary.explanation}</p>}
       </div>}
       {solarForecast.length > 0 && <div className="solar-forecast-chart" aria-label="Prévision solaire des prochaines heures">
         {solarForecast.slice(0, 12).map((slot) => <div key={slot.startsAt}>
@@ -1720,6 +2597,14 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
         </div>)}
       </div>}
       {["ready_now", "scheduled"].includes(predictivePlan.status) && <button className="predictive-ask" onClick={() => void askCoach(`Explique-moi le plan prédictif de ${predictivePlan.loadLabel} et les garde-fous batterie.`)}>Demander une explication au coach →</button>}
+    </section>}
+    {consumptionBreakdown.length > 0 && <section className="coach-consumption-breakdown" aria-label="Qui consomme quoi maintenant">
+      <header><div><small>MESURES EN DIRECT</small><h3>Qui consomme quoi maintenant ?</h3></div><strong>{formatWatts(consumptionBreakdown.reduce((sum, item) => sum + item.watts, 0))}</strong></header>
+      <div>{consumptionBreakdown.slice(0, 6).map((item) => <article key={item.id}>
+        <span>{item.icon || "ϟ"}</span><p><b>{item.name}</b><small>{item.sharePercent} % de la puissance mesurée</small></p><strong>{formatWatts(item.watts)}</strong>
+        <i><em style={{ width: `${Math.max(2, item.sharePercent)}%` }} /></i>
+      </article>)}</div>
+      <button type="button" onClick={() => void askCoach("Quels appareils consomment le plus maintenant et comment réduire leur consommation ?")}>Demander l’analyse du Coach →</button>
     </section>}
     {coachInsights.length > 0 && <section className="energy-coach-insights" aria-label="Conseils énergétiques personnalisés">
       {coachInsights.slice(0, 3).map((insight) => <article className={`coach-insight ${insight.tone}`} key={insight.id}>
@@ -1739,10 +2624,13 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
             <span><strong>Quand</strong>{message.proposal.trigger}</span>
             <span><strong>Alors</strong>{message.proposal.action}</span>
             <button onClick={() => {
-              selectAutomation(null);
-              setModal("automation");
-              notify("Vérifiez la proposition avant de la confirmer");
-            }}>Examiner cette proposition</button>
+              const request = `${message.proposal?.action ?? ""} ${message.proposal?.trigger ?? ""}`.trim();
+              setAssistantRequest(request);
+              setAssistantPreview(null);
+              setAssistantCreated(null);
+              window.setTimeout(() => document.getElementById("assistant-domotique")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+              notify("Précisez la règle puis préparez son aperçu");
+            }}>Préparer cette proposition</button>
           </article>}
         </div>)}
         {coachLoading && <div className="coach-message coach"><p><i className="coach-thinking" /> J’analyse les mesures…</p></div>}

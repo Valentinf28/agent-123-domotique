@@ -1,5 +1,86 @@
 # Journal des versions
 
+## 0.5.42
+
+- Raccorde la PAC piscine à la pince dédiée Shelly EM3 483FDAC38616 phase A.
+- Calcule sa consommation quotidienne depuis le compteur d’énergie Shelly, même lorsque Tuya ne fournit aucune puissance.
+- Conserve séparément la phase B pour la consommation générale de la maison et la pince 483FDAC37994 phase B pour le chauffe-eau.
+
+## 0.5.41
+
+- Ajoute une politique Deye optionnelle qui bloque l’injection lorsque la voiture est débranchée.
+- Réactive automatiquement l’injection dès que la connexion physique du véhicule est stable.
+- Pilote uniquement la commande SolarMAN « Solar Sell » sans modifier le mode général de l’onduleur.
+- Temporise les transitions 10 secondes au branchement et 30 secondes au débranchement pour éviter les bascules parasites.
+- Conserve la régulation de surplus Lektrico existante et n’effectue aucune écriture Modbus directe.
+
+## 0.5.29
+
+- Supprime la marge d'injection permanente de la recharge solaire Lektrico.
+- Vise désormais l'équilibre avec le réseau lorsque la batterie domestique atteint 95 %.
+- Autorise la batterie domestique à compenser uniquement l'écart d'arrondi d'un demi-palier d'intensité.
+- Conserve l'arrondi inférieur lorsqu'une marge réseau explicite est configurée.
+
+## 0.5.28
+
+- Limite chaque demande d'historique à la journée sélectionnée dans l'application.
+- Rétablit les données et le graphique lors de la consultation d'un jour précédent.
+- Allège les réponses Home Assistant pour accélérer le chargement du calendrier solaire.
+
+## 0.5.27
+
+- Conserve la régulation solaire Lektrico fiabilisée et son redémarrage automatique.
+- Ajoute le mode de recharge Lektrico pendant une ou plusieurs plages d'heures creuses.
+- Enrichit l'inventaire transmis au portail avec les métadonnées sûres du registre Home Assistant pour faciliter la découverte et le préparamétrage des appareils.
+
+## 0.5.26
+
+- Respecte les 45 secondes de tolérance avant d’arrêter une recharge dont le surplus devient insuffisant.
+- Ne coupe plus la borne pendant les quelques secondes nécessaires au démarrage de la voiture.
+- Relance automatiquement la recharge toutes les 15 secondes tant que la voiture est prête et que le surplus reste suffisant.
+
+## 0.5.25
+
+- Laisse à la borne le temps de stabiliser sa mesure après l'enclenchement du relais.
+- Utilise la limite demandée tant que le courant réel Lektrico n'est pas encore remonté.
+- Évite les démarrages suivis d'une coupure cinq secondes plus tard malgré un surplus suffisant.
+
+## 0.5.24
+
+- Empêche la recharge solaire Lektrico d'utiliser la batterie domestique.
+- Donne la priorité à la batterie de la maison jusqu'à 95 %, puis utilise le surplus exporté.
+- Réduit automatiquement l'intensité dès que la batterie commence à se décharger.
+- Arrête la recharge lorsque le surplus réel ne permet plus de maintenir 6 A.
+
+## 0.5.23
+
+- Aligne les données du portail avec celles de l’application mobile.
+- Transmet les températures, consignes, états météo, piscine, Tesla et Lektrico utiles.
+- Ajoute les consommations journalières de la filtration, de la PAC piscine, du chauffe-eau et de la recharge véhicule.
+- Accélère la remontée des équipements importants toutes les cinq secondes.
+
+## 0.5.22
+
+- Autorise le redémarrage solaire quand une voiture branchée attend l'autorisation de la borne.
+- Prend aussi en charge une recharge mise en pause par le programmateur Lektrico.
+
+## 0.5.21
+
+- Accélère la régulation locale Lektrico avec un contrôle toutes les 5 secondes.
+- Arrête réellement la borne lorsque le surplus devient insuffisant au lieu de demander une limite invalide de 0 A.
+- Évite que la recharge reste physiquement à 6 A alors que l’application affiche 0 A.
+
+## 0.5.20
+
+- Ajoute la régulation locale de la borne Lektrico sur le surplus solaire.
+- Ajuste la limite dynamique toutes les 15 secondes avec une marge anti-import.
+- Arrête la recharge en cas d’import réseau persistant ou de défaut de la borne.
+
+## 0.5.19
+
+- Unifie les cumuls énergétiques jour, mois et année utilisés par l’application et le portail.
+- Conserve Deye pour la production et Shelly pour la consommation et les échanges réseau.
+
 ## 0.5.18
 
 - Fiabilise `sensor.pic_pv_jour` directement depuis la puissance photovoltaïque.

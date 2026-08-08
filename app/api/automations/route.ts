@@ -2,6 +2,7 @@ import { queueAgentAutomationCreate } from "../../../lib/agent-home";
 import {
   portalApiAuthorized,
   portalApiError,
+  portalHouseAuthorized,
 } from "../../../lib/portal-api-auth";
 
 export async function POST(request: Request) {
@@ -30,6 +31,10 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    if (typeof body.dossierPublicId !== "string" ||
+      !await portalHouseAuthorized(body.dossierPublicId)) {
+      return Response.json({ error: "Accès refusé pour cette maison" }, { status: 403 });
+    }
     const result = await queueAgentAutomationCreate(
       {
         name: body.name,
@@ -37,9 +42,7 @@ export async function POST(request: Request) {
         publicDeviceId: body.publicDeviceId,
         desiredActive: body.desiredActive,
       },
-      typeof body.dossierPublicId === "string"
-        ? body.dossierPublicId
-        : null,
+      body.dossierPublicId,
     );
     return Response.json(result, {
       status: 202,

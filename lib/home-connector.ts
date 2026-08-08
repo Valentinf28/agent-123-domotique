@@ -1,3 +1,16 @@
+import { ENERGY_PROFILE } from "./energy-profile.generated";
+import { HOUSE_BINDINGS } from "./house-bindings.generated";
+import {
+  allocateHomeAndVehiclePower,
+  entityIsAvailable,
+  formatWatts,
+  powerEntityWatts,
+} from "./energy-allocation.generated.js";
+import {
+  normalizeEntityText,
+  resolveEntityCandidate,
+} from "./entity-resolution.generated.js";
+
 type HaState = {
   entity_id: string;
   state: string;
@@ -93,49 +106,47 @@ const clientDomains = new Set([
 ]);
 
 const overviewBindings: Record<string, string[]> = {
-  solar: ["sensor.onduleur_pv_power", "puissance solaire", "production solaire", "solar power", "pv power"],
-  home: ["sensor.shellyem3_483fdac38616_channel_b_power", "consommation maison", "puissance maison", "home power"],
-  grid: ["sensor.shellyem3_483fdac38616_channel_c_power", "puissance reseau", "grid power"],
-  battery: ["sensor.batterie_deye_soc", "sensor.onduleur_battery", "niveau batterie", "batterie soc"],
-  batteryPower: ["sensor.onduleur_battery_power", "puissance batterie", "battery power"],
-  filtrationPower: ["sensor.filtration_piscine_puissance", "puissance filtration"],
-  dailyProduction: ["sensor.onduleur_today_production", "production journaliere"],
-  dailyConsumption: ["sensor.onduleur_today_load_consumption", "consommation journaliere"],
-  gate: ["switch.shellyplus1_78ee4cc38b48", "portail"],
-  terrace: ["light.terrasse", "terrasse"],
-  poolHeat: ["climate.pompe_a_chaleur_piscine", "pac piscine"],
-  filtration: ["switch.filtration_piscine_switch", "filtration piscine"],
-  spa: ["switch.mspa_oslo_f_os063wp_heater", "spa heater"],
-  spaFiltration: ["switch.mspa_oslo_f_os063wp_filter", "filtration spa"],
+  solar: [...ENERGY_PROFILE.solarPower],
+  home: [...ENERGY_PROFILE.homePower],
+  grid: [...ENERGY_PROFILE.gridPower],
+  battery: [...ENERGY_PROFILE.batteryLevel],
+  batteryPower: [...ENERGY_PROFILE.batteryPower],
+  filtrationPower: [...HOUSE_BINDINGS.filtrationPower],
+  dailyProduction: [...ENERGY_PROFILE.dailyProduction],
+  dailyConsumption: [...ENERGY_PROFILE.dailyConsumption],
+  dailyImport: [...ENERGY_PROFILE.dailyImport],
+  dailyExport: [...ENERGY_PROFILE.dailyExport],
+  monthlyProduction: [...ENERGY_PROFILE.monthlyProduction],
+  monthlyConsumption: [...ENERGY_PROFILE.monthlyConsumption],
+  monthlyImport: [...ENERGY_PROFILE.monthlyImport],
+  monthlyExport: [...ENERGY_PROFILE.monthlyExport],
+  yearlyProduction: [...ENERGY_PROFILE.yearlyProduction],
+  yearlyConsumption: [...ENERGY_PROFILE.yearlyConsumption],
+  yearlyImport: [...ENERGY_PROFILE.yearlyImport],
+  yearlyExport: [...ENERGY_PROFILE.yearlyExport],
+  gate: [...HOUSE_BINDINGS.gate],
+  terrace: [...HOUSE_BINDINGS.terrace],
+  poolHeat: [...HOUSE_BINDINGS.poolHeatPump],
+  filtration: [...HOUSE_BINDINGS.filtration],
+  spa: [...HOUSE_BINDINGS.spa],
+  spaFiltration: [...HOUSE_BINDINGS.spaFiltration],
+  lektricoPower: [...HOUSE_BINDINGS.lektricoPower],
+  teslaPower: [...HOUSE_BINDINGS.teslaModelXChargerPower],
 };
 
 function normalize(value = "") {
-  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[._-]+/g, " ").replace(/\s+/g, " ").trim();
+  return normalizeEntityText(value);
 }
 
 function resolve(states: HaState[], aliases: string[]) {
-  return states.map((entity) => {
-    const source = normalize(`${entity.entity_id} ${text(entity.attributes?.friendly_name, "")}`);
-    const id = normalize(entity.entity_id);
-    const score = aliases.reduce((best, alias) => {
-      const target = normalize(alias);
-      if (id === target) return Math.max(best, 1000);
-      if (source.includes(target)) return Math.max(best, 100 + target.length);
-      return best;
-    }, 0);
-    return { entity, score };
-  }).sort((a, b) => b.score - a.score)[0]?.score
-    ? states.map((entity) => {
-        const source = normalize(`${entity.entity_id} ${text(entity.attributes?.friendly_name, "")}`);
-        const id = normalize(entity.entity_id);
-        const score = aliases.reduce((best, alias) => {
-          const target = normalize(alias);
-          return Math.max(best, id === target ? 1000 : source.includes(target) ? 100 + target.length : 0);
-        }, 0);
-        return { entity, score };
-      }).sort((a, b) => b.score - a.score)[0].entity
-    : null;
+  const candidate = resolveEntityCandidate(states.map((entity) => ({
+    entity,
+    entityId: entity.entity_id,
+    name: text(entity.attributes?.friendly_name, ""),
+    deviceClass: text(entity.attributes?.device_class, ""),
+    state: entity.state,
+  })), aliases);
+  return candidate?.entity ?? null;
 }
 
 function displayValue(entity: HaState | null, fallback: string) {
@@ -353,6 +364,15 @@ export async function getPortalHome() {
 
   const value = (key: string, fallback: string) =>
     displayValue(resolve(states, overviewBindings[key]), fallback);
+  const homePowerEntity = resolve(states, overviewBindings.home);
+  const lektricoPowerEntity = resolve(states, overviewBindings.lektricoPower);
+  const teslaPowerEntity = resolve(states, overviewBindings.teslaPower);
+  const allocatedPower = allocateHomeAndVehiclePower({
+    totalHomeWatts: powerEntityWatts(homePowerEntity),
+    chargerWatts: powerEntityWatts(lektricoPowerEntity),
+    fallbackVehicleWatts: powerEntityWatts(teslaPowerEntity),
+    chargerAvailable: entityIsAvailable(lektricoPowerEntity),
+  });
   const control = (key: string, label: string) => {
     const entity = resolve(states, overviewBindings[key]);
     const state = entity?.state.toLowerCase() ?? "unavailable";
@@ -382,13 +402,24 @@ export async function getPortalHome() {
     mobileOverview: {
       energy: {
         solar: value("solar", "0 W"),
-        home: value("home", "0 W"),
+        home: formatWatts(allocatedPower.homeWatts),
         grid: value("grid", "0 W"),
         battery: value("battery", "0 %"),
         batteryPower: value("batteryPower", "0 W"),
         filtration: value("filtrationPower", "0 W"),
         dailyProduction: value("dailyProduction", "—"),
         dailyConsumption: value("dailyConsumption", "—"),
+        dailyImport: value("dailyImport", "—"),
+        dailyExport: value("dailyExport", "—"),
+        monthlyProduction: value("monthlyProduction", "—"),
+        monthlyConsumption: value("monthlyConsumption", "—"),
+        monthlyImport: value("monthlyImport", "—"),
+        monthlyExport: value("monthlyExport", "—"),
+        yearlyProduction: value("yearlyProduction", "—"),
+        yearlyConsumption: value("yearlyConsumption", "—"),
+        yearlyImport: value("yearlyImport", "—"),
+        yearlyExport: value("yearlyExport", "—"),
+        vehiclePower: formatWatts(allocatedPower.vehicleWatts),
       },
       controls: [
         control("gate", "Portail"),

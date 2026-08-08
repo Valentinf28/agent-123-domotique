@@ -3,7 +3,7 @@ import { getDb } from "../../../../db";
 import { agentBoxes, agentCommands, energySnapshots, installationDossiers, plannedDevices } from "../../../../db/schema";
 import { authenticatedAgent, sha256 } from "../../../../lib/agent-auth";
 import { buildDashboardConfig } from "../../../../lib/dashboard-config";
-import { energySnapshotFromInventory, fifteenMinuteBucket } from "../../../../lib/energy-coach";
+import { energySnapshotFromInventory, fiveMinuteBucket } from "../../../../lib/energy-coach";
 
 export async function POST(request: Request) {
   const agent = await authenticatedAgent(request);
@@ -15,7 +15,8 @@ export async function POST(request: Request) {
       inventoryMode?: "full" | "delta";
       inventory?: Array<{
         entityId?: string; name?: string; domain?: string;
-        state?: string; deviceClass?: string | null; unit?: string | null;
+        state?: string; deviceClass?: string | null;
+        attributes?: Record<string, unknown>;
       }>;
       commandResults?: Array<{
         id?: string;
@@ -29,7 +30,9 @@ export async function POST(request: Request) {
       domain: String(item.domain ?? "").slice(0, 40),
       state: String(item.state ?? "").slice(0, 80),
       deviceClass: String(item.deviceClass ?? "").slice(0, 80) || null,
-      unit: String(item.unit ?? "").slice(0, 24) || null,
+      attributes: item.attributes && typeof item.attributes === "object"
+        ? Object.fromEntries(Object.entries(item.attributes).slice(0, 24))
+        : undefined,
     })).filter((item) => item.entityId.includes(".")) : [];
     let inventory = incomingInventory;
     if (body.inventoryMode === "delta") {
@@ -49,7 +52,7 @@ export async function POST(request: Request) {
     const nowDate = new Date();
     const now = nowDate.toISOString();
     const energySampleDue = !agent.lastEnergySampleAt ||
-      nowDate.getTime() - Date.parse(agent.lastEnergySampleAt) >= 15 * 60 * 1000;
+      nowDate.getTime() - Date.parse(agent.lastEnergySampleAt) >= 5 * 60 * 1000;
     await getDb().update(agentBoxes).set({
       status: "online",
       haVersion: String(body.haVersion ?? "").slice(0, 40) || null,
@@ -64,7 +67,7 @@ export async function POST(request: Request) {
       const snapshot = energySnapshotFromInventory(inventory);
       await db.insert(energySnapshots).values({
         dossierId: agent.dossierId,
-        bucket: fifteenMinuteBucket(nowDate),
+        bucket: fiveMinuteBucket(nowDate),
         capturedAt: now,
         ...snapshot,
       }).onConflictDoNothing();

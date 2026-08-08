@@ -1,7 +1,11 @@
-import { asc } from "drizzle-orm";
+import { asc, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { installationDossiers } from "../../../db/schema";
-import { portalApiAuthorized } from "../../../lib/portal-api-auth";
+import {
+  portalApiAdminAuthorized,
+  portalApiAuthorized,
+  portalAuthorizedHouseIds,
+} from "../../../lib/portal-api-auth";
 
 function publicId() {
   return `installation_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -11,8 +15,15 @@ export async function GET() {
   if (!await portalApiAuthorized()) {
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
-  const dossiers = await getDb().select().from(installationDossiers)
-    .orderBy(asc(installationDossiers.updatedAt));
+  const allowed = await portalAuthorizedHouseIds();
+  if (allowed && allowed.size === 0) {
+    return Response.json({ dossiers: [] }, { headers: { "Cache-Control": "no-store" } });
+  }
+  const query = getDb().select().from(installationDossiers);
+  const dossiers = allowed
+    ? await query.where(inArray(installationDossiers.publicId, [...allowed]))
+      .orderBy(asc(installationDossiers.updatedAt))
+    : await query.orderBy(asc(installationDossiers.updatedAt));
   return Response.json({
     dossiers: dossiers.map((dossier) => ({
       publicId: dossier.publicId,
@@ -25,8 +36,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  if (!await portalApiAuthorized()) {
-    return Response.json({ error: "Authentification requise" }, { status: 401 });
+  if (!await portalApiAdminAuthorized()) {
+    return Response.json({ error: "Accès installateur requis" }, { status: 403 });
   }
   try {
     const body = await request.json() as { reference?: string; customerName?: string };

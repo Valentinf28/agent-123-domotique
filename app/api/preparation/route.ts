@@ -1,13 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { installationDossiers, plannedDevices } from "../../../db/schema";
-import { portalApiAuthorized } from "../../../lib/portal-api-auth";
-import {
-  parseStoredTariff,
-  sanitizeEnergyTariff,
-  sanitizeOffPeakPeriods,
-  sanitizeTariffPlan,
-} from "../../../lib/energy-tariff-profile";
+import { portalApiAdminAuthorized } from "../../../lib/portal-api-auth";
 
 type PlannedDevicePayload = {
   id?: string;
@@ -29,13 +23,28 @@ type PlannedDevicePayload = {
 
 type EnergyConfigurationPayload = {
   solarPeakWatts?: number;
+  solarArrays?: SolarArrayPayload[];
   batteryCapacityWh?: number;
   batteryReservePercent?: number;
-  allowGridExport?: boolean;
-  tariffPlan?: string;
-  offPeakPeriods?: Array<{ start?: string; end?: string }>;
-  energyTariff?: Record<string, unknown>;
   flexibleLoads?: FlexibleLoadPayload[];
+  tariffPlan?: string;
+  offPeakPeriods?: OffPeakPeriodPayload[];
+  allowGridExport?: boolean;
+};
+
+type SolarArrayPayload = {
+  id?: string;
+  label?: string;
+  peakWatts?: number;
+  orientation?: string;
+  inclinationDegrees?: number | null;
+};
+
+type OffPeakPeriodPayload = {
+  id?: string;
+  label?: string;
+  start?: string;
+  end?: string;
 };
 
 type FlexibleLoadPayload = {
@@ -47,6 +56,8 @@ type FlexibleLoadPayload = {
   minimumRunMinutes?: number;
   priority?: number;
   enabled?: boolean;
+  powerEntityId?: string;
+  showInConsumption?: boolean;
 };
 
 const allowedLevels = new Set(["Automatique", "Assistée", "Expert"]);
@@ -73,6 +84,63 @@ function flexibleLoadsFrom(value: string) {
   }
 }
 
+function offPeakPeriodsFrom(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function solarArraysFrom(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function sanitizeSolarArrays(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).map((raw, index) => {
+    const item = raw && typeof raw === "object" ? raw as SolarArrayPayload : {};
+    const id = String(item.id ?? `pan-${index + 1}`).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 40);
+    const label = String(item.label ?? `Pan ${index + 1}`).trim().slice(0, 80);
+    if (!id || !label) throw new Error("INVALID_SOLAR_ARRAY");
+    const rawInclination = item.inclinationDegrees;
+    return {
+      id,
+      label,
+      peakWatts: boundedInteger(item.peakWatts, 0, 0, 100_000),
+      orientation: String(item.orientation ?? "À vérifier").trim().slice(0, 60) || "À vérifier",
+      inclinationDegrees: rawInclination === null || rawInclination === undefined || rawInclination === ""
+        ? null
+        : boundedInteger(rawInclination, 0, 0, 90),
+    };
+  });
+}
+
+function sanitizeOffPeakPeriods(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+  return value.slice(0, 4).map((raw, index) => {
+    const item = raw && typeof raw === "object" ? raw as OffPeakPeriodPayload : {};
+    const start = String(item.start ?? "").trim();
+    const end = String(item.end ?? "").trim();
+    if (!timePattern.test(start) || !timePattern.test(end) || start === end) {
+      throw new Error("INVALID_OFF_PEAK_PERIOD");
+    }
+    return {
+      id: String(item.id ?? `hc-${index + 1}`).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 40),
+      label: String(item.label ?? `Plage ${index + 1}`).trim().slice(0, 40) || `Plage ${index + 1}`,
+      start,
+      end,
+    };
+  });
+}
+
 function sanitizeFlexibleLoads(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.slice(0, 20).map((raw, index) => {
@@ -90,6 +158,8 @@ function sanitizeFlexibleLoads(value: unknown) {
       minimumRunMinutes: boundedInteger(item.minimumRunMinutes, 60, 15, 720),
       priority: boundedInteger(item.priority, 3, 1, 5),
       enabled: item.enabled === true,
+      powerEntityId: String(item.powerEntityId ?? "").trim().toLowerCase().slice(0, 160),
+      showInConsumption: item.showInConsumption !== false,
     };
   });
 }
@@ -117,8 +187,8 @@ async function activeDossier(request?: Request, requestedPublicId?: string) {
 }
 
 export async function GET(request: Request) {
-  if (!await portalApiAuthorized()) {
-    return Response.json({ error: "Authentification requise" }, { status: 401 });
+  if (!await portalApiAdminAuthorized()) {
+    return Response.json({ error: "Accès installateur requis" }, { status: 403 });
   }
   try {
     const dossier = await activeDossier(request);
@@ -128,18 +198,21 @@ export async function GET(request: Request) {
     return Response.json({
       dossier: {
         publicId: dossier.publicId, reference: dossier.reference, customerName: dossier.customerName,
+        customerAddress: dossier.customerAddress,
+        erpDossierId: dossier.erpDossierId,
+        erpImportedAt: dossier.erpImportedAt,
         enabledModules: (() => {
           try { return JSON.parse(dossier.enabledModules) as string[]; } catch { return defaultModules; }
         })(),
         energyConfiguration: {
           solarPeakWatts: dossier.solarPeakWatts,
+          solarArrays: solarArraysFrom(dossier.solarArraysJson),
           batteryCapacityWh: dossier.batteryCapacityWh,
           batteryReservePercent: dossier.batteryReservePercent,
-          allowGridExport: dossier.allowGridExport,
-          tariffPlan: sanitizeTariffPlan(dossier.tariffPlan),
-          offPeakPeriods: parseStoredTariff(dossier.offPeakPeriodsJson, sanitizeOffPeakPeriods, []),
-          energyTariff: parseStoredTariff(dossier.energyTariffJson, sanitizeEnergyTariff, sanitizeEnergyTariff({})),
           flexibleLoads: flexibleLoadsFrom(dossier.flexibleLoadsJson),
+          tariffPlan: dossier.tariffPlan === "hp_hc" ? "hp_hc" : "base",
+          offPeakPeriods: offPeakPeriodsFrom(dossier.offPeakPeriodsJson),
+          allowGridExport: dossier.allowGridExport,
         },
       },
       items: items.map((item) => ({
@@ -156,8 +229,8 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  if (!await portalApiAuthorized()) {
-    return Response.json({ error: "Authentification requise" }, { status: 401 });
+  if (!await portalApiAdminAuthorized()) {
+    return Response.json({ error: "Accès installateur requis" }, { status: 403 });
   }
   try {
     const body = await request.json() as {
@@ -209,23 +282,23 @@ export async function PUT(request: Request) {
     const existingFlexibleLoads = flexibleLoadsFrom(dossier.flexibleLoadsJson);
     const energyConfiguration = {
       solarPeakWatts: boundedInteger(requestedEnergy.solarPeakWatts, dossier.solarPeakWatts, 0, 100_000),
+      solarArrays: requestedEnergy.solarArrays === undefined
+        ? solarArraysFrom(dossier.solarArraysJson)
+        : sanitizeSolarArrays(requestedEnergy.solarArrays),
       batteryCapacityWh: boundedInteger(requestedEnergy.batteryCapacityWh, dossier.batteryCapacityWh, 0, 500_000),
       batteryReservePercent: boundedInteger(requestedEnergy.batteryReservePercent, dossier.batteryReservePercent, 5, 80),
-      allowGridExport: requestedEnergy.allowGridExport === undefined
-        ? dossier.allowGridExport
-        : requestedEnergy.allowGridExport === true,
-      tariffPlan: requestedEnergy.tariffPlan === undefined
-        ? sanitizeTariffPlan(dossier.tariffPlan)
-        : sanitizeTariffPlan(requestedEnergy.tariffPlan),
-      offPeakPeriods: requestedEnergy.offPeakPeriods === undefined
-        ? parseStoredTariff(dossier.offPeakPeriodsJson, sanitizeOffPeakPeriods, [])
-        : sanitizeOffPeakPeriods(requestedEnergy.offPeakPeriods),
-      energyTariff: requestedEnergy.energyTariff === undefined
-        ? parseStoredTariff(dossier.energyTariffJson, sanitizeEnergyTariff, sanitizeEnergyTariff({}))
-        : sanitizeEnergyTariff(requestedEnergy.energyTariff),
       flexibleLoads: requestedEnergy.flexibleLoads === undefined
         ? existingFlexibleLoads
         : sanitizeFlexibleLoads(requestedEnergy.flexibleLoads),
+      tariffPlan: requestedEnergy.tariffPlan === undefined
+        ? dossier.tariffPlan
+        : requestedEnergy.tariffPlan === "hp_hc" ? "hp_hc" : "base",
+      offPeakPeriods: requestedEnergy.offPeakPeriods === undefined
+        ? offPeakPeriodsFrom(dossier.offPeakPeriodsJson)
+        : sanitizeOffPeakPeriods(requestedEnergy.offPeakPeriods),
+      allowGridExport: requestedEnergy.allowGridExport === undefined
+        ? dossier.allowGridExport
+        : requestedEnergy.allowGridExport === true,
     };
     const persistedItems = items.map((item) => ({
       ...item, publicId: publicId("planned"), dossierId: dossier.id,
@@ -239,13 +312,13 @@ export async function PUT(request: Request) {
     const dossierUpdate = db.update(installationDossiers).set({
       enabledModules: JSON.stringify(enabledModules),
       solarPeakWatts: energyConfiguration.solarPeakWatts,
+      solarArraysJson: JSON.stringify(energyConfiguration.solarArrays),
       batteryCapacityWh: energyConfiguration.batteryCapacityWh,
       batteryReservePercent: energyConfiguration.batteryReservePercent,
-      allowGridExport: energyConfiguration.allowGridExport,
+      flexibleLoadsJson: JSON.stringify(energyConfiguration.flexibleLoads),
       tariffPlan: energyConfiguration.tariffPlan,
       offPeakPeriodsJson: JSON.stringify(energyConfiguration.offPeakPeriods),
-      energyTariffJson: JSON.stringify(energyConfiguration.energyTariff),
-      flexibleLoadsJson: JSON.stringify(energyConfiguration.flexibleLoads),
+      allowGridExport: energyConfiguration.allowGridExport,
       updatedAt: new Date().toISOString(),
     })
       .where(and(eq(installationDossiers.id, dossier.id), eq(installationDossiers.status, "preparation")));
@@ -257,7 +330,7 @@ export async function PUT(request: Request) {
     return Response.json({ saved: true, count: items.length, enabledModules, energyConfiguration });
   } catch (error) {
     const invalid = error instanceof Error &&
-      ["INVALID_ITEM", "INVALID_ENTITY", "INVALID_FLEXIBLE_LOAD"].includes(error.message);
+      ["INVALID_ITEM", "INVALID_ENTITY", "INVALID_FLEXIBLE_LOAD", "INVALID_OFF_PEAK_PERIOD", "INVALID_SOLAR_ARRAY"].includes(error.message);
     return Response.json(
       { error: invalid ? "Un équipement ou son association est invalide" : "Enregistrement impossible" },
       { status: invalid ? 400 : 503 },

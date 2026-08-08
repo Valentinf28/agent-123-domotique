@@ -1,5 +1,5 @@
 import { resolveRingCameraForDossier } from "../../../../../../lib/agent-home";
-import { portalApiAuthorized } from "../../../../../../lib/portal-api-auth";
+import { portalApiAuthorized, portalHouseAuthorized } from "../../../../../../lib/portal-api-auth";
 
 type WebRTCScope = {
   cameraId: string;
@@ -111,6 +111,9 @@ export async function POST(
     };
     const action = String(body.action ?? "");
     const dossier = typeof body.dossier === "string" ? body.dossier : "";
+    if (!dossier || !await portalHouseAuthorized(dossier)) {
+      return json({ error: "Accès refusé pour cette maison" }, 403);
+    }
     const camera = await resolveRingCameraForDossier(id, dossier || null);
     const headers = {
       Accept: "application/json",

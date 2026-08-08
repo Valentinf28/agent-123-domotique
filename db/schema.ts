@@ -17,20 +17,28 @@ export const installationDossiers = sqliteTable("installation_dossiers", {
   graceEndsAt: text("grace_ends_at"),
   subscriptionStartedAt: text("subscription_started_at"),
   subscriptionEndsAt: text("subscription_ends_at"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  stripeCurrentPeriodEndsAt: text("stripe_current_period_ends_at"),
   solarPeakWatts: integer("solar_peak_watts").notNull().default(0),
+  solarArraysJson: text("solar_arrays_json").notNull().default("[]"),
   batteryCapacityWh: integer("battery_capacity_wh").notNull().default(0),
+  erpDossierId: integer("erp_dossier_id"),
+  erpImportedAt: text("erp_imported_at"),
+  customerAddress: text("customer_address"),
   batteryReservePercent: integer("battery_reserve_percent").notNull().default(25),
   allowGridExport: integer("allow_grid_export", { mode: "boolean" }).notNull().default(true),
   tariffPlan: text("tariff_plan").notNull().default("base"),
   offPeakPeriodsJson: text("off_peak_periods_json").notNull().default("[]"),
-  energyTariffJson: text("energy_tariff_json").notNull().default("{}"),
   flexibleLoadsJson: text("flexible_loads_json").notNull().default("[]"),
+  entityBindingsJson: text("entity_bindings_json").notNull().default("{}"),
   predictiveControlEnabled: integer("predictive_control_enabled", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("installation_dossiers_public_id_idx").on(table.publicId),
   uniqueIndex("installation_dossiers_relay_house_id_idx").on(table.relayHouseId),
+  uniqueIndex("installation_dossiers_erp_dossier_id_idx").on(table.erpDossierId),
 ]);
 
 export const plannedDevices = sqliteTable("planned_devices", {
@@ -141,10 +149,12 @@ export const mobilePairingCodes = sqliteTable("mobile_pairing_codes", {
   publicId: text("public_id").notNull(),
   dossierId: integer("dossier_id").notNull().references(() => installationDossiers.id, { onDelete: "cascade" }),
   codeHash: text("code_hash").notNull(),
+  configurationTokenHash: text("configuration_token_hash"),
   expiresAt: text("expires_at").notNull(),
   usedAt: text("used_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("mobile_pairing_codes_public_id_idx").on(table.publicId),
   uniqueIndex("mobile_pairing_codes_hash_idx").on(table.codeHash),
+  uniqueIndex("mobile_pairing_codes_configuration_token_hash_idx").on(table.configurationTokenHash),
 ]);

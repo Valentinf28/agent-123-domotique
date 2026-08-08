@@ -1,81 +1,89 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  energyInsights,
-  type EnergyInsightSnapshot,
-  type EnergyHistorySample,
-} from "../lib/energy-insights.ts";
+  energySnapshotFromInventory,
+  type EnergyInventoryItem,
+} from "../lib/energy-snapshot.ts";
+import { consumptionBreakdownFromInventory } from "../lib/consumption-breakdown.ts";
 
-const current = (overrides: Partial<EnergyInsightSnapshot> = {}): EnergyInsightSnapshot => ({
-  solarWatts: 0,
-  homeWatts: 0,
-  gridWatts: 0,
-  batteryPercent: 0,
-  batteryWatts: 0,
-  filtrationWatts: 0,
-  hotWaterWatts: 0,
-  vehicleWatts: 0,
-  dailyProductionWh: 0,
-  dailyConsumptionWh: 0,
-  ...overrides,
+const entity = (
+  entityId: string,
+  state: string,
+  unit?: string,
+): EnergyInventoryItem => ({
+  entityId,
+  name: entityId,
+  domain: entityId.split(".")[0],
+  state,
+  attributes: unit ? { unit_of_measurement: unit } : undefined,
 });
 
-const sample = (capturedAt: string, homeWatts = 400): EnergyHistorySample => ({
-  capturedAt,
-  solarWatts: 0,
-  homeWatts,
-  gridWatts: 0,
-  batteryPercent: 50,
-  batteryWatts: 0,
-  filtrationWatts: 0,
-  hotWaterWatts: 0,
-  vehicleWatts: 0,
-  dailyProductionWh: 0,
-  dailyConsumptionWh: 0,
+test("sépare la borne Lektrico de la consommation historique de la maison", () => {
+  const snapshot = energySnapshotFromInventory([
+    entity("sensor.shellyem3_483fdac38616_channel_b_power", "3.8", "kW"),
+    entity("sensor.1p7k_501290_puissance", "2.3", "kW"),
+    // La télémétrie Tesla ne doit pas remplacer la mesure réelle de la borne.
+    entity("sensor.tesla_model_x_charger_power", "1.7", "kW"),
+  ]);
+
+  assert.equal(snapshot.homeWatts, 1500);
+  assert.equal(snapshot.vehicleWatts, 2300);
 });
 
-test("utilise l'injection réseau réelle et tient compte de la batterie", () => {
-  const chargingBattery = energyInsights(current({
-    solarWatts: 5_000,
-    homeWatts: 2_000,
-    gridWatts: 0,
-    batteryWatts: 3_000,
-    batteryPercent: 95,
-  }), []);
-  assert.equal(chargingBattery.some((insight) => insight.id === "solar-surplus"), false);
+test("utilise Tesla seulement lorsque la mesure Lektrico est indisponible", () => {
+  const snapshot = energySnapshotFromInventory([
+    entity("sensor.shellyem3_483fdac38616_channel_b_power", "3600", "W"),
+    entity("sensor.1p7k_501290_puissance", "unavailable", "kW"),
+    entity("sensor.tesla_model_x_charger_power", "2.1", "kW"),
+  ]);
 
-  const exporting = energyInsights(current({
-    solarWatts: 5_000,
-    homeWatts: 2_000,
-    gridWatts: -1_200,
-    batteryPercent: 95,
-  }), []);
-  assert.equal(exporting.find((insight) => insight.id === "solar-surplus")?.description,
-    "1200 W sont réellement injectés et peuvent alimenter un équipement flexible maintenant.");
+  assert.equal(snapshot.homeWatts, 3600);
+  assert.equal(snapshot.vehicleWatts, 2100);
 });
 
-test("analyse la nuit selon le fuseau de la maison", () => {
-  // En été, 22:30 UTC correspond à 00:30 à Paris.
-  const history = Array.from({ length: 8 }, (_, index) =>
-    sample(`2026-07-${String(index + 1).padStart(2, "0")}T22:30:00.000Z`));
-  const paris = energyInsights(current(), history, "Europe/Paris");
-  const utc = energyInsights(current(), history, "UTC");
-  assert.equal(paris.find((insight) => insight.id === "night-base")?.impact,
-    "Jusqu’à 38 kWh / mois à examiner");
-  assert.equal(utc.some((insight) => insight.id === "night-base"), false);
+test("normalise W, kW, Wh et kWh avant stockage", () => {
+  const snapshot = energySnapshotFromInventory([
+    entity("sensor.onduleur_pv_power", "4.25", "kW"),
+    entity("sensor.onduleur_grid_power", "-840", "W"),
+    entity("sensor.onduleur_battery_power", "-1.1", "kW"),
+    entity("sensor.onduleur_today_production", "12850", "Wh"),
+    entity("sensor.1_2_3_home_today_consumption", "9.4", "kWh"),
+  ]);
+
+  assert.equal(snapshot.solarWatts, 4250);
+  assert.equal(snapshot.gridWatts, -840);
+  assert.equal(snapshot.batteryWatts, -1100);
+  assert.equal(snapshot.dailyProductionWh, 12850);
+  assert.equal(snapshot.dailyConsumptionWh, 9400);
 });
 
-test("attend assez de relevés avant de déclarer une anomalie nocturne", () => {
-  const history = Array.from({ length: 7 }, (_, index) =>
-    sample(`2026-07-${String(index + 1).padStart(2, "0")}T22:30:00.000Z`));
-  assert.equal(energyInsights(current(), history).some((insight) => insight.id === "night-base"), false);
+test("classe les appareils mesurés et conserve les autres usages de la maison", () => {
+  const breakdown = consumptionBreakdownFromInventory([
+    entity("sensor.pac_piscine_power", "2.1", "kW"),
+    entity("sensor.filtration_power", "680", "W"),
+  ], [
+    { id: "pac", name: "PAC piscine", category: "pool", icon: "≋", powerWatts: 2100, minimumRunMinutes: 60, priority: 1, enabled: true, powerEntityId: "sensor.pac_piscine_power", showInConsumption: true },
+    { id: "filtration", name: "Filtration", category: "filtration", icon: "≈", powerWatts: 680, minimumRunMinutes: 60, priority: 2, enabled: true, powerEntityId: "sensor.filtration_power", showInConsumption: true },
+  ], 3500);
+
+  assert.deepEqual(breakdown.map((item) => [item.id, item.watts]), [
+    ["pac", 2100],
+    ["filtration", 680],
+    ["other-home", 720],
+  ]);
+  assert.equal(breakdown[0].sharePercent, 60);
 });
 
-test("ne présente pas le ratio production consommation comme une autonomie", () => {
-  const result = energyInsights(current({
-    dailyProductionWh: 5_000,
-    dailyConsumptionWh: 10_000,
-  }), []);
-  assert.equal(result.find((insight) => insight.id === "daily-balance")?.impact,
-    "Production équivalente à 50 % de la consommation");
+test("ne compte jamais deux fois une même pince de mesure", () => {
+  const breakdown = consumptionBreakdownFromInventory([
+    entity("sensor.pince_pac", "2", "kW"),
+  ], [
+    { id: "pac", name: "PAC", category: "heating", icon: "♨", enabled: true, powerEntityId: "sensor.pince_pac" },
+    { id: "duplicate", name: "Ancienne PAC", category: "heating", icon: "♨", enabled: true, powerEntityId: "SENSOR.PINCE_PAC" },
+  ], 2500);
+
+  assert.deepEqual(breakdown.map((item) => [item.id, item.watts]), [
+    ["pac", 2000],
+    ["other-home", 500],
+  ]);
 });

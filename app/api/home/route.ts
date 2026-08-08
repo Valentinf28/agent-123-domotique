@@ -1,6 +1,7 @@
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getAgentPortalHome } from "../../../lib/agent-home";
 import { getPortalHome } from "../../../lib/home-connector";
+import { portalAuthorizedHouseIds } from "../../../lib/portal-api-auth";
 
 /**
  * Façade serveur du portail.
@@ -19,15 +20,18 @@ export async function GET(request: Request) {
   }
 
   try {
-    const dossier = new URL(request.url).searchParams.get("dossier");
+    const requested = new URL(request.url).searchParams.get("dossier");
+    const allowed = await portalAuthorizedHouseIds();
+    const dossier = requested || (allowed?.size === 1 ? [...allowed][0] : null);
+    if (allowed && (!dossier || !allowed.has(dossier))) {
+      return Response.json({ error: "Accès refusé pour cette maison" }, { status: 403 });
+    }
     let home;
     try {
       home = await getAgentPortalHome(dossier);
     } catch (error) {
       const code = error instanceof Error ? error.message : "CONNECTOR_ERROR";
       if (!localDevelopment || code !== "CONNECTOR_NOT_CONFIGURED") throw error;
-      // Secours de démonstration local : lecture directe des vraies données HA.
-      // La production reste exclusivement reliée par la Green Box.
       home = await getPortalHome();
     }
     return Response.json({
