@@ -8,7 +8,6 @@ import {
   consumeAssistantRequest,
   getEnergyCoachContext,
   refundAssistantRequest,
-  type EnergyInsight,
 } from "../../../../lib/energy-coach";
 
 type AutomationProposal = {
@@ -63,7 +62,7 @@ function localReply(
     if (/solaire|surplus|autoconsomm/.test(normalized)) return insight.id === "solar-surplus";
     if (/chauffe|ballon|eau chaude/.test(normalized)) return insight.id === "hot-water";
     if (/voiture|tesla|recharge/.test(normalized)) return insight.id === "vehicle-charge";
-    if (/batterie/.test(normalized)) return insight.id === "battery-low";
+    if (/batterie/.test(normalized)) return insight.goal === "battery";
     return false;
   }) ?? context.insights[0];
   const topConsumers = context.consumptionBreakdown
@@ -217,7 +216,7 @@ async function openAiReply(
               bilanSeptJours: context.week,
               nombreDeReleves: context.historySamples,
               previsionSolaire: context.solarForecast,
-              contratTarifaire: context.tariff,
+              contratTarifaire: "Prix du kWh non renseigné : ne jamais annoncer d'économie en euros.",
               plansPredictifs: context.predictivePlans,
               appareilsQuiConsomment: context.consumptionBreakdown,
               recommandationsCalculees: context.insights,

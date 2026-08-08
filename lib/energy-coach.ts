@@ -24,6 +24,7 @@ import {
 } from "./consumption-breakdown";
 import { HOUSE_BINDINGS } from "./house-bindings.generated";
 import { resolveEntityCandidate } from "./entity-resolution.generated.js";
+import { buildEnergyInsights as buildPrioritizedEnergyInsights } from "./energy-insights";
 export {
   ASSISTANT_MONTHLY_LIMIT,
   assistantQuotaAllows,
@@ -37,6 +38,8 @@ export type EnergyInsight = {
   id: string;
   icon: string;
   tone: "positive" | "attention" | "tip";
+  goal: "money" | "battery" | "solar";
+  confidence: "measured" | "estimated";
   title: string;
   description: string;
   impact: string;
@@ -218,18 +221,11 @@ function average(values: number[]) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function euro(value: number) {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(Math.max(0, value));
-}
-
-function energyInsights(
+export function buildEnergyInsights(
   current: EnergySnapshotValues,
-  history: Array<typeof energySnapshots.$inferSelect>,
+  history: Array<Pick<typeof energySnapshots.$inferSelect, "capturedAt" | "homeWatts">>,
   consumptionBreakdown: ConsumptionBreakdownItem[] = [],
+  batteryReservePercent = 25,
 ): EnergyInsight[] {
   const insights: EnergyInsight[] = [];
   const dominant = consumptionBreakdown.find((item) => item.id !== "other-home" && item.sharePercent >= 25);
@@ -238,6 +234,8 @@ function energyInsights(
       id: `dominant-${dominant.id}`,
       icon: dominant.icon || "ϟ",
       tone: "tip",
+      goal: "money",
+      confidence: "measured",
       title: `${dominant.name} domine la consommation`,
       description: `${dominant.watts} W, soit environ ${dominant.sharePercent} % de la puissance mesurée de la maison actuellement.`,
       impact: "Premier poste à examiner maintenant",
@@ -250,20 +248,23 @@ function energyInsights(
     hourCycle: "h23",
   });
   const nightSamples = history.filter((sample) => {
-    const hour = Number(nightHour.format(new Date(sample.capturedAt)));
+    const hour = Number(nightHour.formatToParts(new Date(sample.capturedAt))
+      .find((part) => part.type === "hour")?.value);
     return hour >= 0 && hour < 5;
   });
   const nightBase = average(nightSamples.map((sample) => sample.homeWatts));
   if (nightBase >= 250) {
     const avoidableWatts = Math.max(0, nightBase - 150);
-    const monthlySaving = avoidableWatts * 8 * 30 / 1000 * 0.25;
+    const monthlyShiftableKwh = Math.round(avoidableWatts * 8 * 30 / 1000);
     insights.push({
       id: "night-base",
       icon: "☾",
       tone: "attention",
+      goal: "money",
+      confidence: "estimated",
       title: "Consommation nocturne à examiner",
       description: `La maison consomme en moyenne ${Math.round(nightBase)} W pendant la nuit.`,
-      impact: `Jusqu’à ${euro(monthlySaving)} / mois estimés`,
+      impact: `Environ ${monthlyShiftableKwh} kWh / mois à examiner`,
       action: "Identifier les appareils en veille",
     });
   }
@@ -277,6 +278,8 @@ function energyInsights(
       id: "solar-surplus",
       icon: "☀",
       tone: "positive",
+      goal: "solar",
+      confidence: "measured",
       title: "Surplus solaire disponible",
       description: `${likelySurplus} W peuvent alimenter un équipement flexible maintenant.`,
       impact: "Autoconsommation à améliorer",
@@ -289,6 +292,8 @@ function energyInsights(
       id: "hot-water",
       icon: "♨",
       tone: "tip",
+      goal: "solar",
+      confidence: "measured",
       title: "Chauffe-eau à décaler",
       description: "Le ballon fonctionne alors que la production solaire ne couvre pas sa puissance.",
       impact: "Décalage conseillé en journée",
@@ -301,6 +306,8 @@ function energyInsights(
       id: "vehicle-charge",
       icon: "◇",
       tone: "tip",
+      goal: "solar",
+      confidence: "measured",
       title: "Recharge à optimiser",
       description: "La voiture charge plus vite que la production solaire disponible.",
       impact: "Réduire les achats au réseau",
@@ -313,10 +320,32 @@ function energyInsights(
       id: "battery-low",
       icon: "▣",
       tone: "attention",
+      goal: "battery",
+      confidence: "measured",
       title: "Réserve batterie faible",
       description: `La batterie est à ${current.batteryPercent} %.`,
       impact: "Garder une réserve pour le soir",
       action: "Vérifier la stratégie de batterie",
+    });
+  }
+
+  const batteryProtectionThreshold = Math.max(35, batteryReservePercent + 15);
+  if (
+    current.batteryWatts > 300 &&
+    current.solarWatts < 100 &&
+    current.batteryPercent > 20 &&
+    current.batteryPercent <= batteryProtectionThreshold
+  ) {
+    insights.push({
+      id: "battery-evening-discharge",
+      icon: "▣",
+      tone: "attention",
+      goal: "battery",
+      confidence: "measured",
+      title: "Batterie sollicitée sans solaire",
+      description: `La batterie fournit ${Math.round(current.batteryWatts)} W et il reste ${current.batteryPercent} %. Les usages flexibles peuvent attendre la prochaine production solaire.`,
+      impact: `Réserve protégée à ${batteryReservePercent} %`,
+      action: "Quels usages peut-on décaler à demain ?",
     });
   }
 
@@ -328,6 +357,8 @@ function energyInsights(
       id: "daily-balance",
       icon: "↗",
       tone: selfCoverage >= 70 ? "positive" : "tip",
+      goal: "solar",
+      confidence: "measured",
       title: "Bilan de la journée",
       description: `${Math.round(current.dailyProductionWh / 100) / 10} kWh produits pour ${Math.round(current.dailyConsumptionWh / 100) / 10} kWh consommés.`,
       impact: `${selfCoverage} % de couverture solaire théorique`,
@@ -340,13 +371,24 @@ function energyInsights(
       id: "learning",
       icon: "✦",
       tone: "positive",
+      goal: "solar",
+      confidence: "estimated",
       title: "Analyse en cours",
       description: "Le coach collecte progressivement les habitudes de la maison.",
       impact: "Premiers conseils après quelques heures",
       action: "Poser une question au coach",
     });
   }
-  return insights.slice(0, 4);
+  const prioritized: EnergyInsight[] = [];
+  for (const goal of ["money", "battery", "solar"] as const) {
+    const insight = insights.find((candidate) => candidate.goal === goal);
+    if (insight) prioritized.push(insight);
+  }
+  for (const insight of insights) {
+    if (prioritized.length >= 4) break;
+    if (!prioritized.some((candidate) => candidate.id === insight.id)) prioritized.push(insight);
+  }
+  return prioritized;
 }
 
 export async function getEnergyCoachContext(dossierPublicId?: string | null) {
@@ -480,7 +522,12 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     predictivePlan,
     predictivePlans,
     consumptionBreakdown,
-    insights: energyInsights(current, history, consumptionBreakdown),
+    insights: buildPrioritizedEnergyInsights(
+      current,
+      history,
+      consumptionBreakdown,
+      selected.dossier.batteryReservePercent,
+    ),
   };
 }
 

@@ -5,6 +5,7 @@ import {
   type EnergyInventoryItem,
 } from "../lib/energy-snapshot.ts";
 import { consumptionBreakdownFromInventory } from "../lib/consumption-breakdown.ts";
+import { buildEnergyInsights } from "../lib/energy-insights.ts";
 
 const entity = (
   entityId: string,
@@ -85,5 +86,69 @@ test("ne compte jamais deux fois une même pince de mesure", () => {
   assert.deepEqual(breakdown.map((item) => [item.id, item.watts]), [
     ["pac", 2000],
     ["other-home", 500],
+  ]);
+});
+
+const snapshot = (overrides: Partial<ReturnType<typeof energySnapshotFromInventory>> = {}) => ({
+  solarWatts: 0,
+  homeWatts: 900,
+  gridWatts: 0,
+  batteryPercent: 50,
+  batteryWatts: 0,
+  filtrationWatts: 0,
+  hotWaterWatts: 0,
+  vehicleWatts: 0,
+  dailyProductionWh: 0,
+  dailyConsumptionWh: 0,
+  ...overrides,
+});
+
+test("n'invente pas d'économies en euros sans tarif renseigné", () => {
+  const history = Array.from({ length: 8 }, (_, index) => ({
+    capturedAt: `2026-08-08T0${index % 4}:00:00.000Z`,
+    homeWatts: 650,
+  }));
+  const insights = buildEnergyInsights(snapshot(), history);
+  const nightBase = insights.find((insight) => insight.id === "night-base");
+
+  assert.ok(nightBase);
+  assert.match(nightBase.impact, /kWh \/ mois/);
+  assert.doesNotMatch(nightBase.impact, /€|EUR/);
+  assert.equal(nightBase.confidence, "estimated");
+});
+
+test("alerte quand la batterie alimente la maison sans solaire près de sa réserve", () => {
+  const insights = buildEnergyInsights(snapshot({
+    batteryPercent: 36,
+    batteryWatts: 1150,
+    solarWatts: 0,
+  }), [], [], 25);
+  const alert = insights.find((insight) => insight.id === "battery-evening-discharge");
+
+  assert.ok(alert);
+  assert.equal(alert.goal, "battery");
+  assert.equal(alert.confidence, "measured");
+  assert.match(alert.description, /1[\s ]?150 W/);
+});
+
+test("équilibre les priorités économies, batterie et solaire", () => {
+  const insights = buildEnergyInsights(snapshot({
+    batteryPercent: 35,
+    batteryWatts: 900,
+    dailyProductionWh: 8500,
+    dailyConsumptionWh: 11000,
+  }), [], [{
+    id: "pac",
+    name: "PAC piscine",
+    category: "pool",
+    icon: "≋",
+    watts: 2100,
+    sharePercent: 70,
+  }], 25);
+
+  assert.deepEqual(insights.slice(0, 3).map((insight) => insight.goal), [
+    "money",
+    "battery",
+    "solar",
   ]);
 });

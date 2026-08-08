@@ -35,6 +35,7 @@ const canonicalAutomationName = (value: string) => value
   .trim();
 type EnergyCoachInsight = {
   id: string; icon: string; tone: "positive" | "attention" | "tip";
+  goal: "money" | "battery" | "solar"; confidence: "measured" | "estimated";
   title: string; description: string; impact: string; action: string;
 };
 type ConsumptionBreakdownItem = {
@@ -2703,7 +2704,7 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
     {coachInsights.length > 0 && <section className="energy-coach-insights" aria-label="Conseils énergétiques personnalisés">
       {coachInsights.slice(0, 3).map((insight) => <article className={`coach-insight ${insight.tone}`} key={insight.id}>
         <span>{insight.icon}</span>
-        <div><small>{insight.impact}</small><h3>{insight.title}</h3><p>{insight.description}</p></div>
+        <div><small>{insight.goal === "money" ? "ÉCONOMIES" : insight.goal === "battery" ? "BATTERIE" : "SOLAIRE"} · {insight.impact}</small><h3>{insight.title}</h3><p>{insight.description}</p></div>
         <button onClick={() => void askCoach(insight.action)} aria-label={`Demander conseil : ${insight.title}`}>→</button>
       </article>)}
     </section>}
