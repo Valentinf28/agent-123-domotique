@@ -20,6 +20,13 @@ test("affiche le portail Ma Maison en français", async () => {
   assert.doesNotMatch(`${layout}${page}${portal}`, /codex-preview|react-loading-skeleton/i);
 });
 
+test("mémorise la maison sélectionnée entre deux visites", async () => {
+  const portal = await readFile(new URL("../app/portal.tsx", import.meta.url), "utf8");
+  assert.match(portal, /SELECTED_DOSSIER_STORAGE_KEY/);
+  assert.match(portal, /localStorage\.setItem/);
+  assert.match(portal, /localStorage\.getItem/);
+});
+
 test("n’expose aucun secret Home Assistant dans le rendu client", async () => {
   const source = await readFile(new URL("../app/portal.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(source, /HA_ACCESS_TOKEN|RELAY_CAMERA_SECRET|Bearer\s+[A-Za-z0-9._-]{20,}/i);

@@ -9,6 +9,7 @@ import { addEnergyDays, energyDateKey, formatEnergyDay, isEnergyToday } from "..
 import { MOON_PHASE_GLYPHS, MOON_PHASE_LABELS, moonDisplayPhase } from "../lib/moon-phase";
 
 type View = "Accueil" | "Préparation" | "Installation" | "Appareils" | "Automatisations" | "Ajouter" | "Journal";
+const SELECTED_DOSSIER_STORAGE_KEY = "ma-maison-selected-dossier";
 type HomeTab = (typeof CLIENT_EXPERIENCE.tabs)[number]["label"];
 type Device = {
   id: string; name: string; room: string; areaPublicId: string | null;
@@ -336,10 +337,21 @@ export default function Portal({
       .then((payload) => {
         const next = Array.isArray(payload.dossiers) ? payload.dossiers : [];
         setDossiers(next);
-        setSelectedDossierId((current) => current || next[0]?.publicId || "");
+        const saved = window.localStorage.getItem(SELECTED_DOSSIER_STORAGE_KEY) ?? "";
+        setSelectedDossierId((current) => {
+          if (next.some((item: InstallationDossier) => item.publicId === current)) return current;
+          if (next.some((item: InstallationDossier) => item.publicId === saved)) return saved;
+          return next[0]?.publicId || "";
+        });
       })
       .catch(() => undefined);
   }, [allowHouseSwitch, customerOnly]);
+
+  useEffect(() => {
+    if (selectedDossierId) {
+      window.localStorage.setItem(SELECTED_DOSSIER_STORAGE_KEY, selectedDossierId);
+    }
+  }, [selectedDossierId]);
 
   useEffect(() => {
     let active = true;
