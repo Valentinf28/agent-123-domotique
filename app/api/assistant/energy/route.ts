@@ -11,6 +11,7 @@ import {
 } from "../../../../lib/energy-coach";
 import { tariffGuidance } from "../../../../lib/energy-insights";
 import { executableCoachProposal } from "../../../../lib/coach-guardrails";
+import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
 
 type AutomationProposal = {
   name: string;
@@ -112,31 +113,6 @@ function localReply(
       "Que puis-je économiser ce mois-ci ?",
       "Quand recharger la voiture ?",
       "Comment augmenter mon autoconsommation ?",
-    ],
-  };
-}
-
-function poolHeatPumpReply(message: string): CoachReply | null {
-  const normalized = message.toLocaleLowerCase("fr-FR");
-  const mentionsHeatPump = /\bpac\b|pompe\s+à\s+chaleur/.test(normalized);
-  const mentionsEnergyConcern = /batterie|solaire|soir|nuit|trop longtemps|inutile|32\s*°?c/.test(normalized);
-  if (!mentionsHeatPump || !mentionsEnergyConcern) return null;
-  return {
-    answer: [
-      "Votre constat est cohérent : si l’eau avait déjà atteint 32 °C, laisser la PAC piscine fonctionner après la production solaire a utilisé la batterie sans bénéfice immédiat.",
-      "Je propose une coupure de sécurité au coucher du soleil. Le chauffage pourra reprendre en journée si la température repasse sous la consigne.",
-      "Règle suggérée : au coucher du soleil, éteindre la PAC piscine.",
-    ].join(" "),
-    automationProposal: {
-      name: "Arrêt nocturne de la PAC piscine",
-      trigger: "Au coucher du soleil",
-      action: "Éteindre la PAC piscine",
-      rationale: "Éviter de solliciter la batterie lorsque la piscine a déjà atteint sa consigne.",
-    },
-    suggestedQuestions: [
-      "À quelle heure relancer la PAC demain ?",
-      "Quelle réserve batterie conserver le soir ?",
-      "Comment éviter une surchauffe de la piscine ?",
     ],
   };
 }
@@ -343,7 +319,7 @@ export async function POST(request: Request) {
       ) as ConversationMessage[]
       : [];
     const needsDeterministicFinancialAnswer = /mois|économ|econom|bilan|heures?\s+creuses?|tarif|facture|prix/i.test(message);
-    const reply = poolHeatPumpReply(message) ??
+    const reply = poolHeatPumpCoachReply(message) ??
       (needsDeterministicFinancialAnswer ? localReply(message, context) : null) ??
       await openAiReply(message, context, conversation) ??
       localReply(message, context);

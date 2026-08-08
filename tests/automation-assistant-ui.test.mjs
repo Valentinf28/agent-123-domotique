@@ -7,6 +7,7 @@ const proposeRoute = fs.readFileSync(new URL("../app/api/assistant/automation/pr
 const confirmRoute = fs.readFileSync(new URL("../app/api/assistant/automation/confirm/route.ts", import.meta.url), "utf8");
 const statusRoute = fs.readFileSync(new URL("../app/api/assistant/automation/status/route.ts", import.meta.url), "utf8");
 const energyRoute = fs.readFileSync(new URL("../app/api/assistant/energy/route.ts", import.meta.url), "utf8");
+const poolHeatPumpCoach = fs.readFileSync(new URL("../lib/pool-heat-pump-coach.ts", import.meta.url), "utf8");
 
 test("impose un aperçu et une confirmation séparée avant toute création", () => {
   assert.match(portal, /APERÇU À CONFIRMER · NON ACTIVÉ/);
@@ -49,8 +50,8 @@ test("le coach distingue la PAC de la filtration et répond avec une action conc
   assert.match(energyRoute, /90 mots maximum/);
   assert.match(energyRoute, /Distingue toujours la filtration de la PAC piscine/);
   assert.match(energyRoute, /mesuresActuelles décrivent uniquement l’instant présent/);
-  assert.match(energyRoute, /Arrêt nocturne de la PAC piscine/);
-  assert.match(energyRoute, /Au coucher du soleil/);
+  assert.match(poolHeatPumpCoach, /Arrêt nocturne de la PAC piscine/);
+  assert.match(poolHeatPumpCoach, /Au coucher du soleil/);
   assert.match(portal, /conversation: coachMessages\.slice/);
 });
 
