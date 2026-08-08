@@ -1518,6 +1518,10 @@ def deye_vehicle_export_automation(
         "connected", "paused", "paused_by_scheduler", "need_auth", "locked",
         "suspended_ev", "suspended_evse",
     )
+    physically_connected_states = (
+        "starting", "finishing", "stopped", "complete", "no_power",
+        *charging_states, *waiting_states,
+    )
     charging_template = (
         "{{ states('" + charger_state_entity_id + "') | lower in "
         + str(list(charging_states)) + " }}"
@@ -1530,6 +1534,10 @@ def deye_vehicle_export_automation(
     waiting_template = (
         "{{ states('" + charger_state_entity_id + "') | lower in "
         + str(list(waiting_states)) + " }}"
+    )
+    physically_unplugged_template = (
+        "{{ states('" + charger_state_entity_id + "') | lower not in "
+        + str(list(physically_connected_states)) + " }}"
     )
     battery_level_entity_id = str(payload.get("batteryLevelEntityId", "")).strip()
     minimum_battery_percent = int(payload.get("minimumBatteryPercent", 95))
@@ -1568,6 +1576,11 @@ def deye_vehicle_export_automation(
                 "seconds": "0",
                 "id": "mesure_surplus",
             },
+            {
+                "platform": "time_pattern",
+                "seconds": "/15",
+                "id": "securite_debranchement",
+            },
         ],
         "condition": [],
         "action": [{
@@ -1597,6 +1610,22 @@ def deye_vehicle_export_automation(
                             + str(list(charging_states)) + ") }}"
                         ),
                     }],
+                    "sequence": [{
+                        "service": "switch.turn_off",
+                        "target": {"entity_id": export_switch_entity_id},
+                    }],
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": ["securite_debranchement"],
+                        },
+                        {
+                            "condition": "template",
+                            "value_template": physically_unplugged_template,
+                        },
+                    ],
                     "sequence": [{
                         "service": "switch.turn_off",
                         "target": {"entity_id": export_switch_entity_id},

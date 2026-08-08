@@ -50,6 +50,7 @@ class DeyeExportControlTests(unittest.TestCase):
         self.assertEqual(automation["trigger"][1]["for"]["seconds"], 3)
         self.assertEqual(automation["trigger"][2]["for"]["seconds"], 10)
         self.assertEqual(automation["trigger"][3]["minutes"], "/5")
+        self.assertEqual(automation["trigger"][4]["seconds"], "/15")
         choices = automation["action"][0]["choose"]
         self.assertEqual(choices[0]["sequence"][0], {
             "service": "switch.turn_on",
@@ -59,9 +60,11 @@ class DeyeExportControlTests(unittest.TestCase):
             "service": "switch.turn_off",
             "target": {"entity_id": "switch.onduleur_solar_sell"},
         })
-        self.assertEqual(choices[2]["sequence"][0]["service"], "switch.turn_on")
-        self.assertEqual(choices[2]["sequence"][1]["delay"]["seconds"], 35)
-        self.assertEqual(choices[2]["sequence"][-1]["service"], "switch.turn_off")
+        self.assertEqual(choices[2]["sequence"][0]["service"], "switch.turn_off")
+        self.assertIn("not in", choices[2]["conditions"][1]["value_template"])
+        self.assertEqual(choices[3]["sequence"][0]["service"], "switch.turn_on")
+        self.assertEqual(choices[3]["sequence"][1]["delay"]["seconds"], 35)
+        self.assertEqual(choices[3]["sequence"][-1]["service"], "switch.turn_off")
 
     def test_policy_rejects_an_unrelated_switch(self) -> None:
         current_payload = payload()
