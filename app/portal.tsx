@@ -90,6 +90,18 @@ type CoachWeekSummary = {
   historySamples: number;
   observedDays: number;
 };
+type CoachActionPlan = {
+  status: "learning" | "ready";
+  learningDays: number;
+  targetDays: 14;
+  daysRemaining: number;
+  title: string;
+  summary: string;
+  actions: Array<{
+    id: string; priority: number; goal: "money" | "battery" | "solar";
+    title: string; description: string; impact: string; nextStep: string;
+  }>;
+};
 type SolarForecastSummary = {
   rawTodayWh: number;
   prudentTodayWh: number;
@@ -2305,6 +2317,7 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
   const [consumptionBreakdown, setConsumptionBreakdown] = useState<ConsumptionBreakdownItem[]>([]);
   const [solarForecast, setSolarForecast] = useState<SolarForecastSlot[]>([]);
   const [coachWeek, setCoachWeek] = useState<CoachWeekSummary | null>(null);
+  const [coachActionPlan, setCoachActionPlan] = useState<CoachActionPlan | null>(null);
   const [solarForecastSummary, setSolarForecastSummary] = useState<SolarForecastSummary | null>(null);
   const [predictivePlan, setPredictivePlan] = useState<PredictiveEnergyPlan | null>(null);
   const [predictivePlans, setPredictivePlans] = useState<PredictiveEnergyPlan[]>([]);
@@ -2390,6 +2403,9 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
               }
               : null,
           );
+          setCoachActionPlan(payload?.coach?.actionPlan?.status === "ready" || payload?.coach?.actionPlan?.status === "learning"
+            ? payload.coach.actionPlan
+            : null);
           const summary = payload?.coach?.solarForecast;
           setSolarForecastSummary(
             summary && Number.isFinite(summary.rawTodayWh) && Number.isFinite(summary.prudentTodayWh)
@@ -2600,6 +2616,15 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       <article><small>Production solaire</small><strong>{forecastKwh(coachWeek.productionWh)}</strong><span>Énergie produite</span></article>
       <article><small>Consommation</small><strong>{forecastKwh(coachWeek.consumptionWh)}</strong><span>Énergie utilisée</span></article>
       <article><small>Couverture solaire</small><strong>{coachWeek.consumptionWh > 0 ? Math.min(100, Math.round(coachWeek.productionWh / coachWeek.consumptionWh * 100)) : 0} %</strong><span>Indicateur théorique</span></article>
+    </section>}
+    {coachActionPlan && <section className={`coach-action-plan ${coachActionPlan.status}`} aria-label="Plan d’action du Coach">
+      <header><span>◎</span><div><small>{coachActionPlan.status === "ready" ? "APRÈS 14 JOURS D’ANALYSE" : `APPRENTISSAGE · JOUR ${coachActionPlan.learningDays} SUR 14`}</small><h3>{coachActionPlan.title}</h3><p>{coachActionPlan.summary}</p></div>{coachActionPlan.status === "ready" && <em>Plan disponible</em>}</header>
+      {coachActionPlan.status === "learning" ? <div className="coach-learning-progress">
+        <div><i style={{ width: `${Math.round(coachActionPlan.learningDays / coachActionPlan.targetDays * 100)}%` }} /></div>
+        <p><strong>{coachActionPlan.daysRemaining} jour{coachActionPlan.daysRemaining > 1 ? "s" : ""} d’analyse restant{coachActionPlan.daysRemaining > 1 ? "s" : ""}</strong><span>Votre premier plan sera disponible avant la fin du mois offert.</span></p>
+      </div> : <div className="coach-action-list">{coachActionPlan.actions.map((action) => <article key={action.id}>
+        <b>{action.priority}</b><div><small>{action.goal === "money" ? "ÉCONOMIES" : action.goal === "battery" ? "BATTERIE" : "SOLAIRE"}</small><h4>{action.title}</h4><p>{action.description}</p><em>{action.impact}</em></div><button type="button" onClick={() => void askCoach(action.nextStep)}>Passer à l’action →</button>
+      </article>)}</div>}
     </section>}
     <section className="automation-assistant" id="assistant-domotique" aria-label="Assistant de création d’automatisations">
       <header>

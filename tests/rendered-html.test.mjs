@@ -441,6 +441,9 @@ test("inclut les assistants et le nouveau tarif dans le forfait client", async (
   assert.match(portal, /Démarrer avec le Coach énergie/);
   assert.match(portal, /Réduisez votre facture, protégez la batterie/i);
   assert.match(portal, /PLAN D’ACTION PERSONNALISÉ/i);
+  assert.match(portal, /APPRENTISSAGE · JOUR/i);
+  assert.match(portal, /Votre premier plan sera disponible avant la fin du mois offert/i);
+  assert.match(portal, /Passer à l’action/i);
   assert.match(portal, /mesure réelle.*estimation/i);
   assert.match(portal, /Bilan énergétique récent/);
   assert.match(portal, /coachWeek\.observedDays/);

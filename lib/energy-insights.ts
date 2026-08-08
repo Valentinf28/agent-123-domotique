@@ -36,6 +36,88 @@ export function tariffGuidance(
   return "Le contrat est en option Base : décaler un usage ne réduit pas son prix à lui seul. Pour économiser, il faut prioriser le solaire disponible ou réduire la consommation. Sans prix du kWh renseigné, le gain en euros ne peut pas être calculé honnêtement.";
 }
 
+export type CoachActionPlan = {
+  status: "learning" | "ready";
+  learningDays: number;
+  targetDays: 14;
+  daysRemaining: number;
+  title: string;
+  summary: string;
+  actions: Array<{
+    id: string;
+    priority: number;
+    goal: EnergyInsight["goal"];
+    title: string;
+    description: string;
+    impact: string;
+    nextStep: string;
+  }>;
+};
+
+export function buildCoachActionPlan(input: {
+  learningDays: number;
+  historySamples: number;
+  insights: EnergyInsight[];
+  batteryReservePercent: number;
+  tariffPlan: "base" | "hp_hc";
+}): CoachActionPlan {
+  const learningDays = Math.max(1, Math.min(14, Math.floor(input.learningDays)));
+  const ready = learningDays >= 14 && input.historySamples >= 14 * 24 * 6;
+  if (!ready) return {
+    status: "learning",
+    learningDays,
+    targetDays: 14,
+    daysRemaining: Math.max(0, 14 - learningDays),
+    title: "Votre premier plan se prépare",
+    summary: "Le Coach apprend les rythmes de la maison avant de recommander des changements durables.",
+    actions: [],
+  };
+
+  const fallback: Record<EnergyInsight["goal"], EnergyInsight> = {
+    money: {
+      id: "plan-flexible-loads", icon: "€", tone: "tip", goal: "money", confidence: "estimated",
+      title: "Décaler les usages flexibles",
+      description: input.tariffPlan === "hp_hc"
+        ? "Utiliser d’abord le solaire, puis les heures creuses configurées lorsque la production ne suffit pas."
+        : "Utiliser d’abord le solaire : avec l’option Base, un simple changement d’heure ne réduit pas le prix du kWh.",
+      impact: "Achats au réseau à réduire", action: "Quels appareils peut-on décaler ?",
+    },
+    battery: {
+      id: "plan-battery-reserve", icon: "▣", tone: "attention", goal: "battery", confidence: "measured",
+      title: "Protéger la réserve du soir",
+      description: `Conserver le garde-fou batterie réglé à ${input.batteryReservePercent} % et reporter les usages non urgents quand il n’y a plus de solaire.`,
+      impact: `Réserve minimale : ${input.batteryReservePercent} %`, action: "Quels usages préserver en priorité ?",
+    },
+    solar: {
+      id: "plan-solar-priority", icon: "☀", tone: "positive", goal: "solar", confidence: "estimated",
+      title: "Concentrer les cycles sur le solaire",
+      description: "Placer PAC piscine, chauffe-eau et recharge sur les créneaux où la production couvre réellement leur puissance.",
+      impact: "Autoconsommation à augmenter", action: "Quel est le meilleur créneau solaire ?",
+    },
+  };
+  const actions = (["money", "battery", "solar"] as const).map((goal, index) => {
+    const insight = input.insights.find((candidate) => candidate.goal === goal) ?? fallback[goal];
+    return {
+      id: insight.id,
+      priority: index + 1,
+      goal,
+      title: insight.title,
+      description: insight.description,
+      impact: insight.impact,
+      nextStep: insight.action,
+    };
+  });
+  return {
+    status: "ready",
+    learningDays,
+    targetDays: 14,
+    daysRemaining: 0,
+    title: "Votre plan d’action des 30 prochains jours",
+    summary: "Trois actions prioritaires, calculées après deux semaines de mesures et réévaluées avec la maison.",
+    actions,
+  };
+}
+
 const average = (values: number[]) => values.length
   ? values.reduce((sum, value) => sum + value, 0) / values.length
   : 0;

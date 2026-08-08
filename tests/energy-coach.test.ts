@@ -5,7 +5,7 @@ import {
   type EnergyInventoryItem,
 } from "../lib/energy-snapshot.ts";
 import { consumptionBreakdownFromInventory } from "../lib/consumption-breakdown.ts";
-import { buildEnergyInsights, tariffGuidance } from "../lib/energy-insights.ts";
+import { buildCoachActionPlan, buildEnergyInsights, tariffGuidance } from "../lib/energy-insights.ts";
 
 const entity = (
   entityId: string,
@@ -177,4 +177,50 @@ test("ne prétend pas qu'un simple décalage fait économiser avec l'option Base
 
   assert.match(advice, /décaler un usage ne réduit pas son prix/);
   assert.match(advice, /prioriser le solaire/);
+});
+
+test("prépare le plan pendant les quatorze premiers jours", () => {
+  const plan = buildCoachActionPlan({
+    learningDays: 8,
+    historySamples: 1800,
+    insights: [],
+    batteryReservePercent: 25,
+    tariffPlan: "base",
+  });
+
+  assert.equal(plan.status, "learning");
+  assert.equal(plan.daysRemaining, 6);
+  assert.deepEqual(plan.actions, []);
+});
+
+test("débloque après deux semaines un plan 30 jours avec trois priorités", () => {
+  const plan = buildCoachActionPlan({
+    learningDays: 14,
+    historySamples: 3000,
+    insights: buildEnergyInsights(snapshot({
+      batteryPercent: 55,
+      batteryWatts: 900,
+      dailyProductionWh: 7500,
+      dailyConsumptionWh: 10000,
+    }), []),
+    batteryReservePercent: 25,
+    tariffPlan: "hp_hc",
+  });
+
+  assert.equal(plan.status, "ready");
+  assert.match(plan.title, /30 prochains jours/);
+  assert.deepEqual(plan.actions.map((action) => action.goal), ["money", "battery", "solar"]);
+  assert.equal(plan.actions.length, 3);
+});
+
+test("ne débloque pas un plan sur un historique trop incomplet", () => {
+  const plan = buildCoachActionPlan({
+    learningDays: 14,
+    historySamples: 200,
+    insights: [],
+    batteryReservePercent: 25,
+    tariffPlan: "base",
+  });
+
+  assert.equal(plan.status, "learning");
 });

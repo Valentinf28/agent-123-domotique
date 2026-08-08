@@ -25,6 +25,7 @@ import {
 import { HOUSE_BINDINGS } from "./house-bindings.generated";
 import { resolveEntityCandidate } from "./entity-resolution.generated.js";
 import { buildEnergyInsights as buildPrioritizedEnergyInsights } from "./energy-insights";
+import { buildCoachActionPlan } from "./energy-insights";
 import type { OffPeakPeriod } from "./energy-insights";
 export {
   ASSISTANT_MONTHLY_LIMIT,
@@ -408,15 +409,17 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
   if (!selected) throw new Error("CONNECTOR_NOT_CONFIGURED");
   const inventory = parseInventory(selected.agent.inventoryJson);
   const current = energySnapshotFromInventory(inventory);
-  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const now = new Date();
+  const since = new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000).toISOString();
   const history = await getDb().select().from(energySnapshots)
     .where(and(
       eq(energySnapshots.dossierId, selected.dossier.id),
       gte(energySnapshots.capturedAt, since),
     ))
     .orderBy(desc(energySnapshots.capturedAt))
-    // 7 jours complets à raison d'un échantillon toutes les 5 minutes.
-    .limit(7 * 24 * 12 + 12);
+    // Quinze jours permettent de confirmer deux semaines pleines malgré les
+    // décalages entre le premier relevé et l'heure de consultation.
+    .limit(15 * 24 * 12 + 12);
   const forecast = solarForecastFromInventory(inventory);
   const adaptiveForecast = buildAdaptiveSolarForecast({
     now: new Date(),
@@ -509,6 +512,23 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     consumptionWh: total.consumptionWh + day.consumptionWh,
     observedDays: total.observedDays,
   }), { productionWh: 0, consumptionWh: 0, observedDays: Math.max(1, daily.size) });
+  const firstCapturedAt = history.length
+    ? Math.min(...history.map((sample) => Date.parse(sample.capturedAt)))
+    : now.getTime();
+  const learningDays = Math.max(1, Math.floor((now.getTime() - firstCapturedAt) / (24 * 60 * 60 * 1000)));
+  const insights = buildPrioritizedEnergyInsights(
+    current,
+    history,
+    consumptionBreakdown,
+    selected.dossier.batteryReservePercent,
+  );
+  const actionPlan = buildCoachActionPlan({
+    learningDays,
+    historySamples: history.length,
+    insights,
+    batteryReservePercent: selected.dossier.batteryReservePercent,
+    tariffPlan: selected.dossier.tariffPlan === "hp_hc" ? "hp_hc" : "base",
+  });
   return {
     dossier: {
       id: selected.dossier.id,
@@ -523,6 +543,7 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     current,
     historySamples: history.length,
     week,
+    actionPlan,
     solarForecast: {
       available: forecast.length > 0,
       source: "Prévision météo locale",
@@ -539,12 +560,7 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     predictivePlan,
     predictivePlans,
     consumptionBreakdown,
-    insights: buildPrioritizedEnergyInsights(
-      current,
-      history,
-      consumptionBreakdown,
-      selected.dossier.batteryReservePercent,
-    ),
+    insights,
   };
 }
 

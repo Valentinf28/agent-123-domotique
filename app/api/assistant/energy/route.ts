@@ -10,6 +10,7 @@ import {
   refundAssistantRequest,
 } from "../../../../lib/energy-coach";
 import { tariffGuidance } from "../../../../lib/energy-insights";
+import { executableCoachProposal } from "../../../../lib/coach-guardrails";
 
 type AutomationProposal = {
   name: string;
@@ -138,16 +139,6 @@ function poolHeatPumpReply(message: string): CoachReply | null {
       "Comment éviter une surchauffe de la piscine ?",
     ],
   };
-}
-
-function executableProposal(proposal: AutomationProposal | null) {
-  if (!proposal) return null;
-  const trigger = proposal.trigger.trim();
-  const action = proposal.action.trim();
-  const hasSupportedTrigger = /\b(?:[01]?\d|2[0-3])\s*(?:h|:)\s*[0-5]\d\b/i.test(trigger) ||
-    /\b(?:lever|coucher)\s+(?:du\s+)?soleil\b/i.test(trigger);
-  const hasConcreteAction = /\b(?:allum|étein|etein|active|désactive|desactive|ouvre|ferme|démarre|demarre|arrête|arrete|coupe)\w*\b/i.test(action);
-  return hasSupportedTrigger && hasConcreteAction ? proposal : null;
 }
 
 function responseText(payload: {
@@ -285,7 +276,7 @@ async function openAiReply(
     }
     return safeReply({
       ...parsed,
-      automationProposal: executableProposal(parsed.automationProposal),
+      automationProposal: executableCoachProposal(parsed.automationProposal),
     });
   } catch {
     await refundAssistantRequest(context.dossier.id, "energy").catch(() => undefined);
@@ -310,6 +301,7 @@ export async function GET(request: Request) {
     return Response.json({
       coach: {
         insights: context.insights,
+        actionPlan: context.actionPlan,
         historySamples: context.historySamples,
         week: context.week,
         solarForecast: context.solarForecast,
@@ -350,7 +342,9 @@ export async function POST(request: Request) {
           : []
       ) as ConversationMessage[]
       : [];
+    const needsDeterministicFinancialAnswer = /mois|économ|econom|bilan|heures?\s+creuses?|tarif|facture|prix/i.test(message);
     const reply = poolHeatPumpReply(message) ??
+      (needsDeterministicFinancialAnswer ? localReply(message, context) : null) ??
       await openAiReply(message, context, conversation) ??
       localReply(message, context);
     return Response.json({ reply: safeReply(reply) }, { headers: { "Cache-Control": "no-store" } });
