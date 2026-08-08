@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.50
+
+- Vérifie toutes les 15 secondes que la voiture est réellement présente sur la borne Lektrico.
+- Force Solar Sell à l’arrêt pour tout état débranché, inconnu ou inattendu, même si Home Assistant a raté la transition initiale.
+- Préserve les fenêtres de détection du surplus lorsque la voiture est bien branchée.
+
 ## 0.5.49
 
 - Coupe `Solar Sell` dès que la voiture ne charge pas, même lorsqu’elle reste branchée.
