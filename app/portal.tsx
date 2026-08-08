@@ -2467,7 +2467,14 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       const response = await fetch("/api/assistant/automation/propose", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ message, dossierPublicId: dossierId }),
+        body: JSON.stringify({
+          message,
+          dossierPublicId: dossierId,
+          conversation: coachMessages.slice(-6).map((item) => ({
+            role: item.role,
+            text: item.text,
+          })),
+        }),
       });
       const payload = await response.json() as AssistantAutomationPreview;
       setAssistantPreview(payload);

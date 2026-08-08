@@ -24,6 +24,27 @@ type CoachReply = {
   suggestedQuestions: string[];
 };
 
+type ConversationMessage = { role: "client" | "coach"; text: string };
+
+function brandSafe(value: string) {
+  return value
+    .replace(/green box/gi, "box 1.2.3 Home")
+    .replace(/home assistant/gi, "box 1.2.3 Home");
+}
+
+function safeReply(reply: CoachReply): CoachReply {
+  return {
+    answer: brandSafe(reply.answer),
+    automationProposal: reply.automationProposal ? {
+      name: brandSafe(reply.automationProposal.name),
+      trigger: brandSafe(reply.automationProposal.trigger),
+      action: brandSafe(reply.automationProposal.action),
+      rationale: brandSafe(reply.automationProposal.rationale),
+    } : null,
+    suggestedQuestions: reply.suggestedQuestions.map(brandSafe).slice(0, 3),
+  };
+}
+
 function watts(value: number) {
   return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.max(0, value))} W`;
 }
@@ -92,6 +113,31 @@ function localReply(
   };
 }
 
+function poolHeatPumpReply(message: string): CoachReply | null {
+  const normalized = message.toLocaleLowerCase("fr-FR");
+  const mentionsHeatPump = /\bpac\b|pompe\s+à\s+chaleur/.test(normalized);
+  const mentionsEnergyConcern = /batterie|solaire|soir|nuit|trop longtemps|inutile|32\s*°?c/.test(normalized);
+  if (!mentionsHeatPump || !mentionsEnergyConcern) return null;
+  return {
+    answer: [
+      "Votre constat est cohérent : si l’eau avait déjà atteint 32 °C, laisser la PAC piscine fonctionner après la production solaire a utilisé la batterie sans bénéfice immédiat.",
+      "Je propose une coupure de sécurité au coucher du soleil. Le chauffage pourra reprendre en journée si la température repasse sous la consigne.",
+      "Règle suggérée : au coucher du soleil, éteindre la PAC piscine.",
+    ].join(" "),
+    automationProposal: {
+      name: "Arrêt nocturne de la PAC piscine",
+      trigger: "Au coucher du soleil",
+      action: "Éteindre la PAC piscine",
+      rationale: "Éviter de solliciter la batterie lorsque la piscine a déjà atteint sa consigne.",
+    },
+    suggestedQuestions: [
+      "À quelle heure relancer la PAC demain ?",
+      "Quelle réserve batterie conserver le soir ?",
+      "Comment éviter une surchauffe de la piscine ?",
+    ],
+  };
+}
+
 function executableProposal(proposal: AutomationProposal | null) {
   if (!proposal) return null;
   const trigger = proposal.trigger.trim();
@@ -115,6 +161,7 @@ function responseText(payload: {
 async function openAiReply(
   message: string,
   context: Awaited<ReturnType<typeof getEnergyCoachContext>>,
+  conversation: ConversationMessage[] = [],
 ): Promise<CoachReply | null> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) return null;
@@ -143,13 +190,19 @@ async function openAiReply(
         max_output_tokens: 700,
         instructions: [
           "Tu es le Coach énergie de 1.2.3 Home. Réponds en français, simplement et sans jargon.",
+          "Réponds en 90 mots maximum. Commence par le constat utile, puis donne une proposition concrète. Évite les paragraphes répétitifs.",
           "Utilise exclusivement les mesures et analyses fournies. Ne fabrique jamais une économie, un tarif, une présence ou une mesure manquante.",
+          "Les mesuresActuelles décrivent uniquement l’instant présent. Ne les utilise jamais pour chiffrer ou expliquer un événement passé raconté par le client.",
+          "Distingue toujours la filtration de la PAC piscine : ce sont deux équipements différents et leurs puissances ne sont pas interchangeables.",
+          "Quand le client décrit lui-même un fait passé, présente-le comme son constat, pas comme une mesure vérifiée par le système.",
+          "Si la piscine était déjà à sa consigne et que la PAC a continué après le solaire, recommande une coupure au coucher du soleil et propose cette règle si le client demande une solution.",
           "Présente les économies comme des estimations lorsqu’elles le sont.",
           "Tu peux proposer une automatisation, mais tu ne peux jamais dire qu’elle est créée, activée ou appliquée.",
           "Ne fournis une automatisation que si le déclencheur contient une heure précise ou le lever/coucher du soleil, et si l’action nomme clairement l’équipement et l’ordre à exécuter.",
           "Pour une optimisation dépendant du surplus, de la batterie, de la météo ou d’une prévision, donne uniquement un conseil et laisse automationProposal à null.",
           "Toute automatisation reste un brouillon jusqu’à confirmation explicite du client dans l’interface.",
           "Ne révèle aucun identifiant technique ni donnée interne.",
+          "N’emploie jamais les expressions Green Box ou Home Assistant. Dis uniquement box 1.2.3 Home si la box doit être nommée.",
           "Si une intervention électrique ou une modification matérielle est nécessaire, recommande un professionnel.",
         ].join("\n"),
         input: [{
@@ -158,6 +211,7 @@ async function openAiReply(
             type: "input_text",
             text: JSON.stringify({
               question: message,
+              echangesRecents: conversation,
               maison: context.dossier.name,
               mesuresActuelles: context.current,
               bilanSeptJours: context.week,
@@ -227,10 +281,10 @@ async function openAiReply(
       await refundAssistantRequest(context.dossier.id, "energy");
       return null;
     }
-    return {
+    return safeReply({
       ...parsed,
       automationProposal: executableProposal(parsed.automationProposal),
-    };
+    });
   } catch {
     await refundAssistantRequest(context.dossier.id, "energy").catch(() => undefined);
     return null;
@@ -273,7 +327,11 @@ export async function POST(request: Request) {
     return Response.json({ error: "Authentification requise" }, { status: 401 });
   }
   try {
-    const body = await request.json() as { message?: string; dossierPublicId?: string };
+    const body = await request.json() as {
+      message?: string;
+      dossierPublicId?: string;
+      conversation?: ConversationMessage[];
+    };
     const message = String(body.message ?? "").trim().slice(0, 600);
     if (message.length < 3) {
       return Response.json({ error: "Question trop courte" }, { status: 400 });
@@ -283,9 +341,17 @@ export async function POST(request: Request) {
       return Response.json({ error: "Accès refusé pour cette maison" }, { status: 403 });
     }
     const context = await getEnergyCoachContext(body.dossierPublicId);
-    const reply = await openAiReply(message, context) ??
+    const conversation = Array.isArray(body.conversation)
+      ? body.conversation.slice(-6).flatMap((item) =>
+        item && ["client", "coach"].includes(item.role) && typeof item.text === "string"
+          ? [{ role: item.role, text: item.text.trim().slice(0, 600) }]
+          : []
+      ) as ConversationMessage[]
+      : [];
+    const reply = poolHeatPumpReply(message) ??
+      await openAiReply(message, context, conversation) ??
       localReply(message, context);
-    return Response.json({ reply }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ reply: safeReply(reply) }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return Response.json({ error: "Le coach ne peut pas répondre pour le moment" }, { status: 502 });
   }

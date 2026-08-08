@@ -6,6 +6,7 @@ const portal = fs.readFileSync(new URL("../app/portal.tsx", import.meta.url), "u
 const proposeRoute = fs.readFileSync(new URL("../app/api/assistant/automation/propose/route.ts", import.meta.url), "utf8");
 const confirmRoute = fs.readFileSync(new URL("../app/api/assistant/automation/confirm/route.ts", import.meta.url), "utf8");
 const statusRoute = fs.readFileSync(new URL("../app/api/assistant/automation/status/route.ts", import.meta.url), "utf8");
+const energyRoute = fs.readFileSync(new URL("../app/api/assistant/energy/route.ts", import.meta.url), "utf8");
 
 test("impose un aperçu et une confirmation séparée avant toute création", () => {
   assert.match(portal, /APERÇU À CONFIRMER · NON ACTIVÉ/);
@@ -42,6 +43,15 @@ test("nomme toujours la box avec la marque 1.2.3 Home", () => {
   assert.doesNotMatch(proposeRoute, /Green Box/i);
   assert.doesNotMatch(confirmRoute, /Green Box/i);
   assert.match(portal, /box 1\.2\.3 Home/);
+});
+
+test("le coach distingue la PAC de la filtration et répond avec une action concise", () => {
+  assert.match(energyRoute, /90 mots maximum/);
+  assert.match(energyRoute, /Distingue toujours la filtration de la PAC piscine/);
+  assert.match(energyRoute, /mesuresActuelles décrivent uniquement l’instant présent/);
+  assert.match(energyRoute, /Arrêt nocturne de la PAC piscine/);
+  assert.match(energyRoute, /Au coucher du soleil/);
+  assert.match(portal, /conversation: coachMessages\.slice/);
 });
 
 test("présente des exemples de règles réellement prises en charge", () => {
