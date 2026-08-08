@@ -23,10 +23,14 @@ export async function GET(request: Request) {
     eq(agentCommands.dossierId, dossier.id),
     eq(agentCommands.action, "ha.automation.create"),
   )).orderBy(desc(agentCommands.id)).limit(10);
-  const recentThreshold = Date.now() - 15 * 60 * 1000;
   return Response.json({ commands: commands.flatMap((command) => {
     const createdAt = Date.parse(command.createdAt);
-    if (Number.isFinite(createdAt) && createdAt < recentThreshold) return [];
+    const visibilityMs = command.status === "failed"
+      ? 24 * 60 * 60 * 1000
+      : command.status === "completed"
+      ? 15 * 60 * 1000
+      : 60 * 60 * 1000;
+    if (Number.isFinite(createdAt) && createdAt < Date.now() - visibilityMs) return [];
     try {
       const rule = JSON.parse(command.payloadJson) as Record<string, unknown>;
       return [{
