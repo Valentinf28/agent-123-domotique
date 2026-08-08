@@ -10,6 +10,7 @@ import {
 } from "../../../../lib/client-modules.js";
 import { subscriptionSummary } from "../../../../lib/subscription";
 import { analyzeHouseBindings } from "../../../../shared/house-binding-discovery.js";
+import { getEnergyCoachContext } from "../../../../lib/energy-coach";
 
 const viewCatalog = {
   home: { key: "home", label: "Maison", icon: "home-variant-outline", path: "/app" },
@@ -97,6 +98,7 @@ export async function GET(request: Request) {
     essentialKeys: [...Object.keys(ENERGY_PROFILE), ...Object.keys(HOUSE_BINDINGS)],
     overrides: parseObject(dossier.entityBindingsJson),
   });
+  const coachContext = await getEnergyCoachContext(dossier.publicId).catch(() => null);
   return Response.json({
     installationId: dossier.publicId,
     houseName: dossier.customerName || "Ma Maison",
@@ -109,6 +111,8 @@ export async function GET(request: Request) {
     views,
     bindings: bindingReport.bindings,
     measuredLoads: measuredLoads(dossier.flexibleLoadsJson),
+    coachActionPlan: coachContext?.actionPlan ?? null,
+    coachInsights: coachContext?.insights ?? [],
     configuredDevices: configuredDevices
       .filter((device) => Boolean(device.matchedEntityId))
       .map((device) => ({

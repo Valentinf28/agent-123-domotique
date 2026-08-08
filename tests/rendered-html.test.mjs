@@ -389,6 +389,7 @@ test("provisionne l’application avec un accès relayé propre à chaque maison
   assert.match(mobileConfiguration, /configurationTokenHash/);
   assert.match(mobileConfiguration, /normalizeEnabledModules/);
   assert.match(mobileConfiguration, /offPeakPeriods/);
+  assert.match(mobileConfiguration, /coachActionPlan: coachContext\?\.actionPlan/);
 });
 
 test("applique au portail les mêmes onglets configurés que sur le mobile", async () => {
