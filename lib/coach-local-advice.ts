@@ -29,3 +29,16 @@ export function batterySavingsGuidance(pricesConfigured: boolean) {
     : 'Le prix du kWh n’est pas renseigné et le gain ne peut pas être converti honnêtement en euros.';
   return `Pour calculer l’économie apportée par la batterie, il faut mesurer l’énergie qu’elle restitue à la place d’un achat réseau, puis déduire ses pertes. ${price} Le Coach peut néanmoins protéger la réserve et éviter les décharges pour des usages reportables.`;
 }
+
+export function unavailableEquipmentGuidance(
+  intent: 'vehicle' | 'hot-water',
+  capabilities: { vehicle: boolean; hotWater: boolean },
+) {
+  if (intent === 'vehicle' && !capabilities.vehicle) {
+    return 'Aucune borne ni voiture compatible n’est actuellement remontée par la box 1.2.3 Home. Le Coach ne peut pas confirmer une recharge ni proposer une règle avant la configuration de l’équipement.';
+  }
+  if (intent === 'hot-water' && !capabilities.hotWater) {
+    return 'Aucun chauffe-eau pilotable n’est actuellement remonté par la box 1.2.3 Home. Le Coach ne peut donc ni confirmer son état ni proposer une automatisation. Vérifiez d’abord sa présence dans les équipements.';
+  }
+  return null;
+}

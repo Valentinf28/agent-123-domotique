@@ -27,6 +27,7 @@ import { resolveEntityCandidate } from "./entity-resolution.generated.js";
 import { buildEnergyInsights as buildPrioritizedEnergyInsights } from "./energy-insights";
 import { buildCoachActionPlan } from "./energy-insights";
 import type { OffPeakPeriod } from "./energy-insights";
+import { equipmentCapabilitiesFromInventory } from "./equipment-capabilities";
 export {
   ASSISTANT_MONTHLY_LIMIT,
   assistantQuotaAllows,
@@ -457,6 +458,7 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     configuredLoads,
     current.homeWatts,
   );
+  const equipmentCapabilities = equipmentCapabilitiesFromInventory(inventory);
   const loadsForPlanning = configuredLoads.length ? configuredLoads : [{
     id: "configuration",
     name: "Appareils flexibles",
@@ -540,6 +542,7 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
       offPeakPeriods: offPeakPeriodsFrom(selected.dossier.offPeakPeriodsJson),
       pricesConfigured: false,
     },
+    equipmentCapabilities,
     current,
     historySamples: history.length,
     week,

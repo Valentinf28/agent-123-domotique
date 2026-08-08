@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { batterySavingsGuidance, observedPeriodLabel, solarCoachGuidance } from '../lib/coach-local-advice';
+import { batterySavingsGuidance, observedPeriodLabel, solarCoachGuidance, unavailableEquipmentGuidance } from '../lib/coach-local-advice';
 
 test('annonce exactement la période réellement observée', () => {
   assert.equal(observedPeriodLabel(1), 'Sur la journée disponible');
@@ -34,4 +34,11 @@ test('n’invente pas le gain financier de la batterie', () => {
   assert.match(answer, /prix du kWh n’est pas renseigné/i);
   assert.match(answer, /ne peut pas être converti honnêtement en euros/i);
   assert.match(answer, /protéger la réserve/i);
+});
+
+test('refuse de parler comme si une borne ou un chauffe-eau absent existait', () => {
+  const missing = { vehicle: false, hotWater: false };
+  assert.match(unavailableEquipmentGuidance('vehicle', missing) || '', /aucune borne ni voiture/i);
+  assert.match(unavailableEquipmentGuidance('hot-water', missing) || '', /aucun chauffe-eau pilotable/i);
+  assert.equal(unavailableEquipmentGuidance('vehicle', { ...missing, vehicle: true }), null);
 });

@@ -4,6 +4,7 @@ import {
   energySnapshotFromInventory,
   type EnergyInventoryItem,
 } from "../lib/energy-snapshot.ts";
+import { equipmentCapabilitiesFromInventory } from "../lib/equipment-capabilities.ts";
 import { consumptionBreakdownFromInventory } from "../lib/consumption-breakdown.ts";
 import { buildCoachActionPlan, buildEnergyInsights, tariffGuidance } from "../lib/energy-insights.ts";
 
@@ -40,6 +41,14 @@ test("utilise Tesla seulement lorsque la mesure Lektrico est indisponible", () =
 
   assert.equal(snapshot.homeWatts, 3600);
   assert.equal(snapshot.vehicleWatts, 2100);
+});
+
+test("distingue un équipement arrêté d’un équipement absent", () => {
+  assert.deepEqual(equipmentCapabilitiesFromInventory([]), { hotWater: false, vehicle: false });
+  assert.deepEqual(equipmentCapabilitiesFromInventory([
+    entity("switch.ce_wifi_commutateur_sur_rail_din_avec_mesure_2_switch", "off"),
+    entity("sensor.1p7k_501290_state", "Disconnected"),
+  ]), { hotWater: true, vehicle: true });
 });
 
 test("normalise W, kW, Wh et kWh avant stockage", () => {
