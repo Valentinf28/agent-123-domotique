@@ -655,13 +655,17 @@ export function getEnergyCoachContext(dossierPublicId?: string | null) {
   const now = Date.now();
   const cached = energyCoachContextCache.get(key);
   if (cached && cached.expiresAt > now) return cached.value;
-  const value = loadEnergyCoachContext(dossierPublicId).catch((error) => {
-    energyCoachContextCache.delete(key);
-    throw error;
-  });
+  const value = loadEnergyCoachContext(dossierPublicId)
+    // D1 peut occasionnellement échouer au premier accès d’un worker froid.
+    // Une seule reprise suffit sans masquer une panne durable.
+    .catch(() => loadEnergyCoachContext(dossierPublicId))
+    .catch((error) => {
+      energyCoachContextCache.delete(key);
+      throw error;
+    });
   // A short cache makes a multi-turn conversation responsive while keeping
   // live powers fresh enough for energy advice and avoiding repeated D1 scans.
-  energyCoachContextCache.set(key, { expiresAt: now + 15_000, value });
+  energyCoachContextCache.set(key, { expiresAt: now + 60_000, value });
   return value;
 }
 
