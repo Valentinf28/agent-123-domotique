@@ -114,6 +114,39 @@ function activeFrom(inventory: EnergyInventoryItem[], ids: readonly string[]) {
   return Boolean(item && ["on", "heat", "heating"].includes(item.state.toLowerCase()));
 }
 
+function parisDateKey(date: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function periodSamples<T extends { capturedAt: string }>(
+  samples: T[],
+  period: "today" | "week" | "last7" | "month",
+  now: Date,
+) {
+  const today = parisDateKey(now);
+  const [year, month, day] = today.split("-").map(Number);
+  const localCalendarDay = new Date(Date.UTC(year, month - 1, day));
+  const dayOfWeek = localCalendarDay.getUTCDay() || 7;
+  const start = new Date(localCalendarDay);
+  if (period === "week") start.setUTCDate(start.getUTCDate() - dayOfWeek + 1);
+  if (period === "last7") start.setUTCDate(start.getUTCDate() - 6);
+  if (period === "month") start.setUTCDate(1);
+  const startKey = period === "today" ? today : start.toISOString().slice(0, 10);
+  return samples.filter((sample) => {
+    const key = parisDateKey(new Date(sample.capturedAt));
+    return key >= startKey && key <= today;
+  });
+}
+
+function observedDays<T extends { capturedAt: string }>(samples: T[]) {
+  return new Set(samples.map((sample) => parisDateKey(new Date(sample.capturedAt)))).size;
+}
+
 function inventoryItemFrom(inventory: EnergyInventoryItem[], ids: readonly string[]) {
   const candidate = resolveEntityCandidate(inventory.map((item) => ({
     item,
@@ -559,6 +592,13 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     periods: offPeakPeriods,
     prices: tariffPrices,
   });
+  const gridCosts = Object.fromEntries((["today", "week", "last7", "month"] as const).map((period) => {
+    const samples = periodSamples(history, period, now);
+    return [period, {
+      ...measuredGridCost({ samples, plan: tariffPlan, periods: offPeakPeriods, prices: tariffPrices }),
+      observedDays: observedDays(samples),
+    }];
+  })) as Record<"today" | "week" | "last7" | "month", ReturnType<typeof measuredGridCost> & { observedDays: number }>;
   const vehicleEnergyToday = measuredVehicleEnergyToday(history, now);
   const filtrationEnergyToday = measuredFiltrationEnergyToday(history, now);
   return {
@@ -582,6 +622,7 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     historySamples: history.length,
     week,
     gridCost,
+    gridCosts,
     vehicleEnergyToday,
     filtrationEnergyToday,
     actionPlan,

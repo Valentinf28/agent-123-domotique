@@ -58,6 +58,15 @@ function kilowattHours(valueWh: number) {
   return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(Math.max(0, valueWh) / 1000)} kWh`;
 }
 
+function euros(value: number) {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: value < 10 ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(Math.max(0, value));
+}
+
 function localReply(
   message: string,
   context: Awaited<ReturnType<typeof getEnergyCoachContext>>,
@@ -209,7 +218,30 @@ function localReply(
     answer = batterySavingsGuidance(context.tariff.pricesConfigured);
   } else if (intent === "money" && context.historySamples >= 4) {
     const tariffText = tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods, context.tariff.prices);
-    if (/contrat.{0,70}adapt|adapté.{0,70}contrat/.test(normalized)) {
+    if (/(?:combien|quel montant|dépensé|depense|coûté|coute).{0,60}(?:réseau|reseau|achet)|(?:réseau|reseau).{0,60}(?:combien|dépensé|depense|coûté|coute)/.test(normalized)) {
+      const period = /aujourd/.test(normalized) ? "today"
+        : /(?:cette semaine|semaine en cours)/.test(normalized) ? "week"
+        : /(?:7 derniers jours|sept derniers jours)/.test(normalized) ? "last7"
+        : /(?:ce mois|mois en cours)/.test(normalized) ? "month"
+        : null;
+      if (period) {
+        const measured = context.gridCosts[period];
+        const label = period === "today" ? "Aujourd’hui"
+          : period === "week" ? "Depuis lundi"
+          : period === "last7" ? "Sur les 7 derniers jours"
+          : "Depuis le début du mois";
+        answer = measured.importCostEuros == null
+          ? `${label}, ${kilowattHours(measured.importedWh)} ont été achetés au réseau, mais un tarif d’achat manque : je ne peux pas calculer honnêtement le montant.`
+          : `${label}, la maison a acheté ${kilowattHours(measured.importedWh)} au réseau pour environ ${euros(measured.importCostEuros)}, hors abonnement et taxes fixes. Ce montant est calculé directement avec les tarifs HP/HC renseignés et les relevés disponibles${measured.observedDays ? ` sur ${measured.observedDays} jour${measured.observedDays > 1 ? "s" : ""}` : ""}.`;
+      } else {
+        answer = financialCoachGuidance({
+          observedDays: context.week.observedDays,
+          ...context.gridCost,
+          plan: context.tariff.plan,
+          tariffGuidance: tariffText,
+        });
+      }
+    } else if (/contrat.{0,70}adapt|adapté.{0,70}contrat/.test(normalized)) {
       const imports = Math.max(1, context.gridCost.importedWh);
       const offPeakShare = Math.round(context.gridCost.offPeakImportedWh / imports * 100);
       answer = context.tariff.plan === "hp_hc"
