@@ -2044,42 +2044,41 @@ function SolarPortalView({ overview, tariffCopy, dossierId }: { overview: Mobile
   const livePower = Math.max(0, powerNumber(energy.solar));
   const installedPower = Math.max(1, powerNumber(energy.installedPower) || 9635);
   const liveRatio = Math.min(100, Math.max(1, livePower / installedPower * 100));
+  const homePower = Math.max(0, overview?.flow?.homeWatts ?? 0);
+  const liveSurplus = Math.max(0, livePower - homePower);
+  const liveSolarShare = homePower > 0 ? Math.min(100, Math.round(livePower / homePower * 100)) : 0;
+  const liveMessage = livePower < 100
+    ? "La production est très faible pour le moment."
+    : liveSurplus > 100
+      ? `La maison est couverte et environ ${Math.round(liveSurplus).toLocaleString("fr-FR")} W sont disponibles.`
+      : `Le solaire couvre environ ${liveSolarShare} % de la consommation actuelle.`;
 
   return <div className="mobile-section solar-mobile-section">
-    <PortalCategoryHeader eyebrow="PRODUCTION" title="Solaire premium" subtitle="Production, autonomie et économies en un coup d’œil." icon="☀" />
-    <section className="solar-live-card">
-      <div className="solar-live-heading"><span>☀</span><div><small>PRODUCTION EN DIRECT</small><strong>{energy.solar ?? "0 W"}</strong></div><em><i /> TEMPS RÉEL</em></div>
-      <div className="solar-capacity"><i style={{ width: `${liveRatio}%` }} /></div>
-      <footer><span><small>INSTALLATION</small><b>{energy.installedPower ?? "9 635 Wc"}</b></span><span><small>CAPACITÉ UTILISÉE</small><b>{Math.round(Math.max(0, livePower / installedPower * 100))} %</b></span></footer>
+    <PortalCategoryHeader eyebrow="ÉNERGIE" title="Mon solaire" subtitle="L’essentiel d’abord. Le détail reste disponible quand vous en avez besoin." icon="☀" />
+    <section className="solar-focus-card">
+      <div className="solar-focus-live"><small>PRODUCTION MAINTENANT</small><strong>{energy.solar ?? "0 W"}</strong><p>{liveMessage}</p><div><i style={{ width: `${liveRatio}%` }} /></div><span>{Math.round(livePower / installedPower * 100)} % de la puissance installée</span></div>
+      <div className="solar-focus-summary">
+        <article><small>Produit {period === "day" ? "aujourd’hui" : periodValues.label.toLowerCase()}</small><strong>{periodValues.production ?? "—"}</strong></article>
+        <article><small>Utilisé dans la maison</small><strong>{period === "day" ? historicalDay ? formatKwh(historicalSelfConsumed) : energy.selfConsumed ?? "—" : energy.selfConsumption ?? "—"}</strong></article>
+        <article><small>Économies estimées</small><strong>{historicalDay ? historicalSavings : energy.savings ?? "—"}</strong></article>
+      </div>
     </section>
-    <div className="period-tabs">{([['day', 'Jour'], ['month', 'Mois'], ['year', 'Année']] as const).map(([key, label]) => <button key={key} className={period === key ? "selected" : ""} onClick={() => setPeriod(key)}>{label}</button>)}</div>
-    {period === "day" && <div className="portal-date-navigation"><button aria-label="Jour précédent" onClick={() => setSelectedDate(energyDateKey(addEnergyDays(new Date(`${selectedDate}T12:00:00`), -1)))}>‹</button><label><span>▣</span><strong>{formatEnergyDay(new Date(`${selectedDate}T12:00:00`))}</strong><input type="date" max={energyDateKey()} value={selectedDate} onChange={(event) => event.target.value && setSelectedDate(event.target.value)} /></label><button aria-label="Jour suivant" disabled={isEnergyToday(new Date(`${selectedDate}T12:00:00`))} onClick={() => setSelectedDate(energyDateKey(addEnergyDays(new Date(`${selectedDate}T12:00:00`), 1)))}>›</button>{historyLoading && <em>Actualisation…</em>}</div>}
-    <section className="solar-stat-grid">
-      <article><span className="solar-stat-icon">☀</span><small>{period === "day" ? "Utilisée sur place" : "Production"}</small><strong>{period === "day" ? historicalDay ? formatKwh(historicalSelfConsumed) : energy.selfConsumed ?? "—" : periodValues.production ?? "—"}</strong><p>{period === "day" ? "Production consommée directement" : periodValues.label}</p></article>
-      <article><span className="solar-stat-icon teal">€</span><small>Économies</small><strong>{historicalDay ? historicalSavings : energy.savings ?? "—"}</strong><p>{historicalDay ? "Estimation au tarif de référence" : "Valorisation de l’énergie locale"}</p></article>
-      <article><span className="solar-stat-icon blue">⌂</span><small>Autoconsommation</small><strong>{historicalDay ? historicalSelfConsumption : energy.selfConsumption ?? "—"}</strong><p>Production utilisée sur place</p></article>
-      <article><span className="solar-stat-icon pink">▰</span><small>Autonomie</small><strong>{historicalDay ? historicalAutonomy : energy.autonomy ?? "—"}</strong><p>Consommation couverte sans réseau</p></article>
+    <section className="solar-period-bar" aria-label="Période affichée">
+      <div className="period-tabs">{([['day', 'Jour'], ['month', 'Mois'], ['year', 'Année']] as const).map(([key, label]) => <button key={key} className={period === key ? "selected" : ""} onClick={() => setPeriod(key)}>{label}</button>)}</div>
+      {period === "day" && <div className="portal-date-navigation"><button aria-label="Jour précédent" onClick={() => setSelectedDate(energyDateKey(addEnergyDays(new Date(`${selectedDate}T12:00:00`), -1)))}>‹</button><label><strong>{formatEnergyDay(new Date(`${selectedDate}T12:00:00`))}</strong><input type="date" max={energyDateKey()} value={selectedDate} onChange={(event) => event.target.value && setSelectedDate(event.target.value)} /></label><button aria-label="Jour suivant" disabled={isEnergyToday(new Date(`${selectedDate}T12:00:00`))} onClick={() => setSelectedDate(energyDateKey(addEnergyDays(new Date(`${selectedDate}T12:00:00`), 1)))}>›</button>{historyLoading && <em>Actualisation…</em>}</div>}
     </section>
-    {period === "day" && !historicalDay && <section className="energy-balance-card"><header><div><small>PRÉVISION</small><h3>Prévision contre production réelle</h3></div><span>✦</span></header><div>
-      <article><i>☀</i><strong>{energy.dailyProduction ?? "—"}</strong><small>Produit aujourd’hui</small></article>
-      <article><i>◎</i><strong>{energy.forecastToday ?? "—"}</strong><small>Objectif prévisionnel</small></article>
-      <article><i>◔</i><strong>{energy.forecastRemaining ?? "—"}</strong><small>Reste à produire</small></article>
-      <article><i>☁</i><strong>{energy.cloudCover ?? "—"}</strong><small>Couverture nuageuse</small></article>
-    </div></section>}
-    <section className="energy-balance-card"><header><div><small>{periodValues.label.toUpperCase()}</small><h3>Bilan énergétique</h3></div><span>↔</span></header><div>
-      <article><i>⌂</i><strong>{periodValues.consumption ?? "—"}</strong><small>Consommée</small></article>
-      <article><i>↓</i><strong>{periodValues.imported ?? "—"}</strong><small>Achetée</small></article>
-      <article><i>↑</i><strong>{periodValues.exported ?? "—"}</strong><small>Injectée</small></article>
-      <article><i>♧</i><strong>{energy.co2Avoided ?? "—"}</strong><small>CO₂ évité</small></article>
-    </div></section>
-    {period === "day" && <PortalEnergyChart key={selectedDate} history={history} date={selectedDate} />}
-    {period === "day" && !historicalDay && <section className="solar-advice-card"><header><span>✦</span><div><small>ASSISTANT ÉNERGIE</small><h3>Meilleurs créneaux</h3></div></header><article><b>Solaire en priorité</b><p>Les appareils flexibles sont proposés quand le surplus est suffisant. Le tarif du client sert de solution de secours.</p><em>{tariffCopy}</em></article></section>}
-    <section className="energy-balance-card"><header><div><small>INSTALLATION</small><h3>Détail des panneaux</h3></div><span>☀</span></header><div>
-      <article><i>1</i><strong>{energy.pv1 ?? "0 W"}</strong><small>String PV1</small></article>
-      <article><i>2</i><strong>{energy.pv2 ?? "0 W"}</strong><small>String PV2</small></article>
-      <article><i>3</i><strong>{energy.pv3 ?? "0 W"}</strong><small>String PV3</small></article>
-      <article><i>↗</i><strong>{energy.peakPower ?? "0 W"}</strong><small>Pic du jour</small></article>
-    </div></section>
+    <section className="solar-essential-grid">
+      <article><small>AUTOCONSOMMATION</small><strong>{historicalDay ? historicalSelfConsumption : energy.selfConsumption ?? "—"}</strong><p>Part de votre solaire utilisée chez vous.</p></article>
+      <article><small>AUTONOMIE</small><strong>{historicalDay ? historicalAutonomy : energy.autonomy ?? "—"}</strong><p>Part de vos besoins couverte sans achat réseau.</p></article>
+      <article><small>RÉSEAU</small><strong>{periodValues.imported ?? "—"}</strong><p>Acheté · {periodValues.exported ?? "—"} injecté.</p></article>
+    </section>
+    {period === "day" && <details className="solar-detail" open><summary><span><b>Courbe de la journée</b><small>Production, maison, réseau et batterie</small></span><i>⌄</i></summary><div><PortalEnergyChart key={selectedDate} history={history} date={selectedDate} /></div></details>}
+    {period === "day" && !historicalDay && <section className="solar-next-action"><span>✦</span><div><small>CONSEIL DU JOUR</small><strong>Utilisez d’abord le surplus réellement disponible</strong><p>Le Coach privilégie le solaire puis utilise {tariffCopy} uniquement comme solution de repli.</p></div></section>}
+    <details className="solar-detail"><summary><span><b>Prévision et bilan complet</b><small>Production attendue, consommation et échanges réseau</small></span><i>⌄</i></summary><div className="solar-detail-grid">
+      {period === "day" && !historicalDay && <><article><small>Prévision du jour</small><strong>{energy.forecastToday ?? "—"}</strong></article><article><small>Reste à produire</small><strong>{energy.forecastRemaining ?? "—"}</strong></article></>}
+      <article><small>Consommation</small><strong>{periodValues.consumption ?? "—"}</strong></article><article><small>CO₂ évité</small><strong>{energy.co2Avoided ?? "—"}</strong></article>
+    </div></details>
+    <details className="solar-detail"><summary><span><b>Mon installation</b><small>{energy.installedPower ?? "9 635 Wc"} installés · détail des panneaux</small></span><i>⌄</i></summary><div className="solar-detail-grid"><article><small>PV1</small><strong>{energy.pv1 ?? "0 W"}</strong></article><article><small>PV2</small><strong>{energy.pv2 ?? "0 W"}</strong></article><article><small>PV3</small><strong>{energy.pv3 ?? "0 W"}</strong></article><article><small>Pic du jour</small><strong>{energy.peakPower ?? "0 W"}</strong></article></div></details>
   </div>;
 }
 

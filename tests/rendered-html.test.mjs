@@ -537,5 +537,5 @@ test("conserve la parité des états véhicule et du résumé Maison", async () 
   assert.match(portal, /online \? "En ligne" : "Hors ligne"/);
   assert.match(portal, /const vehicleBattery = overview\?\.comfort\?\.teslaBattery/);
   assert.match(portal, /sub=\{vehicleWatts > CLIENT_EXPERIENCE\.energyScene\.flowActivationWatts/);
-  assert.ok(portal.indexOf("Bilan énergétique") < portal.indexOf("Détail des panneaux"));
+  assert.ok(portal.indexOf("Prévision et bilan complet") < portal.indexOf("Mon installation"));
 });
