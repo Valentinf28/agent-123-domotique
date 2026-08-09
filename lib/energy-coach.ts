@@ -30,6 +30,7 @@ import type { OffPeakPeriod } from "./energy-insights";
 import { equipmentCapabilitiesFromInventory } from "./equipment-capabilities";
 import { buildBatteryNightOutlook } from "./battery-night-outlook";
 import { measuredGridCost } from "./energy-cost";
+import { measuredVehicleEnergyToday } from "./measured-vehicle-energy";
 export {
   ASSISTANT_MONTHLY_LIMIT,
   assistantQuotaAllows,
@@ -558,6 +559,7 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     periods: offPeakPeriods,
     prices: tariffPrices,
   });
+  const vehicleEnergyToday = measuredVehicleEnergyToday(history, now);
   return {
     dossier: {
       id: selected.dossier.id,
@@ -579,6 +581,7 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     historySamples: history.length,
     week,
     gridCost,
+    vehicleEnergyToday,
     actionPlan,
     batteryOutlook,
     solarForecast: {

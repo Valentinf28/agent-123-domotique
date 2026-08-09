@@ -201,7 +201,7 @@ export function proposeSafeAutomation(
   return {
     status: "ready",
     proposal: rule,
-    summary: `${rule.triggerLabel}, la box 1.2.3 Home va ${rule.actionLabel.toLowerCase()}.`,
+    summary: `${rule.triggerLabel}, la box 1.2.3. Home va ${rule.actionLabel.toLowerCase()}.`,
   };
 }
 

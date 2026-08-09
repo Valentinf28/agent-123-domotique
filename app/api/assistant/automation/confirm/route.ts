@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     }, payload.dossierPublicId);
     return Response.json({
       ...result,
-      message: "Automatisation envoyée à la box 1.2.3 Home.",
+      message: "Automatisation envoyée à la box 1.2.3. Home.",
       rule: payload.rule,
     }, { status: 202, headers: { "Cache-Control": "no-store" } });
   } catch (error) {

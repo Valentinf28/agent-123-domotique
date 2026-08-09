@@ -602,7 +602,7 @@ def enroll(portal_url: str, code: str) -> dict[str, Any]:
     result = request_json(
         f"{portal_url}/agent/enroll",
         method="POST",
-        payload={"code": code, "label": "Box 1.2.3 Home"},
+        payload={"code": code, "label": "Box 1.2.3. Home"},
     )
     if not isinstance(result, dict) or not result.get("token"):
         raise RuntimeError("Réponse d'enrôlement invalide")
@@ -1008,7 +1008,7 @@ def lektrico_off_peak_automation(payload: dict[str, Any]) -> dict[str, Any]:
         ))
     return {
         "id": "ma_maison_lektrico_off_peak_charging",
-        "alias": "1.2.3 Home · Recharge heures creuses Lektrico",
+        "alias": "1.2.3. Home · Recharge heures creuses Lektrico",
         "description": (
             "Recharge uniquement pendant les heures creuses configurées dans le portail, "
             "véhicule branché."
@@ -1145,7 +1145,7 @@ def deye_vehicle_export_automation(
 
     return {
         "id": "ma_maison_deye_vehicle_export_policy",
-        "alias": "1.2.3 Home · Injection Deye selon véhicule",
+        "alias": "1.2.3. Home · Injection Deye selon véhicule",
         "description": (
             "Bloque l’injection lorsque la voiture est débranchée et la réactive "
             "lorsqu’elle est branchée. Politique installée uniquement après validation "
@@ -1331,7 +1331,7 @@ def relay_command(
                 token=supervisor_token,
                 payload={
                     "id": automation_id,
-                    "alias": f"1.2.3 Home · {name}",
+                    "alias": f"1.2.3. Home · {name}",
                     "description": "Créée depuis le portail Ma Maison",
                     "trigger": [trigger],
                     "condition": conditions,
@@ -1687,7 +1687,7 @@ def relay_command(
 
             automation_payload = {
                 "id": automation_id,
-                "alias": "1.2.3 Home · Recharge solaire Lektrico",
+                "alias": "1.2.3. Home · Recharge solaire Lektrico",
                 "description": (
                     "Ajuste la limite dynamique de la borne Lektrico sur le surplus "
                     f"solaire après {minimum_battery_percent} % de charge. La consigne "
@@ -1905,7 +1905,7 @@ def relay_command(
                     item for item in listed
                     if isinstance(item, dict)
                     and item.get("entity_id") == entity_id
-                    and str(item.get("alias", "")).startswith("1.2.3 Home")
+                    and str(item.get("alias", "")).startswith("1.2.3. Home")
                 ),
                 None,
             )

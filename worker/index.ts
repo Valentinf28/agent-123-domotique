@@ -1,4 +1,4 @@
-/** Cloudflare Worker entry point for the 1.2.3 Home portal. */
+/** Cloudflare Worker entry point for the 1.2.3. Home portal. */
 import {
   handleImageOptimization,
   DEFAULT_DEVICE_SIZES,

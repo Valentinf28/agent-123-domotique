@@ -1,7 +1,7 @@
 # Audit Premium du Coach — 50 questions clients
 
 Date : 9 août 2026  
-Portail testé : production 1.2.3 Home  
+Portail testé : production 1.2.3. Home  
 Versions évaluées : 119, puis corrections 120 et 121
 
 ## Couverture

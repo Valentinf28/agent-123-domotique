@@ -33,8 +33,8 @@ type ConversationMessage = { role: "client" | "coach"; text: string };
 
 function brandSafe(value: string) {
   return value
-    .replace(/green box/gi, "box 1.2.3 Home")
-    .replace(/home assistant/gi, "box 1.2.3 Home");
+    .replace(/green box/gi, "box 1.2.3. Home")
+    .replace(/home assistant/gi, "box 1.2.3. Home");
 }
 
 function safeReply(reply: CoachReply): CoachReply {
@@ -154,7 +154,11 @@ function localReply(
       answer = unavailable;
     } else {
       const exportWatts = Math.max(0, -context.current.gridWatts);
-      if (/charge-t-elle|charge t elle|actuellement/.test(normalized)) {
+      if (/(?:combien|quelle quantité|quelle quantite).{0,35}(?:kwh|énergie|energie).{0,35}(?:voiture|véhicule|vehicule|recharge)|(?:kwh|énergie|energie).{0,35}(?:envoyés?|consommés?|reçus?).{0,35}(?:voiture|véhicule|vehicule).{0,20}aujourd/.test(normalized)) {
+        answer = context.vehicleEnergyToday.available
+          ? `Aujourd’hui, environ ${kilowattHours(context.vehicleEnergyToday.energyWh)} ont été envoyés à la voiture d’après ${context.vehicleEnergyToday.sampleCount} relevés de la borne. Le calcul couvre ${context.vehicleEnergyToday.coveredMinutes} minutes réellement mesurées et n’extrapole pas les périodes sans données.`
+          : "Je n’ai pas assez de relevés de la borne aujourd’hui pour calculer honnêtement l’énergie envoyée à la voiture. Je peux seulement indiquer sa puissance actuelle.";
+      } else if (/charge-t-elle|charge t elle|actuellement/.test(normalized)) {
         answer = context.current.vehicleWatts > 100
           ? `Oui, une recharge à domicile est mesurée à ${watts(context.current.vehicleWatts)}.`
           : "Non, aucune recharge du véhicule n’est mesurée à la maison actuellement.";
@@ -329,13 +333,13 @@ async function openAiReply(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL?.trim() || "gpt-5.6-luna",
+        model: process.env.OPENAI_MODEL?.trim() || "gpt-5.6-sol",
         store: false,
         safety_identifier: safetyIdentifier,
-        reasoning: { effort: "low" },
+        reasoning: { effort: "medium" },
         max_output_tokens: 700,
         instructions: [
-          "Tu es le Coach énergie de 1.2.3 Home. Réponds en français, simplement et sans jargon.",
+          "Tu es le Coach énergie de 1.2.3. Home. Réponds en français, simplement et sans jargon.",
           "Réponds en 90 mots maximum. Commence par le constat utile, puis donne une proposition concrète. Évite les paragraphes répétitifs.",
           "Lis les échanges récents avant de répondre. Une réponse courte comme oui, non, d’accord, fais-le, explique ou pourquoi se rapporte toujours au dernier message du Coach ; ne repars jamais sur un autre sujet.",
           "Si le client répond oui à une proposition d’automatisation déjà affichée, rappelle qu’elle est prête et demande-lui d’utiliser le bouton Préparer cette proposition. Ne prétends jamais l’avoir activée.",
@@ -351,7 +355,7 @@ async function openAiReply(
           "Pour une optimisation dépendant du surplus, de la batterie, de la météo ou d’une prévision, donne uniquement un conseil et laisse automationProposal à null.",
           "Toute automatisation reste un brouillon jusqu’à confirmation explicite du client dans l’interface.",
           "Ne révèle aucun identifiant technique ni donnée interne.",
-          "N’emploie jamais les expressions Green Box ou Home Assistant. Dis uniquement box 1.2.3 Home si la box doit être nommée.",
+          "N’emploie jamais les expressions Green Box ou Home Assistant. Dis uniquement box 1.2.3. Home si la box doit être nommée.",
           "Si une intervention électrique ou une modification matérielle est nécessaire, recommande un professionnel.",
         ].join("\n"),
         input: [{

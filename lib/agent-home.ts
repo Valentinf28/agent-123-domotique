@@ -650,14 +650,14 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
   }
 
   const automations = inventory
-    .filter((item) => item.domain === "automation" && item.name.startsWith("1.2.3 Home"))
+    .filter((item) => item.domain === "automation" && item.name.startsWith("1.2.3. Home"))
     .map((item) => ({
       publicId: publicId(item.entityId, "regle"),
       name: item.name,
       enabled: item.state === "on",
       lastTriggered: null,
       trigger: "Pilotage énergétique",
-      action: "Action gérée par la box 1.2.3 Home",
+      action: "Action gérée par la box 1.2.3. Home",
     }));
 
   const energyItems = {
@@ -956,7 +956,7 @@ async function automationEntity(
   const inventory = parseInventory(selected.agent.inventoryJson);
   const item = inventory.find((candidate) =>
     candidate.domain === "automation" &&
-    candidate.name.startsWith("1.2.3 Home") &&
+    candidate.name.startsWith("1.2.3. Home") &&
     publicId(candidate.entityId, "regle") === publicAutomationId
   );
   if (!item) throw new Error("AUTOMATION_NOT_FOUND");

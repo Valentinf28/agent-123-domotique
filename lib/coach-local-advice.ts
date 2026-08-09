@@ -180,10 +180,10 @@ export function unavailableEquipmentGuidance(
   capabilities: { vehicle: boolean; hotWater: boolean },
 ) {
   if (intent === 'vehicle' && !capabilities.vehicle) {
-    return 'Aucune borne ni voiture compatible n’est actuellement remontée par la box 1.2.3 Home. Le Coach ne peut pas confirmer une recharge ni proposer une règle avant la configuration de l’équipement.';
+    return 'Aucune borne ni voiture compatible n’est actuellement remontée par la box 1.2.3. Home. Le Coach ne peut pas confirmer une recharge ni proposer une règle avant la configuration de l’équipement.';
   }
   if (intent === 'hot-water' && !capabilities.hotWater) {
-    return 'Aucun chauffe-eau pilotable n’est actuellement remonté par la box 1.2.3 Home. Le Coach ne peut donc ni confirmer son état ni proposer une automatisation. Vérifiez d’abord sa présence dans les équipements.';
+    return 'Aucun chauffe-eau pilotable n’est actuellement remonté par la box 1.2.3. Home. Le Coach ne peut donc ni confirmer son état ni proposer une automatisation. Vérifiez d’abord sa présence dans les équipements.';
   }
   return null;
 }

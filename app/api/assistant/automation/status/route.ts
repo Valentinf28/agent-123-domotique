@@ -39,7 +39,7 @@ export async function GET(request: Request) {
         error: command.error,
         name: String(rule.name ?? "Nouvelle automatisation"),
         trigger: rule.triggerType === "time" ? `Tous les jours à ${String(rule.time ?? "")}` : "Horaire solaire",
-        action: "Création sur la box 1.2.3 Home",
+        action: "Création sur la box 1.2.3. Home",
       }];
     } catch {
       return [];

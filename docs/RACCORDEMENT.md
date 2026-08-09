@@ -1,7 +1,7 @@
 # Raccordement de la maison connectée
 
 L’interface client est volontairement découplée du système domotique. Les états
-remontent par l’Agent 1.2.3 et les commandes repartent vers la box 1.2.3 Home par une
+remontent par l’Agent 1.2.3 et les commandes repartent vers la box 1.2.3. Home par une
 file privée. Home Assistant n’est jamais chargé dans l’application cliente.
 
 ## Test local
@@ -12,7 +12,7 @@ techniques par des identifiants opaques. Une commande cliente est placée dans l
 file du dossier, récupérée au prochain contact de l’agent, puis exécutée
 localement.
 
-La box 1.2.3 Home envoie les mesures importantes toutes les 5 secondes et un
+La box 1.2.3. Home envoie les mesures importantes toutes les 5 secondes et un
 inventaire complet toutes les 60 secondes. La vue client relit automatiquement
 `/api/home` au rythme de 5 secondes et le bouton d’actualisation force une
 lecture immédiate. Les onglets Énergie, Confort, Piscine, Sécurité et Véhicule

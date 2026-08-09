@@ -296,7 +296,7 @@ test("permet à chaque maison d’autoriser ou d’interdire l’injection rése
   assert.match(migration, /allow_grid_export/);
 });
 
-test("crée et administre les automatisations via la box 1.2.3 Home", async () => {
+test("crée et administre les automatisations via la box 1.2.3. Home", async () => {
   const [portal, collectionRoute, itemRoute, agentHome, agent] = await Promise.all([
     readFile(new URL("../app/portal.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/automations/route.ts", import.meta.url), "utf8"),
@@ -453,7 +453,7 @@ test("inclut les assistants et le nouveau tarif dans le forfait client", async (
   ]);
   assert.match(portal, /Assistant domotique/i);
   assert.match(portal, /Coach énergie/i);
-  assert.match(portal, /Mon Coach 1\.2\.3 Home/i);
+  assert.match(portal, /Mon Coach 1\.2\.3\. Home/i);
   assert.match(portal, /coach-detail/);
   assert.match(portal, /Posez une question/i);
   assert.match(portal, /Conversation avec le coach énergie/i);

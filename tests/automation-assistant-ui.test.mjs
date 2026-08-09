@@ -39,11 +39,11 @@ test("affiche immédiatement la règle confirmée pendant sa synchronisation", (
   assert.match(statusRoute, /Cache-Control/);
 });
 
-test("nomme toujours la box avec la marque 1.2.3 Home", () => {
+test("nomme toujours la box avec la marque 1.2.3. Home", () => {
   assert.doesNotMatch(portal, /Green Box/i);
   assert.doesNotMatch(proposeRoute, /Green Box/i);
   assert.doesNotMatch(confirmRoute, /Green Box/i);
-  assert.match(portal, /box 1\.2\.3 Home/);
+  assert.match(portal, /box 1\.2\.3\. Home/);
 });
 
 test("le coach distingue la PAC de la filtration et répond avec une action concise", () => {

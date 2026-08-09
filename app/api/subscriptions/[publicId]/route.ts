@@ -63,7 +63,7 @@ export async function PATCH(
 
   if (body.action !== "start_trial" && !await portalApiAdminAuthorized()) {
     return Response.json({
-      error: "Cette action est réservée à l’équipe 1.2.3 Home",
+      error: "Cette action est réservée à l’équipe 1.2.3. Home",
       code: "INSTALLER_REQUIRED",
     }, { status: 403 });
   }

@@ -130,7 +130,7 @@
 
 - Récupération de la courbe solaire horaire fournie par Home Assistant.
 - Mise en cache locale des prévisions afin de limiter les appels au service météo.
-- Transmission des créneaux prévisionnels au moteur de pilotage 1.2.3 Home.
+- Transmission des créneaux prévisionnels au moteur de pilotage 1.2.3. Home.
 
 ## 0.5.8
 
@@ -173,6 +173,6 @@
 - Conservation du tableau de bord existant tant qu'aucun appareil n'est associé.
 # 0.5.7
 
-- Ajout d’une file de commandes privée entre le portail 1.2.3 et la box 1.2.3 Home.
+- Ajout d’une file de commandes privée entre le portail 1.2.3 et la box 1.2.3. Home.
 - Les commandes clientes sont exécutées localement sans exposer Home Assistant.
 - Rafraîchissement ramené à 10 secondes pour le pilotage de démonstration.

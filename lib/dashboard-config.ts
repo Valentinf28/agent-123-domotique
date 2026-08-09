@@ -60,7 +60,7 @@ export function buildDashboardConfig(enabledModules: string[], devices: Dashboar
   const modules = [...new Set(["home", ...enabledModules])]
     .filter((module): module is keyof typeof viewCatalog => module in viewCatalog);
   return {
-    title: "1.2.3 Home",
+    title: "1.2.3. Home",
     views: modules.map((module) => {
       const view = viewCatalog[module];
       const assigned = devicesForModule(module, devices);
