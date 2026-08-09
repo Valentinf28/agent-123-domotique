@@ -424,16 +424,16 @@ export async function selectAgentForDossier(dossierPublicId?: string | null) {
   const defaultDossierReference =
     process.env.DEFAULT_CLIENT_DOSSIER_REFERENCE?.trim();
   if (dossierPublicId || defaultDossierReference) {
-    const [dossier] = await getDb().select().from(installationDossiers)
+    const [selected] = await getDb().select({
+      dossier: installationDossiers,
+      agent: agentBoxes,
+    }).from(installationDossiers)
+      .innerJoin(agentBoxes, eq(agentBoxes.dossierId, installationDossiers.id))
       .where(dossierPublicId
         ? eq(installationDossiers.publicId, dossierPublicId)
         : eq(installationDossiers.reference, defaultDossierReference as string)
       ).limit(1);
-    if (dossier) {
-      const [agent] = await getDb().select().from(agentBoxes)
-        .where(eq(agentBoxes.dossierId, dossier.id)).limit(1);
-      if (agent) return { agent, dossier };
-    }
+    if (selected) return selected;
   }
   const agents = await getDb().select().from(agentBoxes)
     .orderBy(desc(agentBoxes.lastSeenAt)).limit(20);
