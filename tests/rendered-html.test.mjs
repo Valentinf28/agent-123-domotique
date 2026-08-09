@@ -453,10 +453,10 @@ test("inclut les assistants et le nouveau tarif dans le forfait client", async (
   ]);
   assert.match(portal, /Assistant domotique/i);
   assert.match(portal, /Coach énergie/i);
-  assert.match(portal, /Coach énergie et maison intelligente/i);
-  assert.match(portal, /coach-quick-start/);
-  assert.match(portal, /Démarrer avec le Coach énergie/);
-  assert.match(portal, /Réduisez votre facture, protégez la batterie/i);
+  assert.match(portal, /Mon Coach 1\.2\.3 Home/i);
+  assert.match(portal, /coach-detail/);
+  assert.match(portal, /Posez une question/i);
+  assert.match(portal, /Conversation avec le coach énergie/i);
   assert.match(portal, /PLAN D’ACTION PERSONNALISÉ/i);
   assert.match(portal, /APPRENTISSAGE · JOUR/i);
   assert.match(portal, /Votre premier plan sera disponible avant la fin du mois offert/i);

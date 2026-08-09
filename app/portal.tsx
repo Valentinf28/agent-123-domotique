@@ -2641,26 +2641,13 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
   ];
 
   return <div className="content coach-page">
-    <div className="section-intro split"><div><span className="eyebrow">Votre avantage Premium</span><h2>Coach énergie et maison intelligente</h2><p>Réduisez votre facture, protégez la batterie et utilisez davantage votre production solaire.</p></div><button className="primary" onClick={()=>{selectAutomation(null);setModal("automation")}}>＋ Créer une automatisation</button></div>
-    <section className="home-assistant-card">
-      <div className="home-assistant-symbol">✦</div>
-      <div>
-        <small>COACH ÉNERGIE · INCLUS DANS VOTRE FORFAIT</small>
-        <h3>Un plan d’action adapté à votre maison</h3>
-        <p>Le Coach croise les mesures, le solaire, la réserve batterie et le contrat électrique. Il explique chaque conseil et prépare les règles utiles sans jamais les activer sans votre accord.</p>
-      </div>
-      <button onClick={() => setCoachOpen((open) => !open)}>{coachOpen ? "Fermer le coach" : "Parler au coach"} <span>{coachOpen ? "×" : "→"}</span></button>
-    </section>
-    <section className="coach-quick-start" aria-label="Démarrer avec le Coach énergie">
-      <div><small>COMMENCER EN UN GESTE</small><strong>Que voulez-vous améliorer aujourd’hui ?</strong></div>
-      {coachSuggestions.map((suggestion) => <button type="button" key={suggestion} disabled={coachLoading} onClick={() => void askCoach(suggestion)}>{suggestion}<span>→</span></button>)}
-    </section>
-    {coachWeek && coachWeek.historySamples >= 4 && <section className="coach-week-summary" aria-label="Bilan énergétique récent">
+    <div className="section-intro"><span className="eyebrow">INCLUS DANS VOTRE FORFAIT</span><h2>Mon Coach 1.2.3 Home</h2><p>Posez une question. Le Coach analyse votre maison et vous propose une action utile, sans jargon.</p></div>
+    {coachWeek && coachWeek.historySamples >= 4 && <details className="coach-detail coach-week-detail"><summary><span><b>Mon bilan récent</b><small>{coachWeek.observedDays} jours · {coachWeek.historySamples} relevés analysés</small></span><i>⌄</i></summary><section className="coach-week-summary" aria-label="Bilan énergétique récent">
       <div><small>BILAN SUR {coachWeek.observedDays} JOUR{coachWeek.observedDays > 1 ? "S" : ""}</small><strong>Votre maison en un coup d’œil</strong><span>{coachWeek.historySamples} relevés analysés</span></div>
       <article><small>Production solaire</small><strong>{forecastKwh(coachWeek.productionWh)}</strong><span>Énergie produite</span></article>
       <article><small>Consommation</small><strong>{forecastKwh(coachWeek.consumptionWh)}</strong><span>Énergie utilisée</span></article>
       <article><small>Couverture solaire</small><strong>{coachWeek.consumptionWh > 0 ? Math.min(100, Math.round(coachWeek.productionWh / coachWeek.consumptionWh * 100)) : 0} %</strong><span>Indicateur théorique</span></article>
-    </section>}
+    </section></details>}
     {coachActionPlan && <section className={`coach-action-plan ${coachActionPlan.status}`} aria-label="Plan d’action du Coach">
       <header><span>◎</span><div><small>{coachActionPlan.status === "ready" ? "APRÈS 14 JOURS D’ANALYSE" : `APPRENTISSAGE · JOUR ${coachActionPlan.learningDays} SUR 14`}</small><h3>{coachActionPlan.title}</h3><p>{coachActionPlan.summary}</p></div>{coachActionPlan.status === "ready" && <em>Plan disponible</em>}</header>
       {coachActionPlan.status === "learning" ? <div className="coach-learning-progress">
@@ -2670,7 +2657,7 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
         <b>{action.priority}</b><div><small>{action.goal === "money" ? "ÉCONOMIES" : action.goal === "battery" ? "BATTERIE" : "SOLAIRE"}</small><h4>{action.title}</h4><p>{action.description}</p><em>{action.impact}</em></div><button type="button" onClick={() => void askCoach(action.nextStep)}>Passer à l’action →</button>
       </article>)}</div>}
     </section>}
-    <section className="automation-assistant" id="assistant-domotique" aria-label="Assistant de création d’automatisations">
+    <details className="coach-detail coach-automation-detail"><summary><span><b>Créer une automatisation</b><small>Décrivez la règle, vérifiez son aperçu, puis confirmez</small></span><i>⌄</i></summary><section className="automation-assistant" id="assistant-domotique" aria-label="Assistant de création d’automatisations">
       <header>
         <div><span>✦</span><div><small>ASSISTANT DOMOTIQUE PREMIUM</small><h3>Dites simplement ce que vous voulez</h3><p>L’assistant prépare une règle sûre. Il ne crée rien avant votre confirmation explicite.</p></div></div>
         <em>Aperçu obligatoire</em>
@@ -2727,8 +2714,8 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
         ]).map((step) => <li key={step}>{step}</li>)}</ol></div>
         <button type="button" disabled={supportBusy} onClick={() => void createSupportTicket()}>{supportBusy ? "Envoi…" : "Créer un ticket support"}</button>
       </div>}
-    </section>
-    {predictivePlan && <section className={`predictive-plan status-${predictivePlan.status}`} aria-label="Plan énergétique prédictif">
+    </section></details>
+    {predictivePlan && <details className="coach-detail coach-analysis-detail"><summary><span><b>Prévision énergétique</b><small>Solaire, batterie et appareils flexibles</small></span><i>⌄</i></summary><section className={`predictive-plan status-${predictivePlan.status}`} aria-label="Plan énergétique prédictif">
       {predictivePlans.length > 1 && <div className="predictive-load-tabs">{predictivePlans.map((plan) =>
         <button type="button" key={plan.loadId} className={plan.loadId === predictivePlan.loadId ? "selected" : ""} onClick={() => setPredictivePlan(plan)}>
           {plan.loadLabel}
@@ -2761,24 +2748,24 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
         </div>)}
       </div>}
       {["ready_now", "scheduled"].includes(predictivePlan.status) && <button className="predictive-ask" onClick={() => void askCoach(`Explique-moi le plan prédictif de ${predictivePlan.loadLabel} et les garde-fous batterie.`)}>Demander une explication au coach →</button>}
-    </section>}
-    {consumptionBreakdown.length > 0 && <section className="coach-consumption-breakdown" aria-label="Qui consomme quoi maintenant">
+    </section></details>}
+    {consumptionBreakdown.length > 0 && <details className="coach-detail coach-consumption-detail"><summary><span><b>Consommation en direct</b><small>Voir qui consomme quoi maintenant</small></span><i>⌄</i></summary><section className="coach-consumption-breakdown" aria-label="Qui consomme quoi maintenant">
       <header><div><small>MESURES EN DIRECT</small><h3>Qui consomme quoi maintenant ?</h3></div><strong>{formatWatts(consumptionBreakdown.reduce((sum, item) => sum + item.watts, 0))}</strong></header>
       <div>{consumptionBreakdown.slice(0, 6).map((item) => <article key={item.id}>
         <span>{item.icon || "ϟ"}</span><p><b>{item.name}</b><small>{item.sharePercent} % de la puissance mesurée</small></p><strong>{formatWatts(item.watts)}</strong>
         <i><em style={{ width: `${Math.max(2, item.sharePercent)}%` }} /></i>
       </article>)}</div>
       <button type="button" onClick={() => void askCoach("Quels appareils consomment le plus maintenant et comment réduire leur consommation ?")}>Demander l’analyse du Coach →</button>
-    </section>}
-    {coachInsights.length > 0 && <section className="coach-insights-section" aria-label="Conseils énergétiques personnalisés">
+    </section></details>}
+    {coachInsights.length > 0 && <details className="coach-detail coach-priorities-detail"><summary><span><b>Autres priorités détectées</b><small>Conseils classés selon les mesures de la maison</small></span><i>⌄</i></summary><section className="coach-insights-section" aria-label="Conseils énergétiques personnalisés">
       <header><div><small>PLAN D’ACTION PERSONNALISÉ</small><h3>Vos priorités maintenant</h3></div><span>Classées selon les mesures de la maison</span></header>
       <div className="energy-coach-insights">{coachInsights.slice(0, 3).map((insight, index) => <article className={`coach-insight ${insight.tone}`} key={insight.id}>
         <span>{insight.icon}</span>
         <div><small>PRIORITÉ {index + 1} · {insight.goal === "money" ? "ÉCONOMIES" : insight.goal === "battery" ? "BATTERIE" : "SOLAIRE"}</small><h3>{insight.title}</h3><p>{insight.description}</p><em>{insight.impact} · {insight.confidence === "measured" ? "mesure réelle" : "estimation"}</em></div>
         <button onClick={() => void askCoach(insight.action)} aria-label={`Demander conseil : ${insight.title}`}>→</button>
       </article>)}</div>
-    </section>}
-    {coachOpen && <section className="energy-coach-chat" aria-label="Conversation avec le coach énergie">
+    </section></details>}
+    <section className="energy-coach-chat" aria-label="Conversation avec le coach énergie">
       <header><div><span>✦</span><p><b>Coach 1.2.3 Home</b><small><i /> Analyse personnalisée de votre maison</small></p></div><em>Inclus</em></header>
       <div className="coach-conversation" aria-live="polite">
         {coachMessages.map((message) => <div className={`coach-message ${message.role}`} key={message.id}>
@@ -2811,9 +2798,9 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
         <button disabled={coachLoading || coachQuestion.trim().length < 3} aria-label="Envoyer la question">↑</button>
       </form>
       <footer>Les conseils sont basés sur les données disponibles et restent des estimations.</footer>
-    </section>}
+    </section>
     {automationSyncError && <div className="assistant-result attention" role="alert"><span>!</span><div><b>Création non terminée</b><p>{automationSyncError}</p></div></div>}
-    <div className="automation-layout"><section><h3>Vos automatisations <span>{displayedAutomations.length}</span></h3><div className="automation-list">{displayedAutomations.map((a)=><article className={a.pending ? "pending" : ""} key={a.id}>
+    <details className="coach-detail coach-existing-automations"><summary><span><b>Mes automatisations</b><small>{displayedAutomations.length} règle{displayedAutomations.length > 1 ? "s" : ""} enregistrée{displayedAutomations.length > 1 ? "s" : ""}</small></span><i>⌄</i></summary><div className="automation-layout"><section><h3>Vos automatisations <span>{displayedAutomations.length}</span></h3><div className="automation-list">{displayedAutomations.map((a)=><article className={a.pending ? "pending" : ""} key={a.id}>
       <span className="automation-icon">{a.icon}</span><div><h4>{a.name}</h4><p><b>QUAND</b> {a.trigger}</p><p><b>ALORS</b> {a.action}</p></div>
       <label className="switch"><input type="checkbox" checked={a.active} disabled={a.pending} onChange={(event)=>{
         const enabled = event.target.checked;
@@ -2826,7 +2813,7 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
     <aside className="templates"><small>POUR COMMENCER</small><h3>Modèles populaires</h3>
       {[["☾","Bonne nuit","Éteint les lumières et baisse le chauffage"],["↗","Je quitte la maison","Sécurise et économise en un geste"],["☼","Réveil en douceur","Ouvre les volets progressivement"]].map(x=><button key={x[1]} onClick={()=>{selectAutomation(null);setModal("automation")}}><span>{x[0]}</span><div><b>{x[1]}</b><small>{x[2]}</small></div><em>＋</em></button>)}
       <button className="all-templates">Découvrir tous les modèles →</button>
-    </aside></div>
+    </aside></div></details>
   </div>;
 }
 
