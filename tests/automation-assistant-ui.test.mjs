@@ -53,6 +53,9 @@ test("le coach distingue la PAC de la filtration et répond avec une action conc
   assert.match(poolHeatPumpCoach, /Arrêt nocturne de la PAC piscine/);
   assert.match(poolHeatPumpCoach, /Au coucher du soleil/);
   assert.match(portal, /conversation: coachMessages\.slice/);
+  assert.match(portal, /Proposition affichée/);
+  assert.match(energyRoute, /Une réponse courte comme oui, non/);
+  assert.match(energyRoute, /Préparer cette proposition/);
 });
 
 test("présente des exemples de règles réellement prises en charge", () => {
