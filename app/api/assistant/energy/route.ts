@@ -84,10 +84,10 @@ export function directCoachReply(
     return reply("D’accord. Combien d’heures minimum la filtration doit-elle fonctionner chaque jour ? Je conserverai cette durée en privilégiant le surplus solaire.");
   }
   if (/^6\s*heures minimum/.test(normalized)) {
-    return reply("La proposition de filtration est prête : garantir 6 heures par jour, privilégier le surplus solaire réel, faire une pause près de 20 % de batterie et respecter la réserve de 15 %. Utilisez « Préparer cette proposition » pour vérifier l’aperçu avant confirmation.");
+    return reply("Le conseil est défini : garantir 6 heures de filtration par jour, privilégier le surplus solaire réel et préserver la réserve de 15 %. Ce pilotage dynamique n’est pas encore exécutable par la box ; je ne crée donc pas une fausse règle horaire à sa place.");
   }
   if (/^(?:fais|fais-le|fais le)$/.test(normalized) && /filtration|proposition/i.test(`${lastClient} ${lastCoach}`)) {
-    return reply("La proposition est prête. Utilisez « Préparer cette proposition » pour ouvrir l’aperçu ; aucune activation n’a lieu sans votre confirmation explicite.");
+    return reply("Je ne peux pas créer ce pilotage batterie + surplus tant qu’il n’est pas exécutable par la box. Aucune règle n’est créée ; le conseil reste disponible sans être remplacé par une heure fixe inadaptée.");
   }
   if (/^(?:oui|pourquoi\s*\??|non merci)$/.test(normalized) && /PAC piscine|coucher du soleil/i.test(lastCoach)) {
     if (/non/.test(normalized)) return reply("D’accord, je ne prépare rien. La maison conserve son fonctionnement actuel.");

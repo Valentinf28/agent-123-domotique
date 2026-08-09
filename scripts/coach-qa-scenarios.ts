@@ -43,8 +43,8 @@ export const coachQAScenarios: QAScenario[] = [
     turns: [
       { message: "La batterie a dû faire un appoint réseau à 15 %. La filtration aurait dû s'arrêter car il n'y avait pas assez de solaire. Tu proposes quoi ?", rule: rule({ require: [/filtration/i, /20\s*%/, /surplus réel/i, /durée quotidienne/i], forbid: [/PAC piscine est/i, /heure fixe/i, /professionnel/i] }) },
       { message: "ok vas-y", rule: rule({ require: [/combien d['’]heures minimum/i], forbid: [/professionnel/i, /PAC piscine/i, /je ne peux pas/i] }) },
-      { message: "6 heures minimum", rule: rule({ require: [/6\s*heures/i, /filtration/i, /(?:aperçu|proposition|préparer)/i], forbid: [/PAC piscine/i] }) },
-      { message: "fais", rule: rule({ require: [/(?:aperçu|préparer|confirmation)/i], forbid: [/(?:créée|activée|appliquée)/i] }) },
+      { message: "6 heures minimum", rule: rule({ require: [/6\s*heures/i, /filtration/i, /(?:conseil|pas encore exécutable)/i], forbid: [/PAC piscine/i, /Préparer cette proposition/i] }) },
+      { message: "fais", rule: rule({ require: [/(?:ne peux pas créer|pas encore exécutable|aucune règle)/i], forbid: [/(?:créée|activée|appliquée|Préparer cette proposition)/i] }) },
     ],
   },
   {
