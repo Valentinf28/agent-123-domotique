@@ -194,7 +194,7 @@ function localReply(
   } else if (intent === "battery" && /reporter|décaler|decaler|usages?/.test(normalized)) {
     const loads = context.predictivePlans.filter((plan) => plan.loadId !== "configuration" && plan.loadCategory !== "other");
     answer = loads.length
-      ? `Pour préserver la batterie, reportez d’abord ${loads.map((plan) => plan.loadLabel).join(", ")} jusqu’à ce que leur puissance soit couverte par le solaire. Les autres appareils ne sont pas proposés sans configuration explicite.`
+      ? `Pour préserver la batterie, reportez d’abord les usages suivants : ${loads.map((plan) => plan.loadLabel).join(", ")}. Attendez que leur puissance soit couverte par le solaire. Les autres appareils ne sont pas proposés sans configuration explicite.`
       : "Aucun usage flexible n’est suffisamment configuré pour proposer une coupure automatique. Le Coach ne doit pas deviner quels appareils sont reportables.";
   } else if (intent === "money" && /batterie/.test(normalized)) {
     answer = batterySavingsGuidance(context.tariff.pricesConfigured);
