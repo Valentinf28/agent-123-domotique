@@ -815,7 +815,15 @@ export async function getAgentPortalHome(dossierPublicId?: string | null) {
         indoorTemperature: formatted(scopedFind(inventory, valueBindings.indoorTemperature, allowShowroomEntities), "°C"),
         bedroomTemperature: formatted(scopedFind(inventory, valueBindings.bedroomTemperature, allowShowroomEntities), "°C"),
         heatingSetpoint: formattedAttribute(heatingClimate, "temperature", "°C"),
-        poolTemperature: formatted(scopedFind(inventory, valueBindings.poolTemperature, allowShowroomEntities), "°C"),
+        poolTemperature: (() => {
+          const dedicatedSensor = formatted(
+            scopedFind(inventory, valueBindings.poolTemperature, allowShowroomEntities),
+            "°C",
+          );
+          return dedicatedSensor === "—"
+            ? formattedAttribute(poolClimate, "current_temperature", "°C")
+            : dedicatedSensor;
+        })(),
         poolAirTemperature: effectivePoolAir,
         poolSetpoint: formattedAttribute(poolClimate, "temperature", "°C") === "—"
           ? formatted(scopedFind(inventory, valueBindings.poolSetpoint, allowShowroomEntities), "°C")
