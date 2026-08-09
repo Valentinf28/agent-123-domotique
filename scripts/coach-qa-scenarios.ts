@@ -93,6 +93,14 @@ export const coachQAScenarios: QAScenario[] = [
     ],
   },
   {
+    id: "filtration-energy-today",
+    theme: "Consommation mesurée de la filtration",
+    turns: [
+      { message: "La pompe de la piscine a consommé combien aujourd'hui ?", rule: rule({ require: [/aujourd/i, /filtration/i, /kWh|pas assez/i], forbid: [/donne.*durée/i, /toute la maison/i, /demain/i] }) },
+      { message: "Combien a consommé la filtration aujourd'hui, sans compter la PAC ?", rule: rule({ require: [/filtration/i, /PAC/i, /kWh|relevés|pas assez/i], forbid: [/donne.*durée/i, /toute la maison/i] }) },
+    ],
+  },
+  {
     id: "missing-data",
     theme: "Données manquantes",
     turns: [

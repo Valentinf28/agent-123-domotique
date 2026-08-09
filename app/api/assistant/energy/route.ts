@@ -77,7 +77,11 @@ function localReply(
     .slice(0, 3);
   let answer: string;
   let automationProposal: AutomationProposal | null = null;
-  if (asksForHouseStatus(message)) {
+  if (/(?:combien|quelle quantité|quelle quantite|a consommé|a consomme).{0,45}(?:pompe.{0,15}piscine|filtration)|(?:pompe.{0,15}piscine|filtration).{0,45}(?:combien|consommé|consomme).{0,20}aujourd/.test(normalized) && (!/(?:pac|pompe à chaleur|pompe a chaleur)/.test(normalized) || /filtration/.test(normalized))) {
+    answer = context.filtrationEnergyToday.available
+      ? `Aujourd’hui, la pompe de filtration de la piscine a consommé environ ${kilowattHours(context.filtrationEnergyToday.energyWh)}, calculés à partir de ${context.filtrationEnergyToday.sampleCount} relevés. Le calcul couvre ${context.filtrationEnergyToday.coveredMinutes} minutes réellement mesurées et n’extrapole pas les périodes sans données. Ce chiffre concerne la filtration, pas la PAC piscine.`
+      : "Je n’ai pas assez de relevés de la filtration aujourd’hui pour calculer honnêtement sa consommation. Je peux seulement indiquer sa puissance actuelle.";
+  } else if (asksForHouseStatus(message)) {
     const filtration = Math.max(0, context.current.filtrationWatts);
     const hotWater = Math.max(0, context.current.hotWaterWatts);
     const detailed = filtration + hotWater;
@@ -514,6 +518,7 @@ export async function POST(request: Request) {
     const equipmentMissing = (intent === "vehicle" && !context.equipmentCapabilities.vehicle) ||
       (intent === "hot-water" && !context.equipmentCapabilities.hotWater);
     const filtrationBatteryScenario = asksForFiltrationBatteryProtection(message);
+    const filtrationEnergyQuestion = /(?:combien|quelle quantité|quelle quantite|a consommé|a consomme).{0,45}(?:pompe.{0,15}piscine|filtration)|(?:pompe.{0,15}piscine|filtration).{0,45}(?:combien|consommé|consomme).{0,20}aujourd/i.test(message) && (!/(?:pac|pompe à chaleur|pompe a chaleur)/i.test(message) || /filtration/i.test(message));
     const filtrationPlan = context.predictivePlans.find((plan) => /filtration/i.test(plan.loadLabel));
     const filtrationReply: CoachReply | null = filtrationBatteryScenario ? {
       answer: filtrationBatteryProtectionGuidance({
@@ -529,6 +534,7 @@ export async function POST(request: Request) {
     const reply = coachConversationContinuation(message, conversation) ??
       poolHeatPumpCoachReply(message) ??
       filtrationReply ??
+      (filtrationEnergyQuestion ? localReply(message, context) : null) ??
       (asksForHouseStatus(message) ? localReply(message, context) : null) ??
       (asksForBatteryEndurance(message) ? localReply(message, context) : null) ??
       (asksForCoachActionPlan(message) ? localReply(message, context) : null) ??

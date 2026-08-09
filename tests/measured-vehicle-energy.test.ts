@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { measuredVehicleEnergyToday } from "../lib/measured-vehicle-energy";
+import { measuredFiltrationEnergyToday, measuredVehicleEnergyToday } from "../lib/measured-vehicle-energy";
 
 test("calcule les kWh réellement mesurés pour la voiture aujourd'hui", () => {
   const result = measuredVehicleEnergyToday([
@@ -33,4 +33,15 @@ test("ignore les relevés d'un autre jour", () => {
 
   assert.equal(result.energyWh, 250);
   assert.equal(result.sampleCount, 2);
+});
+
+test("calcule aussi l'énergie mesurée de la pompe de filtration", () => {
+  const result = measuredFiltrationEnergyToday([
+    { capturedAt: "2026-08-09T08:00:00+02:00", filtrationWatts: 690 },
+    { capturedAt: "2026-08-09T08:05:00+02:00", filtrationWatts: 690 },
+    { capturedAt: "2026-08-09T08:10:00+02:00", filtrationWatts: 690 },
+  ], new Date("2026-08-09T08:11:00+02:00"));
+
+  assert.equal(result.available, true);
+  assert.equal(result.energyWh, 115);
 });

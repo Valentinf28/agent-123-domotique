@@ -1,6 +1,7 @@
-type VehiclePowerSample = {
+type PowerSample = {
   capturedAt: string;
-  vehicleWatts: number;
+  vehicleWatts?: number;
+  filtrationWatts?: number;
 };
 
 export type MeasuredVehicleEnergy = {
@@ -17,8 +18,9 @@ const parisDay = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
-export function measuredVehicleEnergyToday(
-  samples: VehiclePowerSample[],
+export function measuredLoadEnergyToday(
+  samples: PowerSample[],
+  power: (sample: PowerSample) => number,
   now = new Date(),
 ): MeasuredVehicleEnergy {
   const today = parisDay.format(now);
@@ -26,7 +28,7 @@ export function measuredVehicleEnergyToday(
     .filter((sample) => parisDay.format(new Date(sample.capturedAt)) === today)
     .map((sample) => ({
       at: Date.parse(sample.capturedAt),
-      watts: Math.max(0, Number(sample.vehicleWatts) || 0),
+      watts: Math.max(0, Number(power(sample)) || 0),
     }))
     .filter((sample) => Number.isFinite(sample.at) && sample.at <= now.getTime())
     .sort((left, right) => left.at - right.at);
@@ -54,4 +56,12 @@ export function measuredVehicleEnergyToday(
     sampleCount: ordered.length,
     coveredMinutes: Math.round(coveredMs / 60_000),
   };
+}
+
+export function measuredVehicleEnergyToday(samples: PowerSample[], now = new Date()) {
+  return measuredLoadEnergyToday(samples, (sample) => sample.vehicleWatts ?? 0, now);
+}
+
+export function measuredFiltrationEnergyToday(samples: PowerSample[], now = new Date()) {
+  return measuredLoadEnergyToday(samples, (sample) => sample.filtrationWatts ?? 0, now);
 }
