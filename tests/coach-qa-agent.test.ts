@@ -3,8 +3,8 @@ import test from "node:test";
 import { coachQAScenarios, coachQATurnCount } from "../scripts/coach-qa-scenarios.ts";
 import { evaluateCoachAnswer } from "../scripts/coach-qa-agent.ts";
 
-test("le corpus QA contient au moins trente questions et des dialogues multi-tours", () => {
-  assert.ok(coachQATurnCount >= 30);
+test("le corpus QA contient au moins cinquante questions et des dialogues multi-tours", () => {
+  assert.ok(coachQATurnCount >= 50);
   assert.ok(coachQAScenarios.every((scenario) => scenario.turns.length >= 2));
 });
 

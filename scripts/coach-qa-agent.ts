@@ -65,7 +65,7 @@ function markdown(findings: Finding[], tested: number) {
 
 async function main() {
   if (checkOnly) {
-    if (coachQATurnCount < 30) throw new Error(`Corpus trop petit : ${coachQATurnCount} tours`);
+    if (coachQATurnCount < 50) throw new Error(`Corpus trop petit : ${coachQATurnCount} tours`);
     for (const scenario of coachQAScenarios) {
       if (!scenario.id || scenario.turns.length < 2) throw new Error(`Scénario invalide : ${scenario.id}`);
       for (const turn of scenario.turns) {
