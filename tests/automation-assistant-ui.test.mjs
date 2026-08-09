@@ -65,7 +65,7 @@ test("le coach affiche un vrai bouton pour préparer la protection de la filtrat
 });
 
 test("le parcours d’aperçu s’ouvre automatiquement pour rendre le résultat visible", () => {
-  assert.match(portal, /open=\{assistantBusy \|\| Boolean\(assistantPreview\) \|\| assistantRequest\.trim\(\)\.length > 0\}/);
+  assert.match(portal, /coach-automation-detail" open>/);
 });
 
 test("présente des exemples de règles réellement prises en charge", () => {

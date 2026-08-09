@@ -2657,7 +2657,7 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
         <b>{action.priority}</b><div><small>{action.goal === "money" ? "ÉCONOMIES" : action.goal === "battery" ? "BATTERIE" : "SOLAIRE"}</small><h4>{action.title}</h4><p>{action.description}</p><em>{action.impact}</em></div><button type="button" onClick={() => void askCoach(action.nextStep)}>Passer à l’action →</button>
       </article>)}</div>}
     </section>}
-    <details className="coach-detail coach-automation-detail" open={assistantBusy || Boolean(assistantPreview) || assistantRequest.trim().length > 0}><summary><span><b>Créer une automatisation</b><small>Décrivez la règle, vérifiez son aperçu, puis confirmez</small></span><i>⌄</i></summary><section className="automation-assistant" id="assistant-domotique" aria-label="Assistant de création d’automatisations">
+    <details className="coach-detail coach-automation-detail" open><summary><span><b>Créer une automatisation</b><small>Décrivez la règle, vérifiez son aperçu, puis confirmez</small></span><i>⌄</i></summary><section className="automation-assistant" id="assistant-domotique" aria-label="Assistant de création d’automatisations">
       <header>
         <div><span>✦</span><div><small>ASSISTANT DOMOTIQUE PREMIUM</small><h3>Dites simplement ce que vous voulez</h3><p>L’assistant prépare une règle sûre. Il ne crée rien avant votre confirmation explicite.</p></div></div>
         <em>Aperçu obligatoire</em>
