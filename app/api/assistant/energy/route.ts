@@ -12,8 +12,8 @@ import {
 import { tariffGuidance } from "../../../../lib/energy-insights";
 import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../../lib/coach-guardrails";
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
-import { asksForBatteryEndurance, asksForCoachActionPlan, asksForHouseStatus, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
-import { batterySavingsGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from "../../../../lib/coach-local-advice";
+import { asksForBatteryEndurance, asksForCoachActionPlan, asksForFiltrationBatteryProtection, asksForHouseStatus, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
+import { batterySavingsGuidance, filtrationBatteryProtectionGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from "../../../../lib/coach-local-advice";
 import { coachConversationContinuation } from "../../../../lib/coach-conversation";
 
 type AutomationProposal = {
@@ -502,8 +502,22 @@ export async function POST(request: Request) {
     const intent = coachQuestionIntent(message);
     const equipmentMissing = (intent === "vehicle" && !context.equipmentCapabilities.vehicle) ||
       (intent === "hot-water" && !context.equipmentCapabilities.hotWater);
+    const filtrationBatteryScenario = asksForFiltrationBatteryProtection(message);
+    const filtrationPlan = context.predictivePlans.find((plan) => /filtration/i.test(plan.loadLabel));
+    const filtrationReply: CoachReply | null = filtrationBatteryScenario ? {
+      answer: filtrationBatteryProtectionGuidance({
+        reservePercent: context.dossier.batteryReservePercent,
+        filtrationWatts: context.current.filtrationWatts,
+        configuredForEnergyControl: Boolean(filtrationPlan),
+      }),
+      automationProposal: null,
+      suggestedQuestions: filtrationPlan
+        ? ["Quel surplus faut-il pour relancer la filtration ?", "Comment garantir la durée quotidienne de filtration ?"]
+        : ["Comment déclarer la filtration comme usage flexible ?", "Quel surplus faut-il pour relancer la filtration ?"],
+    } : null;
     const reply = coachConversationContinuation(message, conversation) ??
       poolHeatPumpCoachReply(message) ??
+      filtrationReply ??
       (asksForHouseStatus(message) ? localReply(message, context) : null) ??
       (asksForBatteryEndurance(message) ? localReply(message, context) : null) ??
       (asksForCoachActionPlan(message) ? localReply(message, context) : null) ??

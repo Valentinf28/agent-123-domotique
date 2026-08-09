@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { batterySavingsGuidance, financialCoachGuidance, observedPeriodLabel, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from '../lib/coach-local-advice';
+import { batterySavingsGuidance, filtrationBatteryProtectionGuidance, financialCoachGuidance, observedPeriodLabel, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from '../lib/coach-local-advice';
 
 test('annonce exactement la période réellement observée', () => {
   assert.equal(observedPeriodLabel(1), 'Sur la journée disponible');
@@ -98,6 +98,21 @@ test('n’invente pas le gain financier de la batterie', () => {
   assert.match(answer, /prix du kWh n’est pas renseigné/i);
   assert.match(answer, /ne peut pas être converti honnêtement en euros/i);
   assert.match(answer, /protéger la réserve/i);
+});
+
+test('propose un vrai garde-fou pour la filtration quand la batterie atteint sa réserve', () => {
+  const answer = filtrationBatteryProtectionGuidance({
+    reservePercent: 15,
+    filtrationWatts: 684,
+    configuredForEnergyControl: false,
+  });
+  assert.match(answer, /réserve de 15 %/i);
+  assert.match(answer, /684 W/);
+  assert.match(answer, /à 20 %, mettre la filtration en pause/i);
+  assert.match(answer, /surplus réel suffit/i);
+  assert.match(answer, /durée quotidienne nécessaire/i);
+  assert.match(answer, /usage flexible pilotable/i);
+  assert.doesNotMatch(answer, /73,3 kWh|209,1 kWh/);
 });
 
 test('projette uniquement les achats réseau et déduit la vente du surplus', () => {

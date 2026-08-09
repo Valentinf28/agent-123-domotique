@@ -31,3 +31,9 @@ export function asksForHouseStatus(message: string) {
   const normalized = message.toLowerCase();
   return /(?:que se passe|consomment? le plus|consommation actuelle|anomalie énergétique|consomme.{0,15}la nuit|sait réellement|données.{0,15}manquent|premier changement|équipements?.{0,20}pilotables?)/.test(normalized);
 }
+
+export function asksForFiltrationBatteryProtection(message: string) {
+  const normalized = message.toLocaleLowerCase('fr-FR');
+  return /filtration/.test(normalized) && /batterie/.test(normalized) &&
+    /solaire|production|réseau|reseau|météo|meteo|temps/.test(normalized);
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { asksForBatteryEndurance, asksForCoachActionPlan, coachQuestionIntent, needsDeterministicFinancialAnswer } from '../lib/coach-question-intent';
+import { asksForBatteryEndurance, asksForCoachActionPlan, asksForFiltrationBatteryProtection, coachQuestionIntent, needsDeterministicFinancialAnswer } from '../lib/coach-question-intent';
 
 test('distingue économiser la batterie d’une économie financière', () => {
   assert.equal(coachQuestionIntent('Comment économiser ma batterie ce soir ?'), 'battery');
@@ -36,4 +36,9 @@ test('ne détourne pas une demande solaire ou de recharge vers le bilan financie
 test('classe le gain solaire comme financier et la recharge au surplus comme véhicule', () => {
   assert.equal(coachQuestionIntent('Combien puis-je gagner en déplaçant mes usages vers le solaire ?'), 'money');
   assert.equal(coachQuestionIntent('Crée une règle pour charger la voiture uniquement avec le surplus solaire'), 'vehicle');
+});
+
+test('reconnaît le scénario filtration qui vide la batterie sans solaire', () => {
+  assert.equal(asksForFiltrationBatteryProtection("La batterie a fait un appoint réseau à 15 %, la filtration aurait dû s'arrêter car la production solaire est insuffisante et le temps est pourri"), true);
+  assert.equal(asksForFiltrationBatteryProtection('Combien consomme la filtration ?'), false);
 });

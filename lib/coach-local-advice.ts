@@ -155,6 +155,26 @@ export function batterySavingsGuidance(pricesConfigured: boolean) {
   return `Pour calculer l’économie apportée par la batterie, il faut mesurer l’énergie qu’elle restitue à la place d’un achat réseau, puis déduire ses pertes. ${price} Le Coach peut néanmoins protéger la réserve et éviter les décharges pour des usages reportables.`;
 }
 
+export function filtrationBatteryProtectionGuidance(input: {
+  reservePercent: number;
+  filtrationWatts: number;
+  configuredForEnergyControl: boolean;
+}) {
+  const anticipationPercent = Math.min(100, input.reservePercent + 5);
+  const measuredPower = input.filtrationWatts > 100
+    ? ` La filtration consomme actuellement environ ${new Intl.NumberFormat('fr-FR').format(Math.round(input.filtrationWatts))} W.`
+    : '';
+  const setup = input.configuredForEnergyControl
+    ? "Le pilotage énergétique peut appliquer ce comportement en contrôlant le surplus réel et la réserve."
+    : "Pour l’automatiser correctement, la filtration doit d’abord être déclarée comme usage flexible pilotable ; je ne fabriquerai pas une simple heure fixe qui ignorerait la météo et la batterie.";
+  return [
+    `Vous avez raison sur le principe : si le cycle pouvait être reporté, la filtration aurait dû être suspendue avant que la batterie atteigne sa réserve de ${input.reservePercent} %.${measuredPower}`,
+    `Je recommande ce garde-fou : à ${anticipationPercent} %, mettre la filtration en pause si le solaire ne couvre pas sa puissance, puis la relancer uniquement quand le surplus réel suffit.`,
+    "La durée quotidienne nécessaire doit être terminée plus tard et les protections antigel ou sanitaires restent toujours prioritaires.",
+    setup,
+  ].join(' ');
+}
+
 export function unavailableEquipmentGuidance(
   intent: 'vehicle' | 'hot-water',
   capabilities: { vehicle: boolean; hotWater: boolean },
