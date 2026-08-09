@@ -361,10 +361,17 @@ async function openAiReply(
             text: JSON.stringify({
               question: message,
               echangesRecents: conversation,
-              maison: context.dossier.name,
+              maison: {
+                nom: context.dossier.name,
+                capaciteBatterieKwh: context.dossier.batteryCapacityWh / 1000,
+                reserveBatteriePourcent: context.dossier.batteryReservePercent,
+              },
               mesuresActuelles: context.current,
+              autonomieBatterieCalculee: context.batteryOutlook,
               bilanSeptJours: context.week,
+              bilanFinancierMesure: context.gridCost,
               nombreDeReleves: context.historySamples,
+              planActionsCoach: context.actionPlan,
               previsionSolaire: context.solarForecast,
               contratTarifaire: context.tariff,
               equipementsDisponibles: context.equipmentCapabilities,
