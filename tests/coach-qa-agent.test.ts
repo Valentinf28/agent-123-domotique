@@ -23,3 +23,11 @@ test("l’agent accepte une réponse concise qui contient les faits attendus", (
     { require: [/filtration/i, /20\s*%/, /surplus réel/i], forbid: [/PAC piscine/i], maxWords: 30 },
   ), []);
 });
+
+test("les interdits globaux restent actifs lorsqu’un scénario ajoute ses propres interdits", () => {
+  const turn = coachQAScenarios.flatMap((scenario) => scenario.turns)
+    .find((candidate) => candidate.rule.forbid?.some((pattern) => pattern.test("PAC piscine")));
+  assert.ok(turn);
+  assert.ok(turn.rule.forbid?.some((pattern) => pattern.test("Green Box")));
+  assert.ok(turn.rule.forbid?.some((pattern) => pattern.test("Home Assistant")));
+});

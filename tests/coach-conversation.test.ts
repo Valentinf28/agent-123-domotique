@@ -56,3 +56,13 @@ test("on fait ça poursuit le paramétrage au lieu d’annoncer un bouton absent
   assert.match(reply?.answer ?? "", /combien d’heures minimum/i);
   assert.doesNotMatch(reply?.answer ?? "", /Préparer cette proposition/i);
 });
+
+for (const approval of ["ok fais ça stp", "vas-y alors", "oui fais-le stp"]) {
+  test(`comprend la validation naturelle « ${approval} »`, () => {
+    const reply = coachConversationContinuation(approval, [{
+      role: "coach",
+      text: "La filtration doit être déclarée comme usage flexible pilotable.",
+    }]);
+    assert.match(reply?.answer ?? "", /combien d’heures minimum/i);
+  });
+}

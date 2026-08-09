@@ -23,8 +23,8 @@ const never: RegExp[] = [
 
 const rule = (value: QARule): QARule => ({
   maxWords: 110,
-  forbid: [...never, ...(value.forbid ?? [])],
   ...value,
+  forbid: [...never, ...(value.forbid ?? [])],
 });
 
 export const coachQAScenarios: QAScenario[] = [

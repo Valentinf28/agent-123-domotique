@@ -71,6 +71,26 @@ test("transforme un constat clair sur la PAC piscine en règle de protection", (
   assert.match(result.summary, /coucher du soleil.*éteindre.*PAC piscine/i);
 });
 
+test("ne remplace jamais un pilotage filtration batterie et surplus par une heure fixe", () => {
+  const missingDuration = proposeSafeAutomation(
+    "Mettre la filtration en pause à 20 % de batterie si le solaire ne couvre pas sa puissance, puis la relancer avec le surplus réel",
+    devices,
+  );
+  assert.equal(missingDuration.status, "needs_clarification");
+  if (missingDuration.status !== "needs_clarification") return;
+  assert.match(missingDuration.message, /combien d’heures minimum/i);
+  assert.doesNotMatch(missingDuration.message, /à quelle heure/i);
+
+  const complete = proposeSafeAutomation(
+    "Mettre la filtration en pause à 20 % de batterie, la relancer avec le surplus solaire et garantir une durée minimum de 6 heures",
+    devices,
+  );
+  assert.equal(complete.status, "unsupported");
+  if (complete.status !== "unsupported") return;
+  assert.match(complete.message, /pas encore exécutable/i);
+  assert.match(complete.message, /aucune règle.*heure fixe/i);
+});
+
 test("refuse les actions dangereuses et les accès sensibles", () => {
   assert.equal(proposeSafeAutomation("Ouvre le portail tous les jours à 8h", devices).status, "refused");
   assert.equal(proposeSafeAutomation("Désactive l'alarme à 23h", devices).status, "refused");

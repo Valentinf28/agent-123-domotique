@@ -64,6 +64,10 @@ test("le coach affiche un vrai bouton pour préparer la protection de la filtrat
   assert.match(portal, /prepareAssistantAutomation\(request\)/);
 });
 
+test("le parcours d’aperçu s’ouvre automatiquement pour rendre le résultat visible", () => {
+  assert.match(portal, /open=\{assistantBusy \|\| Boolean\(assistantPreview\)\}/);
+});
+
 test("présente des exemples de règles réellement prises en charge", () => {
   assert.match(portal, /Allume la filtration en semaine à 10h30/);
   assert.match(portal, /coucher du soleil le week-end/);

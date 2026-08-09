@@ -96,6 +96,12 @@ function poolEnergyOptimization(message: string) {
     /plus de production solaire|batterie|eau.{0,12}\d{2}\s*c|trop longtemps|pas d interet|ameliorer/.test(normalized);
 }
 
+function filtrationEnergyGuard(message: string) {
+  const normalized = normalize(message);
+  return /filtration/.test(normalized) && /batterie/.test(normalized) &&
+    /solaire|surplus|production/.test(normalized);
+}
+
 function intendedDevice(message: string, devices: AssistantDevice[]) {
   const normalized = normalize(message);
   const aliasPatterns: Array<[RegExp, RegExp]> = [
@@ -138,6 +144,19 @@ export function proposeSafeAutomation(
     return {
       status: "refused",
       message: "Cette demande touche à la sécurité ou à un accès sensible. Elle ne peut pas être automatisée par l’assistant.",
+    };
+  }
+  if (filtrationEnergyGuard(request)) {
+    const duration = normalize(request).match(/(?:minimum|minimale|pendant|duree).{0,18}(\d{1,2})\s*(?:h|heure)/)?.[1];
+    if (!duration) {
+      return {
+        status: "needs_clarification",
+        message: "Combien d’heures minimum la filtration doit-elle fonctionner chaque jour ? Ajoutez cette durée à la demande pour poursuivre.",
+      };
+    }
+    return {
+      status: "unsupported",
+      message: "Le pilotage automatique selon la batterie et le surplus solaire n’est pas encore exécutable par la box. Aucune règle ne sera créée avec une heure fixe à la place.",
     };
   }
   const poolOptimization = poolEnergyOptimization(request);
