@@ -25,11 +25,11 @@ Versions évaluées : 119, puis corrections 120 et 121
 8. Quel est le premier changement que tu me recommandes ?
 9. La batterie va-t-elle tenir toute la nuit ?
 10. Combien d’énergie puis-je encore utiliser avant la réserve ?
-11. À quoi sert la réserve de batterie de 20 % ?
+11. À quoi sert la réserve de batterie de 15 % ?
 12. Puis-je faire fonctionner la PAC piscine ce soir sans risque ?
 13. Pourquoi la batterie se décharge alors qu’il n’y a plus de soleil ?
 14. Quels usages dois-je reporter pour préserver la batterie ?
-15. Est-ce grave si la batterie atteint 20 % ?
+15. Est-ce grave si la batterie atteint 15 % ?
 16. Combien d’heures d’autonomie me reste-t-il ?
 17. Dois-je augmenter la réserve de batterie ?
 18. Comment augmenter mon autoconsommation ?
@@ -87,7 +87,7 @@ Versions évaluées : 119, puis corrections 120 et 121
 - La filtration et la PAC piscine restent toujours distinctes.
 - Le Coach refuse de déclarer pilotable un appareil seulement détecté.
 - Les économies en euros utilisent les prix contractuels et les flux réseau mesurés.
-- L’autonomie utilise 20 kWh, la charge réelle, la réserve à 20 % et le profil nocturne.
+- L’autonomie utilise 20 kWh, la charge réelle, la réserve à 15 % et le profil nocturne.
 
 ## Résultat final
 
