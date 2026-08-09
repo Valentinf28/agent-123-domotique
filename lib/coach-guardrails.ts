@@ -25,6 +25,7 @@ export function safeCoachSuggestedQuestions(questions: string[]) {
     const fixedTime = /\b(?:[01]?\d|2[0-3])\s*(?:h|:)\s*[0-5]?\d?\b/i.test(question);
     const asksAutomation = /automati|programme|planifie|d[ée]cale|cr[ée]e?\s+(?:une\s+)?r[èe]gle/i.test(question);
     const dynamicEnergy = /solaire|surplus|batterie|m[ée]t[ée]o|pr[ée]vision|demain/i.test(question);
-    return !(asksAutomation && fixedTime && dynamicEnergy);
+    const ambiguousChoice = /^(?:souhaitez-vous|voulez-vous|est-ce que vous voulez|dois-je)\b/i.test(question.trim());
+    return !(asksAutomation && fixedTime && dynamicEnergy) && !ambiguousChoice;
   }).slice(0, 3);
 }

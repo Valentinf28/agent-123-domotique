@@ -14,6 +14,7 @@ import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../.
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
 import { asksForBatteryEndurance, asksForCoachActionPlan, asksForHouseStatus, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
 import { batterySavingsGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from "../../../../lib/coach-local-advice";
+import { coachConversationContinuation } from "../../../../lib/coach-conversation";
 
 type AutomationProposal = {
   name: string;
@@ -501,7 +502,8 @@ export async function POST(request: Request) {
     const intent = coachQuestionIntent(message);
     const equipmentMissing = (intent === "vehicle" && !context.equipmentCapabilities.vehicle) ||
       (intent === "hot-water" && !context.equipmentCapabilities.hotWater);
-    const reply = poolHeatPumpCoachReply(message) ??
+    const reply = coachConversationContinuation(message, conversation) ??
+      poolHeatPumpCoachReply(message) ??
       (asksForHouseStatus(message) ? localReply(message, context) : null) ??
       (asksForBatteryEndurance(message) ? localReply(message, context) : null) ??
       (asksForCoachActionPlan(message) ? localReply(message, context) : null) ??

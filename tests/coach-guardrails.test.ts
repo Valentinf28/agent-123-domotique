@@ -50,3 +50,11 @@ test("ne suggère pas de figer le créneau solaire ponctuel de demain", () => {
     "À quelle heure relancer la PAC demain ?",
   ]);
 });
+
+test("écarte les suggestions ambiguës qui appellent seulement oui ou non", () => {
+  assert.deepEqual(safeCoachSuggestedQuestions([
+    "Souhaitez-vous privilégier la batterie ou la PAC piscine ?",
+    "Voulez-vous un conseil pour le chauffe-eau ?",
+    "Comment préserver la batterie ce soir ?",
+  ]), ["Comment préserver la batterie ce soir ?"]);
+});

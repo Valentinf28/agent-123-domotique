@@ -2491,7 +2491,7 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
           conversation: coachMessages.slice(-6).map((item) => ({
             role: item.role,
             text: item.proposal
-              ? `${item.text}\nProposition affichée : ${item.proposal.name}. Quand : ${item.proposal.trigger}. Action : ${item.proposal.action}.`
+              ? `${item.text}\nProposition affichée : ${item.proposal.name}. Quand : ${item.proposal.trigger}. Action : ${item.proposal.action}. Pourquoi : ${item.proposal.rationale}.`
               : item.text,
           })),
         }),
