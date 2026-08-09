@@ -441,7 +441,7 @@ export function buildEnergyInsights(
   return prioritized;
 }
 
-export async function getEnergyCoachContext(dossierPublicId?: string | null) {
+async function loadEnergyCoachContext(dossierPublicId?: string | null) {
   const selected = await selectAgentForDossier(dossierPublicId);
   if (!selected) throw new Error("CONNECTOR_NOT_CONFIGURED");
   const inventory = parseInventory(selected.agent.inventoryJson);
@@ -645,6 +645,24 @@ export async function getEnergyCoachContext(dossierPublicId?: string | null) {
     consumptionBreakdown,
     insights,
   };
+}
+
+type EnergyCoachContext = Awaited<ReturnType<typeof loadEnergyCoachContext>>;
+const energyCoachContextCache = new Map<string, { expiresAt: number; value: Promise<EnergyCoachContext> }>();
+
+export function getEnergyCoachContext(dossierPublicId?: string | null) {
+  const key = dossierPublicId?.trim() || "__default__";
+  const now = Date.now();
+  const cached = energyCoachContextCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.value;
+  const value = loadEnergyCoachContext(dossierPublicId).catch((error) => {
+    energyCoachContextCache.delete(key);
+    throw error;
+  });
+  // A short cache makes a multi-turn conversation responsive while keeping
+  // live powers fresh enough for energy advice and avoiding repeated D1 scans.
+  energyCoachContextCache.set(key, { expiresAt: now + 15_000, value });
+  return value;
 }
 
 export async function consumeAssistantRequest(
