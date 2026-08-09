@@ -29,10 +29,20 @@ export function coachConversationContinuation(
   conversation: CoachConversationMessage[],
 ): CoachConversationReply | null {
   const normalized = message.toLocaleLowerCase("fr-FR").trim().replace(/[.!?]+$/g, "").trim();
+  const lastCoach = [...conversation].reverse().find((item) => item.role === "coach")?.text ?? "";
+  const affirmative = /^(?:oui|ok|ok\s+vas-?y|d['’]?accord|vas-y|vasy|fais|fais-le|fait le|prépare(?:-la)?|prepare(?:-la)?)$/.test(normalized);
+
+  if (affirmative && /filtration.{0,120}(?:usage flexible|pilotable)|(?:usage flexible|pilotable).{0,120}filtration/is.test(lastCoach)) {
+    return {
+      answer: "D’accord. Pour préparer correctement le pilotage de la filtration, il me manque une seule donnée que je ne dois pas inventer : combien d’heures minimum la filtration doit-elle fonctionner chaque jour ?",
+      automationProposal: null,
+      suggestedQuestions: [],
+    };
+  }
   const proposal = displayedProposal(conversation);
   if (!proposal) return null;
 
-  if (/^(?:oui|ok|d['’]?accord|vas-y|vasy|fais-le|fait le|prépare(?:-la)?|prepare(?:-la)?)$/.test(normalized)) {
+  if (affirmative) {
     return {
       answer: `Parfait. La règle « ${proposal.name} » est prête : ${proposal.trigger.toLocaleLowerCase("fr-FR")}, ${proposal.action.toLocaleLowerCase("fr-FR")}. Cliquez sur « Préparer cette proposition » pour vérifier l’aperçu avant de l’activer.`,
       automationProposal: proposal,

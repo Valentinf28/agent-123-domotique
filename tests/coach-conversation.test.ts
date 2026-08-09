@@ -29,3 +29,21 @@ test("pourquoi explique la proposition existante", () => {
   const reply = coachConversationContinuation("pourquoi ?", conversation);
   assert.match(reply?.answer ?? "", /Éviter de vider la batterie/);
 });
+
+test("ok vas-y poursuit le paramétrage de la filtration et demande seulement la durée manquante", () => {
+  const reply = coachConversationContinuation("ok vasy", [{
+    role: "coach",
+    text: "Pour l’automatiser correctement, la filtration doit d’abord être déclarée comme usage flexible pilotable.",
+  }]);
+  assert.match(reply?.answer ?? "", /combien d’heures minimum/i);
+  assert.doesNotMatch(reply?.answer ?? "", /professionnel|PAC piscine/i);
+  assert.deepEqual(reply?.suggestedQuestions, []);
+});
+
+test("fais est compris comme une validation du paramétrage de filtration", () => {
+  const reply = coachConversationContinuation("fais", [{
+    role: "coach",
+    text: "La filtration doit être configurée comme équipement pilotable et usage flexible.",
+  }]);
+  assert.match(reply?.answer ?? "", /une seule donnée/i);
+});
