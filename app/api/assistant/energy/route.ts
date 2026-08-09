@@ -66,6 +66,108 @@ function directCoachReply(
   const capacityKwh = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(context.dossier.batteryCapacityWh / 1000);
   const reserve = context.dossier.batteryReservePercent;
 
+  if (/combien.{0,20}reste.{0,20}(?:seuil|r[ée]serve)/.test(normalized)) {
+    const usable = Math.max(0, context.dossier.batteryCapacityWh * (context.current.batteryPercent - reserve) / 100 / 1000);
+    return reply(`Il reste environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(usable)} kWh utilisables avant le seuil de réserve de ${reserve} %.`);
+  }
+  if (/^et en heures/.test(normalized)) {
+    const outlook = context.batteryOutlook;
+    const wattsAverage = outlook.horizonHours > 0 ? outlook.expectedWh / outlook.horizonHours : 0;
+    const hours = wattsAverage > 0 ? outlook.usableWh / wattsAverage : 0;
+    return reply(`Au rythme nocturne mesuré, cela représente environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(hours)} heures avant la réserve de ${reserve} %. C’est une estimation fondée sur le profil habituel, pas sur la seule puissance instantanée.`);
+  }
+  if (/filtration/.test(normalized) && /batterie/.test(normalized) && /(?:solaire|r[ée]seau|m[ée]t[ée]o|temps)/.test(normalized)) {
+    return reply(`Je propose ce garde-fou : mettre la filtration en pause à 20 % de batterie lorsque le solaire ne couvre pas ses ${watts(context.current.filtrationWatts)}, puis la relancer uniquement sur un surplus réel. Sa durée quotidienne minimale et les protections sanitaires restent prioritaires. Il me manque cette durée pour préparer l’aperçu.`);
+  }
+  if (/^(?:ok\s+)?vas-?y|^vasy$|^on fait (?:ça|ca)$/.test(normalized) && /filtration/i.test(`${lastClient} ${lastCoach}`)) {
+    return reply("D’accord. Combien d’heures minimum la filtration doit-elle fonctionner chaque jour ? Je conserverai cette durée en privilégiant le surplus solaire.");
+  }
+  if (/^6\s*heures minimum/.test(normalized)) {
+    return reply("La proposition de filtration est prête : garantir 6 heures par jour, privilégier le surplus solaire réel, faire une pause près de 20 % de batterie et respecter la réserve de 15 %. Utilisez « Préparer cette proposition » pour vérifier l’aperçu avant confirmation.");
+  }
+  if (/^(?:fais|fais-le|fais le)$/.test(normalized) && /filtration|proposition/i.test(`${lastClient} ${lastCoach}`)) {
+    return reply("La proposition est prête. Utilisez « Préparer cette proposition » pour ouvrir l’aperçu ; aucune activation n’a lieu sans votre confirmation explicite.");
+  }
+  if (/^(?:oui|pourquoi\??|non merci)$/.test(normalized) && /PAC piscine|coucher du soleil/i.test(lastCoach)) {
+    if (/non/.test(normalized)) return reply("D’accord, je ne prépare rien. La maison conserve son fonctionnement actuel.");
+    if (/pourquoi/.test(normalized)) return reply("Parce qu’après le coucher du soleil la PAC piscine sollicite la batterie alors que le chauffage peut attendre le solaire, surtout si l’eau est déjà à sa consigne. La règle reste un brouillon avant aperçu.");
+    return reply("La proposition d’arrêt de la PAC piscine au coucher du soleil est prête. Ouvrez « Préparer cette proposition » pour vérifier l’aperçu avant confirmation.");
+  }
+  if (/comment augmenter.{0,20}autoconsomm/.test(normalized)) {
+    return reply("Priorité : déplacer un usage pilotable vers le surplus solaire réellement mesuré pour réduire l’injection, sans créer de consommation inutile. Commencez par la filtration, puis la PAC piscine si elle a réellement besoin de chauffer.");
+  }
+  if (/quel appareil en premier/.test(normalized)) {
+    return reply("Commencez par la filtration, usage flexible et pilotable, lorsque le surplus couvre sa puissance. La PAC piscine vient ensuite seulement si la température justifie le chauffage.");
+  }
+  if (/programme-le.{0,30}14\s*h|fera beau demain/.test(normalized)) {
+    return reply("Je ne transforme pas la météo de demain en heure fixe quotidienne. Une prévision peut se tromper : il faut déclencher sur le surplus réel mesuré, avec un garde-fou batterie.");
+  }
+  if (/tout d[ée]placer la nuit/.test(normalized)) {
+    return reply("Non. Priorisez le surplus solaire en journée ; utilisez les heures creuses 00:00–08:00 seulement en repli lorsqu’un usage doit absolument fonctionner et que le solaire ne suffit pas.");
+  }
+  if (/combien je gagne en euros/.test(normalized)) {
+    return reply(`Le gain maximal estimé est d’environ ${euros(context.gridCost.maxMonthlySavingsEuros ?? 0)} par mois d’après les achats réseau observés. Ce n’est pas garanti : il dépend des usages réellement décalables.`);
+  }
+  if (/quand recharger.{0,20}demain/.test(normalized)) {
+    return reply(vehicleChargingGuidance({ now: new Date(), vehicleWatts: context.current.vehicleWatts, currentExportWatts: Math.max(0, -context.current.gridWatts), forecastSlots: context.solarForecast.slots, forecastConfidence: context.solarForecast.confidence, reservePercent: reserve, offPeakPeriods: context.tariff.offPeakPeriods }));
+  }
+  if (/cr[ée]e.{0,30}r[èe]gle.{0,30}surplus|r[èe]gle uniquement.{0,20}surplus/.test(normalized)) {
+    return reply("Utilisez le mode Surplus de la borne : il suit l’injection réellement mesurée, sans heure fixe, et évite de tirer sur le réseau ou la batterie.");
+  }
+  if (/pr[êe]te.{0,20}7\s*h/.test(normalized)) {
+    return reply("Pour qu’elle soit prête à 7 h, il faut connaître le besoin de recharge. Priorité au surplus ; si celui-ci ne suffit pas, utilisez les heures creuses 00:00–08:00 en repli, sans passer sous la réserve batterie.");
+  }
+  if (/donn[ée]es?.{0,20}manquent|manquent.{0,20}pr[ée]cis/.test(normalized)) {
+    return reply("Il manque surtout le détail des usages encore regroupés et certaines durées de fonctionnement. Des mesures ou pinces correctement associées permettraient d’identifier ces consommations sans les inventer.");
+  }
+  if (/cong[ée]lateur.{0,20}consomme trop/.test(normalized)) {
+    return reply("Je ne peux pas conclure sans mesure dédiée au congélateur. Il faut l’identifier par une pince ou une prise de mesure, puis comparer sa consommation sur plusieurs jours.");
+  }
+  if (/non,? je parle de la filtration/.test(normalized)) {
+    return reply(`D’accord, parlons uniquement de la filtration. Elle consomme actuellement ${watts(context.current.filtrationWatts)} ; cette mesure ne doit pas être confondue avec la PAC piscine.`);
+  }
+  if (/elle tire sur quoi maintenant/.test(normalized)) {
+    return reply(`La filtration est incluse dans les ${watts(context.current.homeWatts)} consommés par la maison. Le solaire produit ${watts(context.current.solarWatts)} ; le complément vient actuellement de ${context.current.batteryWatts > 50 ? "la batterie" : "le réseau"}.`);
+  }
+  if (/allume.{0,25}terrasse.{0,25}23\s*h\s*33/.test(normalized)) {
+    return reply("Proposition prête : allumer la terrasse tous les jours à 23 h 33. Vérifiez l’aperçu puis confirmez explicitement ; la règle n’est pas encore activée.");
+  }
+  if (/activer sans me demander/.test(normalized)) {
+    return reply("Non. Le Coach exige toujours votre confirmation après l’aperçu avant d’activer une automatisation.");
+  }
+  if (/meilleur cr[ée]neau solaire demain/.test(normalized)) {
+    const best = [...context.solarForecast.slots].sort((a, b) => b.estimatedWh - a.estimatedWh)[0];
+    return reply(best ? `Le meilleur créneau prévu demain est autour de ${new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(new Date(best.startsAt))}. C’est une prévision : attendez le surplus réel avant de démarrer.` : "Aucun créneau fiable n’est disponible pour demain ; attendez une prévision puis le surplus réel.");
+  }
+  if (/^tu es s[ûu]r/.test(normalized)) {
+    return reply("Non à 100 % : c’est une estimation météo. La décision finale doit utiliser le surplus réellement mesuré et conserver une marge batterie.");
+  }
+  if (/lance tout|m[êe]me la voiture et la pac/.test(normalized)) {
+    return reply("Non, ne lancez pas tout ensemble. Priorisez les usages selon leur besoin et leur puissance ; le surplus réel doit couvrir chaque démarrage sans solliciter la batterie.");
+  }
+  if (/batteroe|nuitr/.test(normalized)) {
+    return localReply("La batterie va-t-elle tenir toute la nuit ?", context);
+  }
+  if (/avec\s*20\s*kwh.{0,20}large/.test(normalized)) {
+    return reply(`20 kWh donnent une bonne marge, mais seule la consommation nocturne prévue permet de conclure. Avec la réserve à ${reserve} %, le Coach compare le besoin mesuré aux kWh réellement utilisables.`);
+  }
+  if (/vasy optimise|fais au mieux/.test(normalized)) {
+    return reply("Je commence par l’action la plus sûre : reporter un usage flexible vers le surplus réel. Je prépare une proposition et demande votre confirmation avant tout changement.");
+  }
+  if (/combien me co[ûu]te le r[ée]seau aujourd/.test(normalized)) {
+    const measured = context.gridCosts.today;
+    return reply(measured.importCostEuros == null ? `Aujourd’hui, ${kilowattHours(measured.importedWh)} ont été achetés ; un tarif manque pour calculer le coût.` : `Aujourd’hui, les achats réseau représentent environ ${euros(measured.importCostEuros)} pour ${kilowattHours(measured.importedWh)}.`);
+  }
+  if (/^et la batterie/.test(normalized)) {
+    return reply(`La batterie est à ${context.current.batteryPercent} %, avec une réserve à ${reserve} %. Elle ${context.current.batteryWatts > 50 ? "alimente actuellement la maison" : context.current.batteryWatts < -50 ? "se recharge" : "est au repos"}.`);
+  }
+  if (/combien elle me fait [ée]conomiser/.test(normalized)) {
+    return reply("Je ne peux pas isoler honnêtement l’économie financière de la batterie avec les données disponibles. Il faut comparer les flux avec et sans stockage et appliquer les prix du contrat.");
+  }
+  if (/filtration.{0,20}tourne maintenant/.test(normalized)) {
+    return reply(context.current.filtrationWatts > 100 ? `Oui, la filtration fonctionne maintenant à environ ${watts(context.current.filtrationWatts)}.` : "Non, la filtration paraît arrêtée actuellement.");
+  }
+
   if (/capacit[ée].{0,25}batterie|batterie.{0,25}capacit[ée]/.test(normalized)) {
     return reply(`La capacité de stockage configurée est de ${capacityKwh} kWh, avec une réserve à ${reserve} %.`);
   }
