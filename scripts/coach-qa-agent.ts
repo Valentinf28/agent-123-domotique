@@ -8,6 +8,7 @@ type Finding = { scenario: string; theme: string; question: string; answer: stri
 
 const checkOnly = process.argv.includes("--check");
 const exportCorpus = process.argv.includes("--export-corpus");
+const fixtureMode = process.argv.includes("--fixture");
 const endpoint = process.env.COACH_QA_ENDPOINT?.trim();
 const dossierPublicId = process.env.COACH_QA_DOSSIER_ID?.trim();
 const cookie = process.env.COACH_QA_COOKIE?.trim();
@@ -31,14 +32,16 @@ export function evaluateCoachAnswer(answer: string, rule: QARule) {
 }
 
 async function askCoach(message: string, conversation: ChatMessage[]) {
-  if (!endpoint || !dossierPublicId) throw new Error("Configuration QA incomplète");
-  const response = await fetch(endpoint, {
+  const target = fixtureMode ? "http://localhost:3000/api/assistant/energy" : endpoint;
+  const dossier = fixtureMode ? "QA-FIXTURE" : dossierPublicId;
+  if (!target || !dossier) throw new Error("Configuration QA incomplète");
+  const response = await fetch(target, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(cookie ? { Cookie: cookie } : {}),
     },
-    body: JSON.stringify({ message, dossierPublicId, conversation: conversation.slice(-6) }),
+    body: JSON.stringify({ message, dossierPublicId: dossier, conversation: conversation.slice(-6), qaFixture: fixtureMode }),
   });
   const payload = await response.json() as { reply?: { answer?: string }; error?: string };
   if (!response.ok || !payload.reply?.answer) {
@@ -97,7 +100,7 @@ async function main() {
     return;
   }
   if (!endpoint || !dossierPublicId) {
-    throw new Error("Définissez COACH_QA_ENDPOINT et COACH_QA_DOSSIER_ID. Ajoutez COACH_QA_COOKIE pour une production authentifiée.");
+    if (!fixtureMode) throw new Error("Définissez COACH_QA_ENDPOINT et COACH_QA_DOSSIER_ID. Ajoutez COACH_QA_COOKIE pour une production authentifiée.");
   }
   const findings: Finding[] = [];
   let tested = 0;

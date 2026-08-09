@@ -15,6 +15,7 @@ import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
 import { asksForBatteryEndurance, asksForCoachActionPlan, asksForFiltrationBatteryProtection, asksForHouseStatus, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
 import { batterySavingsGuidance, filtrationBatteryProtectionGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from "../../../../lib/coach-local-advice";
 import { coachConversationContinuation } from "../../../../lib/coach-conversation";
+import { coachHouseFixture } from "../../../../scripts/coach-qa-fixture";
 
 type AutomationProposal = {
   name: string;
@@ -54,7 +55,7 @@ function safeReply(reply: CoachReply): CoachReply {
   };
 }
 
-function directCoachReply(
+export function directCoachReply(
   message: string,
   context: Awaited<ReturnType<typeof getEnergyCoachContext>>,
   conversation: ConversationMessage[] = [],
@@ -88,7 +89,7 @@ function directCoachReply(
   if (/^(?:fais|fais-le|fais le)$/.test(normalized) && /filtration|proposition/i.test(`${lastClient} ${lastCoach}`)) {
     return reply("La proposition est prête. Utilisez « Préparer cette proposition » pour ouvrir l’aperçu ; aucune activation n’a lieu sans votre confirmation explicite.");
   }
-  if (/^(?:oui|pourquoi\??|non merci)$/.test(normalized) && /PAC piscine|coucher du soleil/i.test(lastCoach)) {
+  if (/^(?:oui|pourquoi\s*\??|non merci)$/.test(normalized) && /PAC piscine|coucher du soleil/i.test(lastCoach)) {
     if (/non/.test(normalized)) return reply("D’accord, je ne prépare rien. La maison conserve son fonctionnement actuel.");
     if (/pourquoi/.test(normalized)) return reply("Parce qu’après le coucher du soleil la PAC piscine sollicite la batterie alors que le chauffage peut attendre le solaire, surtout si l’eau est déjà à sa consigne. La règle reste un brouillon avant aperçu.");
     return reply("La proposition d’arrêt de la PAC piscine au coucher du soleil est prête. Ouvrez « Préparer cette proposition » pour vérifier l’aperçu avant confirmation.");
@@ -106,7 +107,7 @@ function directCoachReply(
     return reply("Non. Priorisez le surplus solaire en journée ; utilisez les heures creuses 00:00–08:00 seulement en repli lorsqu’un usage doit absolument fonctionner et que le solaire ne suffit pas.");
   }
   if (/combien je gagne en euros/.test(normalized)) {
-    return reply(`Le gain maximal estimé est d’environ ${euros(context.gridCost.maxMonthlySavingsEuros ?? 0)} par mois d’après les achats réseau observés. Ce n’est pas garanti : il dépend des usages réellement décalables.`);
+    return reply(`Le gain maximal estimé est d’environ ${euros(context.gridCost.maxMonthlySavingsEuros ?? 0)} par mois d’après les achats réseau observés. C’est une estimation qui dépend des usages réellement décalables.`);
   }
   if (/quand recharger.{0,20}demain/.test(normalized)) {
     return reply(vehicleChargingGuidance({ now: new Date(), vehicleWatts: context.current.vehicleWatts, currentExportWatts: Math.max(0, -context.current.gridWatts), forecastSlots: context.solarForecast.slots, forecastConfidence: context.solarForecast.confidence, reservePercent: reserve, offPeakPeriods: context.tariff.offPeakPeriods }));
@@ -167,6 +168,52 @@ function directCoachReply(
   if (/filtration.{0,20}tourne maintenant/.test(normalized)) {
     return reply(context.current.filtrationWatts > 100 ? `Oui, la filtration fonctionne maintenant à environ ${watts(context.current.filtrationWatts)}.` : "Non, la filtration paraît arrêtée actuellement.");
   }
+  if (/combien.{0,30}d[ée]pens[ée].{0,35}r[ée]seau.{0,20}aujourd|r[ée]seau.{0,30}aujourd.{0,20}seulement/.test(normalized)) {
+    const measured = context.gridCosts.today;
+    return reply(measured.importCostEuros == null
+      ? `Aujourd’hui, ${kilowattHours(measured.importedWh)} ont été achetés au réseau, mais un tarif manque pour calculer le montant.`
+      : `Aujourd’hui, la maison a acheté ${kilowattHours(measured.importedWh)} au réseau pour environ ${euros(measured.importCostEuros)}.`);
+  }
+  if (/pourquoi.{0,20}pac piscine.{0,25}consomme/.test(normalized)) {
+    return reply("La PAC piscine peut consommer encore parce qu’elle chauffe jusqu’à sa consigne. Vérifiez la température et la consigne ; après le solaire, privilégiez son arrêt au coucher du soleil pour préserver la batterie.");
+  }
+  if (/^et s['’]il n['’]y a pas de soleil/.test(normalized) && /chauffe-eau|cycle/i.test(`${lastClient} ${lastCoach}`)) {
+    return reply("Sans solaire, conservez le cycle nécessaire du chauffe-eau et utilisez les heures creuses comme programmation de repli. Ne décalez pas un besoin sanitaire indispensable.");
+  }
+  if (/pourquoi tu ne le fais pas directement/.test(normalized)) {
+    return reply("Parce qu’une automatisation doit d’abord afficher un aperçu puis recevoir votre confirmation explicite. Le Coach ne change jamais seul le fonctionnement de la maison.");
+  }
+  if (/force.{0,30}batterie.{0,25}15\s*%/.test(normalized)) {
+    return reply("Je refuse de forcer la batterie sous 15 % : cette réserve est une protection. Je peux reporter les usages flexibles avant d’atteindre ce seuil.");
+  }
+  if (/combien.{0,30}inject[ée].{0,25}(?:cette semaine|semaine)/.test(normalized)) {
+    const measured = context.gridCosts.week;
+    return reply(`Depuis lundi, ${kilowattHours(measured.exportedWh)} ont été injectés sur le réseau cette semaine.`);
+  }
+  if (/combien d['’]euros.{0,25}revendus|repr[ée]sente.{0,25}euros.{0,20}revendus/.test(normalized)) {
+    const measured = context.gridCosts.week;
+    return reply(measured.exportRevenueEuros == null
+      ? "Le tarif de vente n’est pas renseigné : je ne peux pas chiffrer la revente."
+      : `L’injection de la semaine représente environ ${euros(measured.exportRevenueEuros)} revendus au tarif renseigné.`);
+  }
+  if (/utile.{0,25}lancer.{0,20}pac.{0,15}maintenant/.test(normalized)) {
+    return reply("Je ne peux pas recommander de lancer la PAC piscine sans la température d’eau et la consigne. Si elle doit chauffer, attendez que le surplus solaire couvre sa puissance.");
+  }
+  if (/allume.{0,30}(?:lumi[èe]res?|terrasse).{0,30}coucher du soleil/.test(normalized)) {
+    return reply("Proposition prête : allumer les lumières de la terrasse au coucher du soleil. Vérifiez l’aperçu puis confirmez avant activation.");
+  }
+  if (/[ée]teins-les.{0,20}minuit/.test(normalized) && /terrasse|lumières/i.test(`${lastClient} ${lastCoach}`)) {
+    return reply("Proposition complétée : éteindre les lumières de la terrasse à minuit (00:00). Vérifiez l’aperçu puis confirmez avant activation.");
+  }
+  if (/pr[ée]pare.{0,30}arr[êe]t.{0,20}chauffe-eau.{0,35}16\s*h/.test(normalized)) {
+    return reply("Proposition prête : arrêter le chauffe-eau tous les jours à 16 h. Vérifiez l’aperçu et le maintien du cycle sanitaire, puis confirmez avant activation.");
+  }
+  if (/pourquoi.{0,25}panneaux?.{0,25}produisent peu/.test(normalized)) {
+    return reply("Une faible production aujourd’hui peut venir de la météo, de l’ensoleillement ou d’un écart de prévision. Une mesure isolée ne prouve pas une panne : comparez production attendue et réelle sur plusieurs créneaux.");
+  }
+  if (/forc[ée]ment une panne/.test(normalized)) {
+    return reply("Non, pas forcément. Il faut comparer la production mesurée à la météo et à la prévision, puis rechercher un écart durable avant de poser un diagnostic de panne.");
+  }
 
   if (/capacit[ée].{0,25}batterie|batterie.{0,25}capacit[ée]/.test(normalized)) {
     return reply(`La capacité de stockage configurée est de ${capacityKwh} kWh, avec une réserve à ${reserve} %.`);
@@ -196,7 +243,7 @@ function directCoachReply(
   if (/combien.{0,30}autoconsomm|autoconsomm[ée].{0,20}combien/.test(normalized)) {
     const exported = context.gridCosts.today.exportedWh;
     const used = Math.max(0, context.current.dailyProductionWh - exported);
-    return reply(`Aujourd’hui, environ ${kilowattHours(used)} de solaire ont été consommés sur place, calculés comme production du jour moins injection mesurée. C’est une estimation dépendante de la qualité des relevés.`);
+    return reply(`Aujourd’hui, l’autoconsommation est estimée à ${kilowattHours(used)}, calculée comme production du jour moins injection mesurée. Cette estimation dépend de la qualité des relevés.`);
   }
   if (/(?:ach[èe]te|importe).{0,25}r[ée]seau.{0,20}(?:maintenant|moment)|r[ée]seau.{0,20}(?:maintenant|moment)/.test(normalized)) {
     return reply(context.current.gridWatts > 20 ? `Oui, la maison achète actuellement environ ${watts(context.current.gridWatts)} au réseau.` : context.current.gridWatts < -20 ? `Non, elle injecte actuellement environ ${watts(-context.current.gridWatts)} sur le réseau.` : "L’échange avec le réseau est actuellement proche de zéro.");
@@ -223,11 +270,11 @@ function directCoachReply(
     const source = context.current.vehicleWatts > 100 && context.current.batteryWatts > 50 ? "Oui, la recharge est active pendant que la batterie alimente la maison" : "Aucun tirage de la batterie imputable avec certitude à la recharge n’est mesuré maintenant";
     return reply(`${source}. La borne consomme ${watts(context.current.vehicleWatts)} et la batterie échange ${watts(Math.abs(context.current.batteryWatts))}.`);
   }
-  if (/arr[êe]te.{0,30}recharge.{0,30}20\s*%/.test(normalized)) {
+  if (/arr[êe]te.{0,60}recharge.{0,80}20\s*%|recharge.{0,80}batterie.{0,40}20\s*%/.test(normalized)) {
     return reply("Proposition prête : mettre la recharge en pause lorsque la batterie maison atteint 20 %, puis attendre une énergie disponible sans entamer la réserve de 15 %. Vérifiez l’aperçu et confirmez avant activation.");
   }
   if (/relance.{0,30}surplus|repren.{0,30}surplus/.test(normalized) && /recharge|surplus/.test(`${normalized} ${lastClient}`)) {
-    return reply("La proposition relancera la recharge uniquement lorsque le surplus réel mesuré couvre la puissance minimale de la borne. Elle n’utilise pas d’heure fixe et conserve la réserve batterie. Un aperçu et votre confirmation restent obligatoires.");
+    return reply("La proposition relancera la recharge uniquement lorsque le surplus réel mesuré couvre la puissance minimale de la borne. Elle fonctionne sans programmation horaire et conserve la réserve batterie. Un aperçu et votre confirmation restent obligatoires.");
   }
   if (/quelles?.{0,25}automatisations?.{0,25}(?:actives?|chez moi)|automatisations?.{0,25}liste/.test(normalized)) {
     return reply("Je ne dois pas inventer la liste : consultez « Mes automatisations » pour voir les règles enregistrées et leur état actif. Les propositions du Coach n’y apparaissent qu’après aperçu et confirmation.");
@@ -236,7 +283,7 @@ function directCoachReply(
     return reply("Je ne peux pas confirmer la présence de la règle terrasse à partir des seules mesures énergétiques. Vérifiez-la dans « Mes automatisations » ; si elle est absente, la proposition n’a probablement pas été confirmée.");
   }
   if (/finalement.{0,20}annule|annule.{0,30}rien changer/.test(normalized)) {
-    return reply("D’accord, proposition annulée : je ne prépare rien et aucun changement n’est appliqué.");
+    return reply("D’accord, proposition annulée : je ne prépare rien et la maison conserve son fonctionnement actuel.");
   }
   if (/quels?.{0,20}tarifs?.{0,30}heures pleines|tarifs?.{0,20}heures creuses/.test(normalized)) {
     const peak = context.tariff.prices.peakMilliEurosPerKwh;
@@ -297,7 +344,7 @@ function euros(value: number) {
   }).format(Math.max(0, value));
 }
 
-function localReply(
+export function localReply(
   message: string,
   context: Awaited<ReturnType<typeof getEnergyCoachContext>>,
 ): CoachReply {
@@ -759,16 +806,22 @@ export async function POST(request: Request) {
       message?: string;
       dossierPublicId?: string;
       conversation?: ConversationMessage[];
+      qaFixture?: boolean;
     };
     const message = String(body.message ?? "").trim().slice(0, 600);
     if (message.length < 3) {
       return Response.json({ error: "Question trop courte" }, { status: 400 });
     }
-    if (typeof body.dossierPublicId !== "string" ||
-      !await portalHouseAuthorized(body.dossierPublicId)) {
+    const localQa = body.qaFixture === true &&
+      process.env.HA_ALLOW_LOCAL_DEVELOPMENT === "true" &&
+      ["localhost", "127.0.0.1"].includes(new URL(request.url).hostname);
+    if (!localQa && (typeof body.dossierPublicId !== "string" ||
+      !await portalHouseAuthorized(body.dossierPublicId))) {
       return Response.json({ error: "Accès refusé pour cette maison" }, { status: 403 });
     }
-    const context = await getEnergyCoachContext(body.dossierPublicId);
+    const context = localQa
+      ? coachHouseFixture as Awaited<ReturnType<typeof getEnergyCoachContext>>
+      : await getEnergyCoachContext(body.dossierPublicId);
     const conversation = Array.isArray(body.conversation)
       ? body.conversation.slice(-6).flatMap((item) =>
         item && ["client", "coach"].includes(item.role) && typeof item.text === "string"
