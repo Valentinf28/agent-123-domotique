@@ -32,3 +32,8 @@ test('ne détourne pas une demande solaire ou de recharge vers le bilan financie
   assert.equal(coachQuestionIntent('Quand recharger ma voiture demain ?'), 'vehicle');
   assert.equal(coachQuestionIntent('Comment piloter mon ballon d’eau chaude ?'), 'hot-water');
 });
+
+test('classe le gain solaire comme financier et la recharge au surplus comme véhicule', () => {
+  assert.equal(coachQuestionIntent('Combien puis-je gagner en déplaçant mes usages vers le solaire ?'), 'money');
+  assert.equal(coachQuestionIntent('Crée une règle pour charger la voiture uniquement avec le surplus solaire'), 'vehicle');
+});

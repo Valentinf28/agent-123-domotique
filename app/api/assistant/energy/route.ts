@@ -12,7 +12,7 @@ import {
 import { tariffGuidance } from "../../../../lib/energy-insights";
 import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../../lib/coach-guardrails";
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
-import { asksForBatteryEndurance, asksForCoachActionPlan, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
+import { asksForBatteryEndurance, asksForCoachActionPlan, asksForHouseStatus, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
 import { batterySavingsGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from "../../../../lib/coach-local-advice";
 
 type AutomationProposal = {
@@ -76,7 +76,28 @@ function localReply(
     .slice(0, 3);
   let answer: string;
   let automationProposal: AutomationProposal | null = null;
-  if (asksForBatteryEndurance(message)) {
+  if (asksForHouseStatus(message)) {
+    const filtration = Math.max(0, context.current.filtrationWatts);
+    const hotWater = Math.max(0, context.current.hotWaterWatts);
+    const detailed = filtration + hotWater;
+    const remainder = Math.max(0, context.current.homeWatts - detailed);
+    const breakdown = [
+      filtration > 0 ? `filtration piscine : ${watts(filtration)}` : null,
+      hotWater > 0 ? `chauffe-eau : ${watts(hotWater)}` : null,
+      remainder > 0 ? `autres usages non détaillés : ${watts(remainder)}` : null,
+    ].filter(Boolean).join(", ");
+    if (/sait réellement|données.{0,15}manquent/.test(normalized)) {
+      answer = `Le Coach connaît la consommation totale, le solaire, les achats et injections réseau, la batterie de ${context.dossier.batteryCapacityWh / 1000} kWh avec sa réserve à ${context.dossier.batteryReservePercent} %, le contrat électrique, ${context.historySamples} relevés et les équipements mesurés ou configurés. Il ne devine pas le détail des ${watts(remainder)} encore regroupés : des pinces ou associations supplémentaires permettraient de les identifier.`;
+    } else if (/anomalie|normale/.test(normalized)) {
+      const night = context.insights.find((insight) => insight.id === "night-base");
+      answer = `La maison consomme actuellement ${watts(context.current.homeWatts)} au total (${breakdown}). Un instant seul ne permet pas de déclarer une anomalie. ${night ? `${night.description} C’est le premier écart récurrent à examiner.` : "Aucun écart récurrent certain n’est identifié avec l’historique disponible."}`;
+    } else if (/premier changement/.test(normalized)) {
+      const first = context.insights[0];
+      answer = first ? `Premier changement recommandé : ${first.title.toLowerCase()}. ${first.description} ${first.action}.` : "Le Coach doit encore collecter davantage de mesures avant de recommander un changement durable.";
+    } else {
+      answer = `La maison consomme actuellement ${watts(context.current.homeWatts)} au total : ${breakdown}. Le solaire produit ${watts(context.current.solarWatts)} et la batterie ${context.current.batteryWatts > 0 ? "fournit" : context.current.batteryWatts < 0 ? "absorbe" : "n’échange pas"} ${watts(Math.abs(context.current.batteryWatts))}, avec ${context.current.batteryPercent} % de charge.`;
+    }
+  } else if (asksForBatteryEndurance(message)) {
     const outlook = context.batteryOutlook;
     if (!outlook.available) {
       answer = "Je connais le niveau actuel de la batterie, mais sa capacité utile n’est pas renseignée pour cette maison. Je ne peux donc pas calculer honnêtement si elle tiendra jusqu’au retour du solaire.";
@@ -91,7 +112,13 @@ function localReply(
       const basis = outlook.confidence === "measured"
         ? `le profil mesuré sur ${outlook.observedNights} nuits`
         : "la consommation actuellement disponible, faute d’un historique nocturne assez complet";
-      answer = outlook.holdsUntilSolar
+      const averageNightWatts = outlook.horizonHours > 0 ? outlook.expectedWh / outlook.horizonHours : 0;
+      const autonomyHours = averageNightWatts > 0 ? outlook.usableWh / averageNightWatts : 0;
+      if (/combien.{0,20}énergie|énergie.{0,20}avant|avant.{0,20}réserve/.test(normalized)) {
+        answer = `Avec une batterie de ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(capacityKwh)} kWh, ${context.current.batteryPercent} % de charge et une réserve à ${context.dossier.batteryReservePercent} %, il reste environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(usableKwh)} kWh utilisables avant la réserve.`;
+      } else if (/combien.{0,20}heures|heures?.{0,20}autonomie/.test(normalized)) {
+        answer = `Selon ${basis}, l’autonomie au rythme nocturne habituel est d’environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(autonomyHours)} h avant la réserve de ${context.dossier.batteryReservePercent} %. Il faut environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(expectedKwh)} kWh jusqu’au retour du solaire, pour ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(usableKwh)} kWh disponibles.`;
+      } else answer = outlook.holdsUntilSolar
         ? `Oui, selon ${basis}. La batterie configurée fait ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(capacityKwh)} kWh : à ${context.current.batteryPercent} % avec une réserve à ${context.dossier.batteryReservePercent} %, environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(usableKwh)} kWh restent utilisables. Le besoin estimé jusqu’au retour du solaire vers ${solarTime} est de ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(expectedKwh)} kWh, soit une marge d’environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(marginKwh)} kWh. Les ${watts(context.current.batteryWatts)} actuels ne sont pas prolongés artificiellement sur toute la nuit.`
         : `Non, pas avec la marge configurée si ${basis} se répète. Sur ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(capacityKwh)} kWh, environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(usableKwh)} kWh sont utilisables avant la réserve de ${context.dossier.batteryReservePercent} %, contre ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(expectedKwh)} kWh estimés jusqu’au solaire vers ${solarTime}. Il manquerait environ ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(marginKwh)} kWh.`;
     }
@@ -121,7 +148,15 @@ function localReply(
       answer = unavailable;
     } else {
       const exportWatts = Math.max(0, -context.current.gridWatts);
-      answer = vehicleChargingGuidance({
+      if (/charge-t-elle|charge t elle|actuellement/.test(normalized)) {
+        answer = context.current.vehicleWatts > 100
+          ? `Oui, une recharge à domicile est mesurée à ${watts(context.current.vehicleWatts)}.`
+          : "Non, aucune recharge du véhicule n’est mesurée à la maison actuellement.";
+      } else if (/intensité|intensite|ampères?|amperes?|rapide/.test(normalized)) {
+        answer = "L’intensité sûre ne peut pas être déduite des mesures énergétiques seules. Utilisez la limite configurée par l’installateur pour la borne et l’installation ; le mode Surplus peut ensuite réduire automatiquement l’intensité pour éviter l’achat réseau et préserver la batterie.";
+      } else if (/uniquement.{0,20}surplus|surplus.{0,20}uniquement|crée.{0,20}règle|cree.{0,20}regle/.test(normalized)) {
+        answer = "Pour une recharge uniquement au surplus, utilisez le mode Surplus de la borne : il ajuste la puissance sur l’injection réellement mesurée. Une heure fixe ne reproduirait pas ce comportement et risquerait de tirer sur le réseau ou la batterie ; je ne prépare donc pas de fausse règle horaire.";
+      } else answer = vehicleChargingGuidance({
         now: new Date(),
         vehicleWatts: context.current.vehicleWatts,
         currentExportWatts: exportWatts,
@@ -136,15 +171,52 @@ function localReply(
       .map((item) => `${item.name} : ${watts(item.watts)} (${item.sharePercent} %)`)
       .join(", ");
     answer = `En ce moment, les principaux appareils mesurés sont ${list}. Le reste de la maison est regroupé séparément pour éviter tout double comptage.`;
+  } else if (/équipements?.{0,20}pilotables?|pilotables?.{0,20}maison/.test(normalized)) {
+    const loads = context.predictivePlans.filter((plan) => plan.loadId !== "configuration" && plan.loadCategory !== "other");
+    answer = loads.length
+      ? `Les usages énergétiques configurés pour le pilotage sont : ${loads.map((plan) => plan.loadLabel).join(", ")}. Le Coach ne présente pas comme pilotable un appareil simplement détecté ou mesuré.`
+      : "Aucun usage énergétique pilotable n’est encore configuré pour cette maison.";
+  } else if (intent === "battery" && /réserve|reserve/.test(normalized)) {
+    answer = /augmenter|monter|changer/.test(normalized)
+      ? `La réserve est à ${context.dossier.batteryReservePercent} %. Il n’est pas nécessaire de l’augmenter sur un seul instant ; faites-le seulement si l’historique montre qu’elle est atteinte trop tôt plusieurs nuits, ou si vous souhaitez conserver davantage d’énergie de secours.`
+      : `La réserve de ${context.dossier.batteryReservePercent} % protège la batterie contre une décharge trop profonde et conserve une marge pour les usages essentiels. L’objectif est de reporter les usages flexibles avant d’atteindre ce seuil.`;
+  } else if (intent === "battery" && /charge.{0,20}réseau|réseau.{0,20}charge/.test(normalized)) {
+    answer = context.batteryOutlook.holdsUntilSolar
+      ? `La batterie devrait tenir jusqu’au retour du solaire selon le profil nocturne ; la charger sur le réseau n’est donc pas recommandée cette nuit. Les heures creuses restent un repli, mais leur intérêt doit dépasser les pertes de charge et la valeur du solaire attendu.`
+      : "Une charge réseau en heures creuses peut servir de secours si l’autonomie prévue est insuffisante, mais le Coach doit intégrer les pertes de charge et le solaire attendu avant de la recommander.";
+  } else if (intent === "battery" && /pourquoi|décharge|decharge/.test(normalized)) {
+    answer = `Le solaire est actuellement à ${watts(context.current.solarWatts)} et la maison consomme ${watts(context.current.homeWatts)} au total. La batterie fournit donc ${watts(Math.max(0, context.current.batteryWatts))} pour couvrir la maison ; la filtration, lorsqu’elle fonctionne, est incluse dans ce total et n’est pas ajoutée une seconde fois.`;
+  } else if (intent === "battery" && /reporter|décaler|decaler|usages?/.test(normalized)) {
+    const loads = context.predictivePlans.filter((plan) => plan.loadId !== "configuration" && plan.loadCategory !== "other");
+    answer = loads.length
+      ? `Pour préserver la batterie, reportez d’abord ${loads.map((plan) => plan.loadLabel).join(", ")} jusqu’à ce que leur puissance soit couverte par le solaire. Les autres appareils ne sont pas proposés sans configuration explicite.`
+      : "Aucun usage flexible n’est suffisamment configuré pour proposer une coupure automatique. Le Coach ne doit pas deviner quels appareils sont reportables.";
   } else if (intent === "money" && /batterie/.test(normalized)) {
     answer = batterySavingsGuidance(context.tariff.pricesConfigured);
   } else if (intent === "money" && context.historySamples >= 4) {
-    answer = financialCoachGuidance({
-      observedDays: context.week.observedDays,
-      ...context.gridCost,
-      plan: context.tariff.plan,
-      tariffGuidance: tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods, context.tariff.prices),
-    });
+    const tariffText = tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods, context.tariff.prices);
+    if (/contrat.{0,30}adapt|adapté.{0,30}contrat/.test(normalized)) {
+      const imports = Math.max(1, context.gridCost.importedWh);
+      const offPeakShare = Math.round(context.gridCost.offPeakImportedWh / imports * 100);
+      answer = context.tariff.plan === "hp_hc"
+        ? `Sur les ${context.week.observedDays} jours observés, ${offPeakShare} % des achats réseau ont eu lieu en heures creuses et ${100 - offPeakShare} % en heures pleines. Ce recul est encore court pour recommander un changement de contrat, mais il permet déjà de suivre si l’écart de prix compense l’option HP/HC. ${tariffText}`
+        : tariffText;
+    } else if (/vendre.{0,30}surplus|consommer.{0,30}surplus/.test(normalized)) {
+      const purchasePrice = context.tariff.plan === "hp_hc" ? context.tariff.prices.peakMilliEurosPerKwh : context.tariff.prices.baseMilliEurosPerKwh;
+      const exportPrice = context.tariff.prices.exportMilliEurosPerKwh;
+      answer = purchasePrice != null && exportPrice != null
+        ? purchasePrice > exportPrice
+          ? `Consommer un kWh solaire utile évite jusqu’à ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 3 }).format(purchasePrice / 1000)} € d’achat, contre ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 3 }).format(exportPrice / 1000)} € reçu s’il est vendu. Il vaut donc mieux autoconsommer les usages réellement nécessaires, sans créer une consommation inutile.`
+          : "Le tarif de rachat est au moins égal au prix d’achat évité ; vendre peut donc être aussi intéressant que déplacer un usage. Vérifiez toutefois les taxes et conditions contractuelles."
+        : "Le prix d’achat ou le tarif de rachat manque : le Coach ne peut pas comparer honnêtement vente et autoconsommation.";
+    } else if (/heures?\s+creuses?.{0,30}(?:déplacer|deplacer)|déplacer.{0,30}heures?\s+creuses?/.test(normalized)) {
+      answer = `Priorisez d’abord le surplus solaire réellement mesuré. Utilisez ensuite les heures creuses ${context.tariff.offPeakPeriods.map((period) => `${period.start}–${period.end}`).join(", ")} comme solution de repli si l’appareil doit fonctionner avant le prochain solaire. Un déplacement du solaire vers la nuit réduirait l’autoconsommation.`;
+    } else answer = financialCoachGuidance({
+        observedDays: context.week.observedDays,
+        ...context.gridCost,
+        plan: context.tariff.plan,
+        tariffGuidance: tariffText,
+      });
   } else if (/heures?\s+creuses?|tarif|facture|prix/.test(normalized)) {
     answer = tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods, context.tariff.prices);
   } else if (/solaire|surplus|autoconsomm/.test(normalized)) {
@@ -156,20 +228,36 @@ function localReply(
       const loads = context.predictivePlans
         .filter((plan) => plan.loadCategory !== "other" && plan.loadId !== "configuration")
         .map((plan) => ({ label: plan.loadLabel, category: plan.loadCategory }));
-      answer = solarAutoconsumptionGuidance({
-        observedDays: context.week.observedDays,
-        exportedWh,
-        peakHour: peakMatch ? Number(peakMatch[1]) : null,
-        flexibleLoads: loads,
-        currentExportWatts: exportWatts,
-      });
-      const pool = loads.find((load) => /pool|pac|piscine/i.test(`${load.category} ${load.label}`));
-      if (pool) automationProposal = {
-        name: `Arrêt nocturne de ${pool.label}`,
-        trigger: "Au coucher du soleil",
-        action: `Éteindre ${pool.label}`,
-        rationale: "Éviter que cet usage flexible sollicite la batterie après la production solaire.",
-      };
+      if (/combien|injecté|injecte/.test(normalized) && !/économ|gagner/.test(normalized)) {
+        answer = `Sur les ${context.week.observedDays} derniers jours disponibles, ${kilowattHours(exportedWh)} ont été injectés, soit environ ${kilowattHours(exportedWh / Math.max(1, context.week.observedDays))} par jour.`;
+      } else if (/quelle heure|à quelle heure|généralement|generalement/.test(normalized)) {
+        answer = peakMatch
+          ? `Le surplus a été observé le plus souvent autour de ${peakMatch[1]} h sur les ${context.week.observedDays} derniers jours. C’est un constat historique, pas une garantie pour aujourd’hui.`
+          : "L’historique disponible ne permet pas encore d’identifier une heure de surplus récurrente.";
+      } else if (/meilleur créneau|meilleur creneau/.test(normalized)) {
+        const now = new Date();
+        const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+        const slots = context.solarForecast.slots.filter((slot) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(slot.startsAt)) === today && Date.parse(slot.startsAt) > now.getTime());
+        const best = [...slots].sort((left, right) => right.estimatedWh - left.estimatedWh)[0];
+        answer = best
+          ? `Le meilleur point de la prévision restante aujourd’hui est vers ${new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(new Date(best.startsAt))}. La confiance est ${context.solarForecast.confidence === "low" ? "faible : attendez le surplus réellement mesuré avant de démarrer un appareil" : "suffisante pour préparer le créneau, avec contrôle du surplus réel"}.`
+          : "Aucun créneau solaire futur n’est encore exploitable aujourd’hui.";
+      } else {
+        answer = solarAutoconsumptionGuidance({
+          observedDays: context.week.observedDays,
+          exportedWh,
+          peakHour: peakMatch ? Number(peakMatch[1]) : null,
+          flexibleLoads: loads,
+          currentExportWatts: exportWatts,
+        });
+        const pool = loads.find((load) => /pool|pac|piscine/i.test(`${load.category} ${load.label}`));
+        if (pool && /augmenter|éviter|eviter|prioriser|absorber|perdre/.test(normalized)) automationProposal = {
+          name: `Arrêt nocturne de ${pool.label}`,
+          trigger: "Au coucher du soleil",
+          action: `Éteindre ${pool.label}`,
+          rationale: "Éviter que cet usage flexible sollicite la batterie après la production solaire.",
+        };
+      }
     } else {
       const remaining = context.solarForecast.prudentRemainingWh;
       answer = solarCoachGuidance({
@@ -406,10 +494,12 @@ export async function POST(request: Request) {
     const equipmentMissing = (intent === "vehicle" && !context.equipmentCapabilities.vehicle) ||
       (intent === "hot-water" && !context.equipmentCapabilities.hotWater);
     const reply = poolHeatPumpCoachReply(message) ??
+      (asksForHouseStatus(message) ? localReply(message, context) : null) ??
       (asksForBatteryEndurance(message) ? localReply(message, context) : null) ??
       (asksForCoachActionPlan(message) ? localReply(message, context) : null) ??
       (equipmentMissing ? localReply(message, context) : null) ??
       (intent === "vehicle" ? localReply(message, context) : null) ??
+      (intent === "battery" ? localReply(message, context) : null) ??
       (needsDeterministicFinancialAnswer(message) ? localReply(message, context) : null) ??
       (intent === "solar" ? localReply(message, context) : null) ??
       await openAiReply(message, context, conversation) ??

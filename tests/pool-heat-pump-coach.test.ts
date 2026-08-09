@@ -21,6 +21,21 @@ test('ne transforme pas une simple question batterie en scénario inventé', () 
   assert.equal(poolHeatPumpCoachReply("Est-ce que la PAC peut utiliser la batterie demain ?"), null);
 });
 
+test('explique un fonctionnement après le coucher sans inventer la consigne', () => {
+  const reply = poolHeatPumpCoachReply('Pourquoi la PAC piscine a continué après le coucher du soleil ?');
+  assert.ok(reply);
+  assert.match(reply.answer, /ne permettent pas d’identifier rétrospectivement la cause/i);
+  assert.doesNotMatch(reply.answer, /Vous indiquez[^.]*déjà à sa consigne/i);
+  assert.equal(reply.automationProposal?.trigger, 'Au coucher du soleil');
+});
+
+test('refuse de figer la météo de demain dans une règle répétée', () => {
+  const reply = poolHeatPumpCoachReply('Programme la PAC piscine demain à 14h car il fera beau');
+  assert.ok(reply);
+  assert.match(reply.answer, /ne transforme pas la météo ponctuelle/i);
+  assert.equal(reply.automationProposal, null);
+});
+
 test('ne confond jamais filtration et PAC piscine', () => {
   assert.equal(poolHeatPumpCoachReply("La filtration a tourné après le solaire et vidé la batterie."), null);
 });

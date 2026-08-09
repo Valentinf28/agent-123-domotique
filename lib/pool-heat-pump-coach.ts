@@ -21,6 +21,15 @@ export function poolHeatPumpCoachReply(message: string): PoolHeatPumpCoachReply 
   const mentionsHeatPump = /\bpac\b|pompe\s+à\s+chaleur/.test(normalized);
   if (!mentionsHeatPump) return null;
 
+  const weatherFixedSchedule = /(?:demain|météo|meteo|fera\s+beau|prévision|prevision)/.test(normalized) &&
+    /(?:programme|planifie|démarre|demarre|allume)/.test(normalized) &&
+    /\b(?:[01]?\d|2[0-3])\s*(?:h|:)\s*[0-5]?\d?\b/.test(normalized);
+  if (weatherFixedSchedule) return {
+    answer: "Je ne transforme pas la météo ponctuelle de demain en règle horaire répétée : elle pourrait démarrer la PAC un jour nuageux et solliciter le réseau ou la batterie. Utilisez le pilotage énergétique qui vérifie le surplus réel, ou demandez une programmation exceptionnelle clairement limitée à demain.",
+    automationProposal: null,
+    suggestedQuestions: ["Quel est le meilleur créneau solaire demain ?", "Arrêter la PAC piscine au coucher du soleil", "Quelle température cible conserver ?"],
+  };
+
   const afterSolar = /(?:après|apres)[^.!?]{0,45}(?:solaire|production)[^.!?]{0,30}(?:arrêt|arret|stopp|termin|fini)/.test(normalized)
     || /(?:après|apres)[^.!?]{0,20}(?:arrêt|arret|stopp|fin)[^.!?]{0,35}(?:solaire|production)/.test(normalized)
     || /(?:plus|pas)\s+de\s+production\s+solaire/.test(normalized);
@@ -29,14 +38,17 @@ export function poolHeatPumpCoachReply(message: string): PoolHeatPumpCoachReply 
   const unnecessary = /(?:pas|aucun)\s+d['’]?intérêt|inutile|serv(?:ait|i)\s+à\s+rien|trop\s+longtemps|sans\s+bénéfice/.test(normalized);
   const temperature = statedWaterTemperature(message);
   const strongScenario = afterSolar && batteryImpact && (unnecessary || temperature != null);
-  if (!strongScenario) return null;
+  const asksWhyAfterSunset = /pourquoi/.test(normalized) && /(?:coucher\s+du\s+soleil|après|apres).{0,35}(?:soleil|solaire)|(?:après|apres).{0,35}(?:coucher\s+du\s+soleil|solaire)/.test(normalized);
+  if (!strongScenario && !asksWhyAfterSunset) return null;
 
   const statedFact = temperature == null
-    ? "Vous indiquez que la PAC a continué sans bénéfice utile après l’arrêt du solaire."
+    ? asksWhyAfterSunset
+      ? "Vous indiquez que la PAC a continué après le coucher du soleil. Les mesures actuelles ne permettent pas d’identifier rétrospectivement la cause ni de dire que l’eau était déjà à sa consigne."
+      : "Vous indiquez que la PAC a continué sans bénéfice utile après l’arrêt du solaire."
     : `Vous indiquez que l’eau était déjà à ${String(temperature).replace('.', ',')} °C et que la PAC a continué après l’arrêt du solaire.`;
   return {
     answer: [
-      `${statedFact} Dans ce cas, elle a sollicité la batterie inutilement d’après votre constat.`,
+      `${statedFact}${asksWhyAfterSunset && temperature == null ? "" : " Dans ce cas, elle a sollicité la batterie inutilement d’après votre constat."}`,
       "Je propose une coupure de sécurité au coucher du soleil. Le chauffage pourra reprendre en journée si l’eau est sous la consigne.",
       "Règle suggérée : au coucher du soleil, éteindre la PAC piscine.",
     ].join(' '),
