@@ -192,6 +192,182 @@ export const coachQAScenarios: QAScenario[] = [
       { message: "Revenons à la filtration : elle tourne maintenant ?", rule: rule({ require: [/filtration/i, /(?:W|fonctionne|arrêtée|mesurée)/i], forbid: [/batterie me fait économiser/i] }) },
     ],
   },
+  {
+    id: "battery-settings",
+    theme: "Caractéristiques batterie",
+    turns: [
+      { message: "Quelle est la capacité de ma batterie ?", rule: rule({ require: [/20\s*kWh/i], forbid: [/ne connais pas/i] }) },
+      { message: "Et son seuil de réserve est réglé à combien ?", rule: rule({ require: [/15\s*%/], forbid: [/20\s*%/] }) },
+    ],
+  },
+  {
+    id: "battery-current-state",
+    theme: "État instantané batterie",
+    turns: [
+      { message: "À combien est la batterie maintenant ?", rule: rule({ require: [/%/, /batterie/i] }) },
+      { message: "Elle charge ou elle alimente la maison ?", rule: rule({ require: [/(?:charge|alimente|fournit|batterie)/i], forbid: [/voiture/i] }) },
+    ],
+  },
+  {
+    id: "solar-current-state",
+    theme: "Production solaire instantanée",
+    turns: [
+      { message: "Combien produisent les panneaux en ce moment ?", rule: rule({ require: [/(?:W|kW)/, /(?:solaire|production)/i] }) },
+      { message: "Est-ce suffisant pour couvrir la maison ?", rule: rule({ require: [/(?:consommation|maison|surplus|déficit|réseau|batterie)/i] }) },
+    ],
+  },
+  {
+    id: "solar-day-summary",
+    theme: "Bilan solaire du jour",
+    turns: [
+      { message: "Combien ai-je produit aujourd'hui ?", rule: rule({ require: [/aujourd/i, /kWh|donnée/i], forbid: [/demain/i] }) },
+      { message: "Et combien ai-je autoconsommé ?", rule: rule({ require: [/(?:autoconsomm|consommé sur place|donnée)/i, /kWh|%|calcul/i] }) },
+    ],
+  },
+  {
+    id: "grid-flows",
+    theme: "Import et injection réseau",
+    turns: [
+      { message: "Est-ce que j'achète de l'électricité au réseau maintenant ?", rule: rule({ require: [/(?:réseau|achète|importe|W)/i] }) },
+      { message: "Ou est-ce que j'en injecte ?", rule: rule({ require: [/(?:inject|réseau|surplus|W)/i] }) },
+    ],
+  },
+  {
+    id: "export-value",
+    theme: "Valeur de l'injection",
+    turns: [
+      { message: "Combien ai-je injecté sur le réseau cette semaine ?", rule: rule({ require: [/(?:inject|réseau)/i, /kWh/i, /(?:semaine|lundi|7 jours)/i] }) },
+      { message: "Ça représente combien d'euros revendus ?", rule: rule({ require: [/(?:tarif|vente|rachat|€|non renseigné)/i], forbid: [/achat.*heures creuses/i] }) },
+    ],
+  },
+  {
+    id: "pool-temperature",
+    theme: "Température piscine",
+    turns: [
+      { message: "Quelle est la température de l'eau de la piscine ?", rule: rule({ require: [/(?:°C|température|indisponible|donnée)/i], forbid: [/température extérieure/i] }) },
+      { message: "Est-ce utile de lancer la PAC maintenant ?", rule: rule({ require: [/PAC piscine/i, /(?:température|consigne|solaire|besoin)/i] }) },
+    ],
+  },
+  {
+    id: "pool-equipment-distinction",
+    theme: "Distinction filtration et chauffage piscine",
+    turns: [
+      { message: "La filtration et la PAC piscine, c'est le même appareil ?", rule: rule({ require: [/(?:différent|distinct|sépar)/i, /filtration/i, /PAC/i] }) },
+      { message: "Laquelle consomme 690 W actuellement ?", rule: rule({ require: [/filtration/i], forbid: [/PAC.*690\s*W/i] }) },
+    ],
+  },
+  {
+    id: "filtration-runtime",
+    theme: "Durée de filtration",
+    turns: [
+      { message: "Combien d'heures la filtration doit-elle tourner aujourd'hui ?", rule: rule({ require: [/(?:durée|heure|température|besoin)/i], forbid: [/24\s*heures/i] }) },
+      { message: "Peux-tu garantir 6 heures en privilégiant le solaire ?", rule: rule({ require: [/6\s*heures/i, /solaire|surplus/i, /(?:proposition|aperçu|confirmation|garde-fou)/i] }) },
+    ],
+  },
+  {
+    id: "vehicle-current-state",
+    theme: "État de recharge voiture",
+    turns: [
+      { message: "La voiture charge-t-elle en ce moment ?", rule: rule({ require: [/(?:voiture|borne|recharge)/i, /(?:W|charge|arrêt|donnée)/i] }) },
+      { message: "Est-ce qu'elle tire sur la batterie de la maison ?", rule: rule({ require: [/(?:batterie|surplus|réseau|borne)/i], forbid: [/PAC piscine/i] }) },
+    ],
+  },
+  {
+    id: "vehicle-protection",
+    theme: "Protection batterie pendant la recharge",
+    turns: [
+      { message: "Arrête la recharge si la batterie maison descend à 20 %", rule: rule({ require: [/20\s*%/, /(?:recharge|borne|voiture)/i, /(?:aperçu|proposition|confirmation)/i] }) },
+      { message: "Et relance uniquement quand le surplus revient", rule: rule({ require: [/surplus/i, /(?:relance|reprendre|proposition|aperçu)/i], forbid: [/heure fixe/i] }) },
+    ],
+  },
+  {
+    id: "lighting-automation",
+    theme: "Éclairage extérieur",
+    turns: [
+      { message: "Allume les lumières de la terrasse au coucher du soleil", rule: rule({ require: [/terrasse/i, /coucher du soleil/i, /(?:aperçu|proposition|confirmation)/i] }) },
+      { message: "Et éteins-les à minuit", rule: rule({ require: [/(?:minuit|00\s*h|00:00)/i, /terrasse|lumières/i, /(?:aperçu|proposition|confirmation)/i] }) },
+    ],
+  },
+  {
+    id: "automation-list",
+    theme: "Automatisations existantes",
+    turns: [
+      { message: "Quelles automatisations sont déjà actives chez moi ?", rule: rule({ require: [/(?:automatisation|règle|active|liste|aucune)/i], forbid: [/viens de créer/i] }) },
+      { message: "Celle de la terrasse est-elle dans la liste ?", rule: rule({ require: [/(?:terrasse|liste|automatisation|vérifier)/i], forbid: [/oui.*sans.*donnée/i] }) },
+    ],
+  },
+  {
+    id: "automation-cancel",
+    theme: "Annulation d'une proposition",
+    turns: [
+      { message: "Prépare l'arrêt du chauffe-eau tous les jours à 16 h", rule: rule({ require: [/chauffe-eau/i, /16\s*h/i, /(?:aperçu|proposition|confirmation)/i] }) },
+      { message: "Finalement annule, je ne veux rien changer", rule: rule({ require: [/(?:annul|ne prépare rien|aucun changement|fonctionnement actuel)/i], forbid: [/(?:activé|créé|appliqué)/i] }) },
+    ],
+  },
+  {
+    id: "tariff-details",
+    theme: "Tarifs du contrat",
+    turns: [
+      { message: "Quels sont mes tarifs heures pleines et heures creuses ?", rule: rule({ require: [/0,175\s*€\s*\/\s*kWh/i, /0,139\s*€\s*\/\s*kWh/i] }) },
+      { message: "À quelles heures commencent mes heures creuses ?", rule: rule({ require: [/00:00|0\s*h/i, /08:00|8\s*h/i] }) },
+    ],
+  },
+  {
+    id: "contract-change",
+    theme: "Changement de contrat",
+    turns: [
+      { message: "Je change de fournisseur, où modifier mes tarifs ?", rule: rule({ require: [/(?:paramètres|contrat|tarifs)/i] }) },
+      { message: "Le coach utilisera bien les nouveaux prix ?", rule: rule({ require: [/(?:nouveaux|prix|tarifs|calcul)/i], forbid: [/anciens tarifs garantis/i] }) },
+    ],
+  },
+  {
+    id: "monthly-savings",
+    theme: "Économies mensuelles",
+    turns: [
+      { message: "Combien puis-je économiser ce mois-ci ?", rule: rule({ require: [/€|euros?/i, /(?:estim|projection|mesur)/i], forbid: [/garanti/i] }) },
+      { message: "Quelle action apporte le plus gros gain ?", rule: rule({ require: [/(?:priorité|gain|déplacer|surplus|usage)/i], forbid: [/garanti/i] }) },
+    ],
+  },
+  {
+    id: "low-production-diagnosis",
+    theme: "Diagnostic de faible production",
+    turns: [
+      { message: "Pourquoi mes panneaux produisent peu aujourd'hui ?", rule: rule({ require: [/(?:météo|production|mesure|prévision|ensoleillement)/i], forbid: [/panne certaine/i] }) },
+      { message: "Est-ce forcément une panne ?", rule: rule({ require: [/(?:non|pas forcément|comparer|diagnostic)/i], forbid: [/oui/i] }) },
+    ],
+  },
+  {
+    id: "data-quality",
+    theme: "Fiabilité des mesures",
+    turns: [
+      { message: "Tes chiffres viennent de vraies mesures ou d'estimations ?", rule: rule({ require: [/(?:mesur|estim|prévision)/i] }) },
+      { message: "Dis-moi clairement ce dont tu es sûr", rule: rule({ require: [/(?:mesur|disponible|confiance|certain|donnée)/i], forbid: [/tout est certain/i] }) },
+    ],
+  },
+  {
+    id: "essential-loads",
+    theme: "Usages prioritaires",
+    turns: [
+      { message: "Quels appareils ne faut-il jamais couper pour économiser ?", rule: rule({ require: [/(?:essentiel|sécurité|frigo|congélateur|chauffage)/i] }) },
+      { message: "Et lesquels peut-on décaler sans perdre en confort ?", rule: rule({ require: [/(?:chauffe-eau|filtration|recharge|usage flexible)/i, /(?:décal|solaire|heures creuses)/i] }) },
+    ],
+  },
+  {
+    id: "absence-mode",
+    theme: "Départ en vacances",
+    turns: [
+      { message: "Je pars une semaine, comment réduire la consommation ?", rule: rule({ require: [/(?:absence|chauffage|chauffe-eau|piscine|essentiel)/i], forbid: [/coupez tout/i] }) },
+      { message: "Prépare un mode absence sans couper les protections", rule: rule({ require: [/(?:protection|hors-gel|sécurité|aperçu|confirmation)/i], forbid: [/(?:activé|appliqué)/i] }) },
+    ],
+  },
+  {
+    id: "plain-language",
+    theme: "Réponse claire et directe",
+    turns: [
+      { message: "En clair, est-ce que ma maison est autonome aujourd'hui ?", rule: rule({ require: [/(?:oui|non|partiellement|réseau|autonome)/i], maxWords: 80 }) },
+      { message: "Donne-moi juste la priorité du jour", rule: rule({ require: [/(?:priorité|aujourd|solaire|batterie|usage)/i], maxWords: 60 }) },
+    ],
+  },
 ];
 
 export const coachQATurnCount = coachQAScenarios.reduce((sum, scenario) => sum + scenario.turns.length, 0);

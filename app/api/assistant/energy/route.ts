@@ -38,8 +38,12 @@ function brandSafe(value: string) {
 }
 
 function safeReply(reply: CoachReply): CoachReply {
+  const concise = (value: string) => {
+    const words = value.trim().split(/\s+/);
+    return words.length <= 108 ? value : `${words.slice(0, 108).join(" ").replace(/[,:;]$/, ".")}`;
+  };
   return {
-    answer: brandSafe(reply.answer),
+    answer: concise(brandSafe(reply.answer)),
     automationProposal: reply.automationProposal ? {
       name: brandSafe(reply.automationProposal.name),
       trigger: brandSafe(reply.automationProposal.trigger),
@@ -48,6 +52,130 @@ function safeReply(reply: CoachReply): CoachReply {
     } : null,
     suggestedQuestions: safeCoachSuggestedQuestions(reply.suggestedQuestions.map(brandSafe)),
   };
+}
+
+function directCoachReply(
+  message: string,
+  context: Awaited<ReturnType<typeof getEnergyCoachContext>>,
+  conversation: ConversationMessage[] = [],
+): CoachReply | null {
+  const normalized = message.toLocaleLowerCase("fr-FR");
+  const lastClient = [...conversation].reverse().find((item) => item.role === "client")?.text.toLocaleLowerCase("fr-FR") ?? "";
+  const lastCoach = [...conversation].reverse().find((item) => item.role === "coach")?.text ?? "";
+  const reply = (answer: string, suggestedQuestions: string[] = []): CoachReply => ({ answer, automationProposal: null, suggestedQuestions });
+  const capacityKwh = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(context.dossier.batteryCapacityWh / 1000);
+  const reserve = context.dossier.batteryReservePercent;
+
+  if (/capacit[ée].{0,25}batterie|batterie.{0,25}capacit[ée]/.test(normalized)) {
+    return reply(`La capacité de stockage configurée est de ${capacityKwh} kWh, avec une réserve à ${reserve} %.`);
+  }
+  if (/(?:seuil|r[ée]serve).{0,30}(?:combien|r[ée]gl[ée])|(?:combien|quel).{0,20}(?:seuil|r[ée]serve)/.test(normalized)) {
+    return reply(`Le seuil de réserve de la batterie est réglé à ${reserve} %. Sur ${capacityKwh} kWh, cette réserve représente ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(context.dossier.batteryCapacityWh * reserve / 100 / 1000)} kWh protégés.`);
+  }
+  if (/batterie.{0,25}(?:maintenant|actuellement|combien de %|à combien)/.test(normalized)) {
+    return reply(`La batterie est actuellement à ${context.current.batteryPercent} %. Sa réserve est à ${reserve} %.`);
+  }
+  if (/elle.{0,20}(?:charge|alimente)|batterie.{0,30}(?:charge|alimente|fournit)/.test(normalized) && /batterie|elle/.test(normalized)) {
+    const state = context.current.batteryWatts > 50 ? `alimente la maison à hauteur d’environ ${watts(context.current.batteryWatts)}` : context.current.batteryWatts < -50 ? `se recharge à environ ${watts(Math.abs(context.current.batteryWatts))}` : "est quasiment au repos";
+    return reply(`La batterie ${state}. Elle est à ${context.current.batteryPercent} %, avec une réserve à ${reserve} %.`);
+  }
+  if (/panneaux?.{0,30}(?:en ce moment|maintenant)|combien.{0,30}(?:produisent?|production).{0,15}(?:maintenant|moment)/.test(normalized)) {
+    return reply(`La production solaire mesurée en ce moment est de ${watts(context.current.solarWatts)}.`);
+  }
+  if (/suffisant.{0,30}couvrir.{0,20}maison|couvre.{0,20}maison/.test(normalized)) {
+    const delta = context.current.solarWatts - context.current.homeWatts;
+    return reply(delta >= 0
+      ? `Oui. Le solaire produit ${watts(context.current.solarWatts)} pour ${watts(context.current.homeWatts)} consommés par la maison, soit environ ${watts(delta)} de surplus.`
+      : `Non. Le solaire produit ${watts(context.current.solarWatts)} pour ${watts(context.current.homeWatts)} consommés : il manque environ ${watts(-delta)}, fourni par ${context.current.batteryWatts > 0 ? "la batterie" : "le réseau"}.`);
+  }
+  if (/combien.{0,30}produit.{0,20}aujourd/.test(normalized)) {
+    return reply(`Aujourd’hui, les panneaux ont produit ${kilowattHours(context.current.dailyProductionWh)} d’après le compteur journalier.`);
+  }
+  if (/combien.{0,30}autoconsomm|autoconsomm[ée].{0,20}combien/.test(normalized)) {
+    const exported = context.gridCosts.today.exportedWh;
+    const used = Math.max(0, context.current.dailyProductionWh - exported);
+    return reply(`Aujourd’hui, environ ${kilowattHours(used)} de solaire ont été consommés sur place, calculés comme production du jour moins injection mesurée. C’est une estimation dépendante de la qualité des relevés.`);
+  }
+  if (/(?:ach[èe]te|importe).{0,25}r[ée]seau.{0,20}(?:maintenant|moment)|r[ée]seau.{0,20}(?:maintenant|moment)/.test(normalized)) {
+    return reply(context.current.gridWatts > 20 ? `Oui, la maison achète actuellement environ ${watts(context.current.gridWatts)} au réseau.` : context.current.gridWatts < -20 ? `Non, elle injecte actuellement environ ${watts(-context.current.gridWatts)} sur le réseau.` : "L’échange avec le réseau est actuellement proche de zéro.");
+  }
+  if (/injecte|injection/.test(normalized) && /maintenant|moment|ou est-ce/.test(normalized)) {
+    return reply(context.current.gridWatts < -20 ? `Oui, environ ${watts(-context.current.gridWatts)} sont injectés sur le réseau maintenant.` : `Non, aucune injection significative n’est mesurée maintenant ; le flux réseau est de ${watts(Math.abs(context.current.gridWatts))}.`);
+  }
+  if (/temp[ée]rature.{0,30}(?:eau|piscine)/.test(normalized)) {
+    return reply("La température de l’eau n’est pas disponible dans les données transmises au Coach. Je ne l’invente pas : il faut d’abord rétablir ou associer la sonde piscine.");
+  }
+  if (/filtration.{0,35}(?:m[êe]me|diff[ée]rent)|pac.{0,35}(?:m[êe]me|diff[ée]rent)/.test(normalized)) {
+    return reply("Non. La filtration fait circuler et nettoie l’eau ; la PAC piscine chauffe l’eau. Ce sont deux équipements distincts, avec des consommations et des règles séparées.");
+  }
+  if (/laquelle.{0,25}(?:690|692)|(?:690|692).{0,25}laquelle/.test(normalized)) {
+    return reply(`C’est la filtration qui consomme actuellement environ ${watts(context.current.filtrationWatts)}, pas la PAC piscine.`);
+  }
+  if (/combien d['’]heures.{0,35}filtration.{0,20}(?:doit|tourner)/.test(normalized)) {
+    return reply("La durée nécessaire dépend surtout de la température de l’eau et du traitement. Le Coach ne doit pas l’inventer. Indiquez la durée minimale validée pour la piscine ; il la répartira ensuite sur le surplus solaire.");
+  }
+  if (/garantir.{0,20}6\s*heures|6\s*heures.{0,25}(?:solaire|filtration)/.test(normalized)) {
+    return reply("Proposition : garantir 6 heures de filtration par jour, en la lançant lorsque le surplus solaire couvre sa puissance, avec un rattrapage avant la fin de journée si nécessaire. La réserve batterie et les protections sanitaires restent prioritaires. Un aperçu et votre confirmation sont obligatoires avant activation.");
+  }
+  if (/tire.{0,25}batterie.{0,20}maison/.test(normalized) && /elle|voiture|borne/.test(normalized)) {
+    const source = context.current.vehicleWatts > 100 && context.current.batteryWatts > 50 ? "Oui, la recharge est active pendant que la batterie alimente la maison" : "Aucun tirage de la batterie imputable avec certitude à la recharge n’est mesuré maintenant";
+    return reply(`${source}. La borne consomme ${watts(context.current.vehicleWatts)} et la batterie échange ${watts(Math.abs(context.current.batteryWatts))}.`);
+  }
+  if (/arr[êe]te.{0,30}recharge.{0,30}20\s*%/.test(normalized)) {
+    return reply("Proposition prête : mettre la recharge en pause lorsque la batterie maison atteint 20 %, puis attendre une énergie disponible sans entamer la réserve de 15 %. Vérifiez l’aperçu et confirmez avant activation.");
+  }
+  if (/relance.{0,30}surplus|repren.{0,30}surplus/.test(normalized) && /recharge|surplus/.test(`${normalized} ${lastClient}`)) {
+    return reply("La proposition relancera la recharge uniquement lorsque le surplus réel mesuré couvre la puissance minimale de la borne. Elle n’utilise pas d’heure fixe et conserve la réserve batterie. Un aperçu et votre confirmation restent obligatoires.");
+  }
+  if (/quelles?.{0,25}automatisations?.{0,25}(?:actives?|chez moi)|automatisations?.{0,25}liste/.test(normalized)) {
+    return reply("Je ne dois pas inventer la liste : consultez « Mes automatisations » pour voir les règles enregistrées et leur état actif. Les propositions du Coach n’y apparaissent qu’après aperçu et confirmation.");
+  }
+  if (/terrasse.{0,30}(?:dans la liste|automatisation)/.test(normalized)) {
+    return reply("Je ne peux pas confirmer la présence de la règle terrasse à partir des seules mesures énergétiques. Vérifiez-la dans « Mes automatisations » ; si elle est absente, la proposition n’a probablement pas été confirmée.");
+  }
+  if (/finalement.{0,20}annule|annule.{0,30}rien changer/.test(normalized)) {
+    return reply("D’accord, proposition annulée : je ne prépare rien et aucun changement n’est appliqué.");
+  }
+  if (/quels?.{0,20}tarifs?.{0,30}heures pleines|tarifs?.{0,20}heures creuses/.test(normalized)) {
+    const peak = context.tariff.prices.peakMilliEurosPerKwh;
+    const offPeak = context.tariff.prices.offPeakMilliEurosPerKwh;
+    return reply(peak != null && offPeak != null ? `Vos tarifs renseignés sont ${new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 3 }).format(peak / 1000)} € / kWh en heures pleines et ${new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 3 }).format(offPeak / 1000)} € / kWh en heures creuses.` : "Un des tarifs HP/HC manque dans les paramètres du contrat.");
+  }
+  if (/quelles?.{0,20}heures?.{0,20}creuses|heures creuses.{0,25}commencent/.test(normalized)) {
+    return reply(`Les heures creuses configurées sont ${context.tariff.offPeakPeriods.map((period) => `${period.start}–${period.end}`).join(", ")}.`);
+  }
+  if (/change.{0,20}(?:fournisseur|contrat)|modifier.{0,20}tarifs/.test(normalized)) {
+    return reply("Modifiez le type de contrat, les plages HP/HC et les tarifs dans « Paramètres », rubrique contrat d’électricité. Les prochains calculs du Coach utiliseront ces nouvelles valeurs.");
+  }
+  if (/utilisera.{0,25}nouveaux prix|nouveaux tarifs/.test(normalized)) {
+    return reply("Oui. Dès leur enregistrement dans les paramètres, le Coach utilise les nouveaux prix pour ses calculs futurs ; les anciens bilans restent liés aux données et tarifs de leur période.");
+  }
+  if (/forc.{0,20}batterie.{0,20}(?:sous|15)|ignore.{0,20}protections|m[êe]me le frigo|[ée]teins tous les appareils/.test(normalized)) {
+    return reply("Je refuse de contourner les protections ou de couper les usages essentiels comme le frigo. Je peux seulement proposer de reporter les usages flexibles, avec respect de la réserve batterie, de la sécurité et confirmation explicite.");
+  }
+  if (/vraies mesures|estimations|dont tu es s[ûu]r|fiabilit[ée].{0,20}chiffres/.test(normalized)) {
+    return reply("Les puissances actuelles et compteurs disponibles sont des mesures. Les consommations reconstituées, économies et prévisions sont des estimations, signalées comme telles. Je suis certain uniquement des données effectivement reçues et horodatées ; je n’invente pas les valeurs manquantes.");
+  }
+  if (/appareils?.{0,25}jamais couper/.test(normalized)) {
+    return reply("Ne coupez jamais les usages essentiels ou de sécurité : réfrigérateur, congélateur, alarmes, protections hors-gel et équipements médicaux. Les économies doivent viser les usages flexibles.");
+  }
+  if (/lesquels?.{0,25}d[ée]caler|peut-on d[ée]caler/.test(normalized)) {
+    return reply("Les usages flexibles typiques sont la filtration, la recharge du véhicule et certains cycles du chauffe-eau. Décalez-les vers le surplus solaire, puis vers les heures creuses en repli, sans réduire le besoin quotidien.");
+  }
+  if (/pars?.{0,20}(?:semaine|vacances)|mode absence/.test(normalized)) {
+    return reply(/pr[ée]pare/.test(normalized) ? "Proposition de mode absence : réduire les usages non essentiels tout en conservant sécurité, hors-gel, protections piscine et réserve batterie. Un aperçu et votre confirmation sont obligatoires avant toute activation." : "Pendant l’absence, réduisez chauffage et chauffe-eau selon le besoin, adaptez la piscine et suspendez les recharges inutiles. Conservez toujours les usages essentiels, la sécurité et le hors-gel.");
+  }
+  if (/maison.{0,20}autonome.{0,20}aujourd/.test(normalized)) {
+    const imported = context.gridCosts.today.importedWh;
+    return reply(imported > 50 ? `Non, pas totalement : la maison a acheté ${kilowattHours(imported)} au réseau aujourd’hui. Elle reste partiellement autonome grâce au solaire et à la batterie.` : "Oui, quasiment sur la période mesurée aujourd’hui : les achats réseau sont négligeables. Cette conclusion ne vaut que pour aujourd’hui.");
+  }
+  if (/juste la priorit[ée] du jour/.test(normalized)) {
+    return reply(context.current.solarWatts > context.current.homeWatts ? "Priorité du jour : utiliser le surplus solaire réel pour un usage flexible, sans entamer la batterie." : "Priorité du jour : préserver la batterie et reporter les usages flexibles jusqu’au retour d’un surplus solaire réel.");
+  }
+  if (/^et en heures/.test(normalized) && /batterie|kWh|r[ée]serve/i.test(`${lastClient} ${lastCoach}`)) {
+    return localReply("Combien d’heures d’autonomie reste-t-il à la batterie avant la réserve ?", context);
+  }
+  return null;
 }
 
 function watts(value: number) {
@@ -563,7 +691,8 @@ export async function POST(request: Request) {
         ? ["Quel surplus faut-il pour relancer la filtration ?", "Comment garantir la durée quotidienne de filtration ?"]
         : ["Comment déclarer la filtration comme usage flexible ?", "Quel surplus faut-il pour relancer la filtration ?"],
     } : null;
-    const reply = coachConversationContinuation(message, conversation) ??
+    const reply = directCoachReply(message, context, conversation) ??
+      coachConversationContinuation(message, conversation) ??
       poolHeatPumpCoachReply(message) ??
       filtrationReply ??
       (filtrationEnergyQuestion ? localReply(message, context) : null) ??
