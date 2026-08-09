@@ -43,7 +43,7 @@ export function poolHeatPumpCoachReply(message: string): PoolHeatPumpCoachReply 
 
   const statedFact = temperature == null
     ? asksWhyAfterSunset
-      ? "Vous indiquez que la PAC a continué après le coucher du soleil. Les mesures actuelles ne permettent pas d’identifier rétrospectivement la cause ni de dire que l’eau était déjà à sa consigne."
+      ? "Vous indiquez que la PAC a continué après le coucher du soleil. Les mesures actuelles ne permettent pas d’identifier rétrospectivement la cause, la température de l’eau ni la consigne à cet instant."
       : "Vous indiquez que la PAC a continué sans bénéfice utile après l’arrêt du solaire."
     : `Vous indiquez que l’eau était déjà à ${String(temperature).replace('.', ',')} °C et que la PAC a continué après l’arrêt du solaire.`;
   return {

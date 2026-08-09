@@ -3,7 +3,7 @@ export type CoachQuestionIntent = 'money' | 'battery' | 'solar' | 'vehicle' | 'h
 export function coachQuestionIntent(message: string): CoachQuestionIntent {
   const normalized = message.toLocaleLowerCase('fr-FR');
   if (/facture|prix|tarif|co[uû]t|euros?|heures?\s+creuses?|heures?\s+pleines?|mensuel|ce\s+mois|combien.{0,20}(?:gagner|économiser)|vendre.{0,20}surplus/.test(normalized)) return 'money';
-  if (/batterie|soc\b|réserve|reserve/.test(normalized)) return 'battery';
+  if (/batterie|soc\b|réserve|reserve|autonomie/.test(normalized)) return 'battery';
   if (/voiture|tesla|véhicule|vehicule|recharge|borne/.test(normalized)) return 'vehicle';
   if (/solaire|surplus|autoconsomm|photovolta/.test(normalized)) return 'solar';
   if (/chauffe[- ]?eau|ballon|eau\s+chaude/.test(normalized)) return 'hot-water';
@@ -23,11 +23,11 @@ export function asksForCoachActionPlan(message: string) {
 
 export function asksForBatteryEndurance(message: string) {
   const normalized = message.toLowerCase();
-  return /batterie|réserve|reserve/.test(normalized) &&
-    /(?:tenir|autonomie|jusqu|toute\s+la\s+nuit|passer\s+la\s+nuit|combien\s+d['’]?heures?)/.test(normalized);
+  return /batterie|réserve|reserve|autonomie/.test(normalized) &&
+    /(?:tenir|autonomie|jusqu|toute\s+la\s+nuit|passer\s+la\s+nuit|combien\s+d['’]?heures?|combien.{0,20}énergie|énergie.{0,20}avant)/.test(normalized);
 }
 
 export function asksForHouseStatus(message: string) {
   const normalized = message.toLowerCase();
-  return /(?:que se passe|consomment? le plus|consommation actuelle|anomalie énergétique|consomme.{0,15}la nuit|sait réellement|données.{0,15}manquent|premier changement)/.test(normalized);
+  return /(?:que se passe|consomment? le plus|consommation actuelle|anomalie énergétique|consomme.{0,15}la nuit|sait réellement|données.{0,15}manquent|premier changement|équipements?.{0,20}pilotables?)/.test(normalized);
 }

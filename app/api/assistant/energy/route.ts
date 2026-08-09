@@ -86,7 +86,12 @@ function localReply(
       hotWater > 0 ? `chauffe-eau : ${watts(hotWater)}` : null,
       remainder > 0 ? `autres usages non détaillés : ${watts(remainder)}` : null,
     ].filter(Boolean).join(", ");
-    if (/sait réellement|données.{0,15}manquent/.test(normalized)) {
+    if (/équipements?.{0,20}pilotables?/.test(normalized)) {
+      const loads = context.predictivePlans.filter((plan) => plan.loadId !== "configuration" && plan.loadCategory !== "other");
+      answer = loads.length
+        ? `Les usages énergétiques explicitement configurés pour le pilotage sont : ${loads.map((plan) => plan.loadLabel).join(", ")}. Le Coach ne présente pas comme pilotable un appareil simplement détecté ou mesuré.`
+        : "Aucun usage énergétique pilotable n’est encore explicitement configuré pour cette maison.";
+    } else if (/sait réellement|données.{0,15}manquent/.test(normalized)) {
       answer = `Le Coach connaît la consommation totale, le solaire, les achats et injections réseau, la batterie de ${context.dossier.batteryCapacityWh / 1000} kWh avec sa réserve à ${context.dossier.batteryReservePercent} %, le contrat électrique, ${context.historySamples} relevés et les équipements mesurés ou configurés. Il ne devine pas le détail des ${watts(remainder)} encore regroupés : des pinces ou associations supplémentaires permettraient de les identifier.`;
     } else if (/anomalie|normale/.test(normalized)) {
       const night = context.insights.find((insight) => insight.id === "night-base");
@@ -176,11 +181,11 @@ function localReply(
     answer = loads.length
       ? `Les usages énergétiques configurés pour le pilotage sont : ${loads.map((plan) => plan.loadLabel).join(", ")}. Le Coach ne présente pas comme pilotable un appareil simplement détecté ou mesuré.`
       : "Aucun usage énergétique pilotable n’est encore configuré pour cette maison.";
-  } else if (intent === "battery" && /réserve|reserve/.test(normalized)) {
+  } else if (intent === "battery" && /\bréserve\b|\breserve\b/.test(normalized)) {
     answer = /augmenter|monter|changer/.test(normalized)
       ? `La réserve est à ${context.dossier.batteryReservePercent} %. Il n’est pas nécessaire de l’augmenter sur un seul instant ; faites-le seulement si l’historique montre qu’elle est atteinte trop tôt plusieurs nuits, ou si vous souhaitez conserver davantage d’énergie de secours.`
       : `La réserve de ${context.dossier.batteryReservePercent} % protège la batterie contre une décharge trop profonde et conserve une marge pour les usages essentiels. L’objectif est de reporter les usages flexibles avant d’atteindre ce seuil.`;
-  } else if (intent === "battery" && /charge.{0,20}réseau|réseau.{0,20}charge/.test(normalized)) {
+  } else if (intent === "battery" && /charge.{0,45}réseau|réseau.{0,45}charge/.test(normalized)) {
     answer = context.batteryOutlook.holdsUntilSolar
       ? `La batterie devrait tenir jusqu’au retour du solaire selon le profil nocturne ; la charger sur le réseau n’est donc pas recommandée cette nuit. Les heures creuses restent un repli, mais leur intérêt doit dépasser les pertes de charge et la valeur du solaire attendu.`
       : "Une charge réseau en heures creuses peut servir de secours si l’autonomie prévue est insuffisante, mais le Coach doit intégrer les pertes de charge et le solaire attendu avant de la recommander.";
@@ -195,7 +200,7 @@ function localReply(
     answer = batterySavingsGuidance(context.tariff.pricesConfigured);
   } else if (intent === "money" && context.historySamples >= 4) {
     const tariffText = tariffGuidance(context.tariff.plan, context.tariff.offPeakPeriods, context.tariff.prices);
-    if (/contrat.{0,30}adapt|adapté.{0,30}contrat/.test(normalized)) {
+    if (/contrat.{0,70}adapt|adapté.{0,70}contrat/.test(normalized)) {
       const imports = Math.max(1, context.gridCost.importedWh);
       const offPeakShare = Math.round(context.gridCost.offPeakImportedWh / imports * 100);
       answer = context.tariff.plan === "hp_hc"
