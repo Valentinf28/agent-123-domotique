@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { installationDossiers, plannedDevices } from "../../../db/schema";
+import { agentBoxes, agentCommands, installationDossiers, plannedDevices } from "../../../db/schema";
+import { gridExportReleaseCommands } from "../../../lib/grid-export-control";
 import { portalApiAdminAuthorized } from "../../../lib/portal-api-auth";
 
 type PlannedDevicePayload = {
@@ -346,12 +347,35 @@ export async function PUT(request: Request) {
       updatedAt: new Date().toISOString(),
     })
       .where(and(eq(installationDossiers.id, dossier.id), eq(installationDossiers.status, "preparation")));
+    const releaseStatements = [];
+    if (energyConfiguration.allowGridExport) {
+      const [box] = await db.select().from(agentBoxes)
+        .where(eq(agentBoxes.dossierId, dossier.id)).limit(1);
+      let inventory: Array<{ entityId: string; name?: string; domain?: string }> = [];
+      try {
+        const parsed = JSON.parse(box?.inventoryJson ?? "[]");
+        inventory = Array.isArray(parsed) ? parsed : [];
+      } catch {}
+      for (const command of gridExportReleaseCommands(inventory)) {
+        releaseStatements.push(db.insert(agentCommands).values({
+          publicId: publicId("command"),
+          dossierId: dossier.id,
+          action: "ha.services.call",
+          payloadJson: JSON.stringify({
+            domain: command.domain,
+            service: command.service,
+            data: { entity_id: command.entityId },
+          }),
+        }));
+      }
+    }
     await db.batch([
       db.delete(plannedDevices).where(eq(plannedDevices.dossierId, dossier.id)),
       ...insertStatements,
       dossierUpdate,
+      ...releaseStatements,
     ]);
-    return Response.json({ saved: true, count: items.length, enabledModules, energyConfiguration });
+    return Response.json({ saved: true, count: items.length, enabledModules, energyConfiguration, exportReleaseQueued: releaseStatements.length });
   } catch (error) {
     const invalid = error instanceof Error &&
       ["INVALID_ITEM", "INVALID_ENTITY", "INVALID_FLEXIBLE_LOAD", "INVALID_OFF_PEAK_PERIOD", "INVALID_SOLAR_ARRAY", "INVALID_TARIFF_PRICE"].includes(error.message);

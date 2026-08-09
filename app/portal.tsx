@@ -1142,8 +1142,8 @@ function Preparation({ dossierId, plannedItems, setPlannedItems, notify, setView
         <div className="grid-export-configuration">
           <div><small>INJECTION DU SURPLUS</small><h4>Le client autorise-t-il l’injection réseau ?</h4><p>Ce choix pilote la règle installée sur la box 1.2.3 Home.</p></div>
           <div className="grid-export-choice" role="group" aria-label="Autorisation d’injection réseau">
-            <button type="button" className={energyConfiguration.allowGridExport ? "selected" : ""} onClick={() => void save(undefined, undefined, { ...energyConfiguration, allowGridExport: true })}><b>Autorisée</b><small>Le surplus peut être envoyé sur le réseau. Aucune règle de blocage.</small></button>
-            <button type="button" className={!energyConfiguration.allowGridExport ? "selected blocked" : ""} onClick={() => void save(undefined, undefined, { ...energyConfiguration, allowGridExport: false })}><b>Interdite</b><small>La box bloque l’injection lorsque la voiture ne charge pas.</small></button>
+            <button type="button" className={energyConfiguration.allowGridExport ? "selected" : ""} onClick={() => void save(plannedItems, enabledModules, { ...energyConfiguration, allowGridExport: true })}><b>Autorisée</b><small>Le surplus peut être envoyé sur le réseau. Aucune règle de blocage.</small></button>
+            <button type="button" className={!energyConfiguration.allowGridExport ? "selected blocked" : ""} onClick={() => void save(plannedItems, enabledModules, { ...energyConfiguration, allowGridExport: false })}><b>Interdite</b><small>La box bloque l’injection lorsque la voiture ne charge pas.</small></button>
           </div>
         </div>
         <div className="tunnel-actions"><button type="button" onClick={() => setTunnelStep(0)}>Retour</button><button type="button" className="primary" onClick={() => setTunnelStep(2)}>Valider l’énergie</button></div>
