@@ -456,7 +456,10 @@ async function loadEnergyCoachContext(dossierPublicId?: string | null) {
     .orderBy(desc(energySnapshots.capturedAt))
     // Quinze jours permettent de confirmer deux semaines pleines malgré les
     // décalages entre le premier relevé et l'heure de consultation.
-    .limit(15 * 24 * 12 + 12);
+    .limit(15 * 24 * 12 + 12)
+    // Les mesures instantanées, la batterie et le contrat restent exploitables
+    // même si la lecture de l’historique D1 échoue momentanément.
+    .catch(() => []);
   const forecast = solarForecastFromInventory(inventory);
   const adaptiveForecast = buildAdaptiveSolarForecast({
     now: new Date(),
