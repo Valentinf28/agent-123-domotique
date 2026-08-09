@@ -47,3 +47,12 @@ test("fais est compris comme une validation du paramétrage de filtration", () =
   }]);
   assert.match(reply?.answer ?? "", /une seule donnée/i);
 });
+
+test("on fait ça poursuit le paramétrage au lieu d’annoncer un bouton absent", () => {
+  const reply = coachConversationContinuation("on fait ça", [{
+    role: "coach",
+    text: "Pour l’automatiser, la filtration doit être déclarée comme usage flexible pilotable.",
+  }]);
+  assert.match(reply?.answer ?? "", /combien d’heures minimum/i);
+  assert.doesNotMatch(reply?.answer ?? "", /Préparer cette proposition/i);
+});

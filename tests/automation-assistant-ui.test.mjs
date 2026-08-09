@@ -58,6 +58,12 @@ test("le coach distingue la PAC de la filtration et répond avec une action conc
   assert.match(energyRoute, /Préparer cette proposition/);
 });
 
+test("le coach affiche un vrai bouton pour préparer la protection de la filtration", () => {
+  assert.match(portal, /coach-setup-button/);
+  assert.match(portal, />Préparer cette proposition</);
+  assert.match(portal, /prepareAssistantAutomation\(request\)/);
+});
+
 test("présente des exemples de règles réellement prises en charge", () => {
   assert.match(portal, /Allume la filtration en semaine à 10h30/);
   assert.match(portal, /coucher du soleil le week-end/);

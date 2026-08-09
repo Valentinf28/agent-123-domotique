@@ -30,7 +30,7 @@ export function coachConversationContinuation(
 ): CoachConversationReply | null {
   const normalized = message.toLocaleLowerCase("fr-FR").trim().replace(/[.!?]+$/g, "").trim();
   const lastCoach = [...conversation].reverse().find((item) => item.role === "coach")?.text ?? "";
-  const affirmative = /^(?:oui|ok|ok\s+vas-?y|d['’]?accord|vas-y|vasy|fais|fais-le|fait le|prépare(?:-la)?|prepare(?:-la)?)$/.test(normalized);
+  const affirmative = /^(?:oui|ok|ok\s+vas-?y|d['’]?accord|vas-y|vasy|fais|fais-le|fait le|on\s+(?:fait|fais)\s+(?:ça|ca)|allons-y|c['’]?est parti|prépare(?:-la)?|prepare(?:-la)?)$/.test(normalized);
 
   if (affirmative && /filtration.{0,120}(?:usage flexible|pilotable)|(?:usage flexible|pilotable).{0,120}filtration/is.test(lastCoach)) {
     return {

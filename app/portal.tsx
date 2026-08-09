@@ -2770,6 +2770,11 @@ function Automations({ dossierId, items, setModal, notify, selectAutomation, set
       <div className="coach-conversation" aria-live="polite">
         {coachMessages.map((message) => <div className={`coach-message ${message.role}`} key={message.id}>
           <p>{message.text}</p>
+          {message.role === "coach" && !message.proposal && /filtration/i.test(message.text) && /usage flexible|pilotable|pilotée/i.test(message.text) && <button className="coach-setup-button" onClick={() => {
+            const request = "Mettre la filtration en pause à 20 % de batterie si le solaire ne couvre pas sa puissance, puis la relancer lorsque le surplus réel suffit, en respectant sa durée quotidienne minimale.";
+            void prepareAssistantAutomation(request);
+            window.setTimeout(() => document.getElementById("assistant-domotique")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+          }}>Préparer cette proposition</button>}
           {message.proposal && <article className="coach-proposal">
             <small>AUTOMATISATION PROPOSÉE · NON ACTIVÉE</small>
             <b>{message.proposal.name}</b>

@@ -264,6 +264,7 @@ main { margin-left:248px; min-height:100vh; }
 .coach-page .energy-coach-chat header small{font-size:11px}
 .coach-page .energy-coach-chat header>em{font-size:10px}
 .coach-page .coach-message p{font-size:13px}
+.coach-setup-button{margin-top:10px;min-height:40px;padding:0 15px;border:1px solid #665a27;border-radius:10px;background:#342f1c;color:#f1d66a;font-size:12px;font-weight:750;cursor:pointer}.coach-setup-button:hover{background:#40381d;border-color:#8a772d}
 .coach-page .coach-suggestions button{height:38px;padding:0 14px;font-size:11px}
 .coach-page .coach-composer input{height:50px;font-size:13px}
 .coach-page .energy-coach-chat>footer{font-size:10px}
