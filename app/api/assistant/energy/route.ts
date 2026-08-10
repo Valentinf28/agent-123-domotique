@@ -87,7 +87,10 @@ export function directCoachReply(
     return reply("Le conseil est défini : garantir 6 heures de filtration par jour, privilégier le surplus solaire réel et préserver la réserve de 15 %. Ce pilotage dynamique n’est pas encore exécutable par la box ; je ne crée donc pas une fausse règle horaire à sa place.");
   }
   if (/^(?:fais|fais-le|fais le)$/.test(normalized) && /filtration|proposition/i.test(`${lastClient} ${lastCoach}`)) {
-    return reply("Je ne peux pas créer ce pilotage batterie + surplus tant qu’il n’est pas exécutable par la box. Aucune règle n’est créée ; le conseil reste disponible sans être remplacé par une heure fixe inadaptée.");
+    return reply("Je ne peux pas créer ce pilotage batterie + surplus tant qu’il n’est pas exécutable par la box. Aucun changement n’a été effectué ; le conseil reste disponible sans être remplacé par une heure fixe inadaptée.");
+  }
+  if (/^(?:fais|fais-le|fais le)$/.test(normalized) && /terrasse|23\s*h\s*33/i.test(`${lastClient} ${lastCoach}`)) {
+    return reply("L’aperçu de la règle terrasse est prêt. Vérifiez l’allumage quotidien à 23 h 33 puis confirmez explicitement ; aucune activation n’a lieu avant cette confirmation.");
   }
   if (/^(?:oui|pourquoi\s*\??|non merci)$/.test(normalized) && /PAC piscine|coucher du soleil/i.test(lastCoach)) {
     if (/non/.test(normalized)) return reply("D’accord, je ne prépare rien. La maison conserve son fonctionnement actuel.");
