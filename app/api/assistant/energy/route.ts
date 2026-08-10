@@ -86,7 +86,7 @@ export function directCoachReply(
   if (/^6\s*heures minimum/.test(normalized)) {
     return reply("Le conseil est défini : garantir 6 heures de filtration par jour, privilégier le surplus solaire réel et préserver la réserve de 15 %. Ce pilotage dynamique n’est pas encore exécutable par la box ; je ne crée donc pas une fausse règle horaire à sa place.");
   }
-  if (/^(?:fais|fais-le|fais le)$/.test(normalized) && /filtration|proposition/i.test(`${lastClient} ${lastCoach}`)) {
+  if (/^(?:fais|fais-le|fais le)$/.test(normalized) && /filtration/i.test(`${lastClient} ${lastCoach}`)) {
     return reply("Je ne peux pas créer ce pilotage batterie + surplus tant qu’il n’est pas exécutable par la box. Aucun changement n’a été effectué ; le conseil reste disponible sans être remplacé par une heure fixe inadaptée.");
   }
   if (/^(?:fais|fais-le|fais le)$/.test(normalized) && /terrasse|23\s*h\s*33/i.test(`${lastClient} ${lastCoach}`)) {
