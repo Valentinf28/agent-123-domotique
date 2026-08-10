@@ -174,6 +174,33 @@ export function batteryProtectionGuidance(input: {
   return `${state} La batterie est à ${input.batteryPercent} %, avec une réserve configurée à ${input.reservePercent} %. ${flexible} Conservez seulement les usages essentiels sur la batterie et utilisez les heures creuses en repli uniquement si un appareil doit impérativement fonctionner avant le retour du solaire.`;
 }
 
+export function batteryChargeEtaGuidance(input: {
+  now: Date;
+  batteryCapacityWh: number;
+  batteryPercent: number;
+  targetPercent: number;
+  batteryWatts: number;
+}) {
+  const target = Math.min(100, Math.max(0, input.targetPercent));
+  if (input.batteryPercent >= target) {
+    return `La batterie est déjà à ${input.batteryPercent} %, donc l’objectif de ${target} % est atteint.`;
+  }
+  const chargeWatts = Math.max(0, -input.batteryWatts);
+  const missingWh = input.batteryCapacityWh * (target - input.batteryPercent) / 100;
+  if (input.batteryCapacityWh <= 0) {
+    return "La capacité de la batterie n’est pas renseignée : je ne peux pas calculer honnêtement l’heure d’atteinte.";
+  }
+  if (chargeWatts < 100) {
+    return `La batterie est à ${input.batteryPercent} % et ne se recharge pas assez actuellement pour estimer quand elle atteindra ${target} %. Il manque environ ${kwh(missingWh)}.`;
+  }
+  const hours = missingWh / chargeWatts;
+  const eta = new Date(input.now.getTime() + hours * 3_600_000);
+  const time = new Intl.DateTimeFormat('fr-FR', {
+    timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit',
+  }).format(eta);
+  return `À la puissance de charge actuelle d’environ ${new Intl.NumberFormat('fr-FR').format(Math.round(chargeWatts))} W, la batterie passerait de ${input.batteryPercent} % à ${target} % vers ${time}. Il reste environ ${kwh(missingWh)} à stocker. C’est une estimation instantanée : l’heure reculera ou avancera avec la production solaire et la consommation de la maison.`;
+}
+
 export function filtrationBatteryProtectionGuidance(input: {
   reservePercent: number;
   filtrationWatts: number;

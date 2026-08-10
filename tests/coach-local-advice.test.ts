@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { batteryProtectionGuidance, batterySavingsGuidance, filtrationBatteryProtectionGuidance, financialCoachGuidance, observedPeriodLabel, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from '../lib/coach-local-advice';
+import { batteryChargeEtaGuidance, batteryProtectionGuidance, batterySavingsGuidance, filtrationBatteryProtectionGuidance, financialCoachGuidance, observedPeriodLabel, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from '../lib/coach-local-advice';
 
 test('annonce exactement la période réellement observée', () => {
   assert.equal(observedPeriodLabel(1), 'Sur la journée disponible');
@@ -113,6 +113,21 @@ test('répond à la protection après le solaire sans répéter le bilan de surp
   assert.match(answer, /réserve configurée à 15 %/i);
   assert.match(answer, /PAC piscine, Filtration piscine/i);
   assert.doesNotMatch(answer, /kWh ont été injectés|autour de 15 h/i);
+});
+
+test('estime l’heure d’atteinte d’un niveau de batterie avec la charge réelle', () => {
+  const answer = batteryChargeEtaGuidance({
+    now: new Date('2026-08-10T10:00:00+02:00'),
+    batteryCapacityWh: 20_000,
+    batteryPercent: 40,
+    targetPercent: 95,
+    batteryWatts: -2_500,
+  });
+  assert.match(answer, /2[  ]500 W/);
+  assert.match(answer, /40 % à 95 %/);
+  assert.match(answer, /14:24/);
+  assert.match(answer, /11 kWh/);
+  assert.match(answer, /estimation instantanée/i);
 });
 
 test('propose un vrai garde-fou pour la filtration quand la batterie atteint sa réserve', () => {

@@ -205,7 +205,7 @@ export const coachQAScenarios: QAScenario[] = [
     theme: "État instantané batterie",
     turns: [
       { message: "À combien est la batterie maintenant ?", rule: rule({ require: [/%/, /batterie/i] }) },
-      { message: "Elle charge ou elle alimente la maison ?", rule: rule({ require: [/(?:charge|alimente|fournit|batterie)/i], forbid: [/voiture/i] }) },
+      { message: "À quelle heure la batterie sera à 95 % ?", rule: rule({ require: [/(?:vers|atteint|recharge|estimer)/i, /95\s*%/], forbid: [/PAC piscine/i, /heures creuses en repli/i] }) },
     ],
   },
   {

@@ -14,7 +14,7 @@ import { tariffGuidance } from "../../../../lib/energy-insights";
 import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../../lib/coach-guardrails";
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
 import { asksForBatteryEndurance, asksForCoachActionPlan, asksForCurrentWeekCost, asksForFiltrationBatteryProtection, asksForHouseStatus, asksForLastWeekCost, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
-import { batteryProtectionGuidance, batterySavingsGuidance, filtrationBatteryProtectionGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from "../../../../lib/coach-local-advice";
+import { batteryChargeEtaGuidance, batteryProtectionGuidance, batterySavingsGuidance, filtrationBatteryProtectionGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from "../../../../lib/coach-local-advice";
 import { coachConversationContinuation } from "../../../../lib/coach-conversation";
 import { coachHouseFixture } from "../../../../scripts/coach-qa-fixture";
 
@@ -518,6 +518,15 @@ export function localReply(
     answer = loads.length
       ? `Pour préserver la batterie, reportez d’abord les usages suivants : ${loads.map((plan) => plan.loadLabel).join(", ")}. Attendez que leur puissance soit couverte par le solaire. Les autres appareils ne sont pas proposés sans configuration explicite.`
       : "Aucun usage flexible n’est suffisamment configuré pour proposer une coupure automatique. Le Coach ne doit pas deviner quels appareils sont reportables.";
+  } else if (intent === "battery" && /(?:quelle heure|à quelle heure|a quelle heure|quand).{0,30}batterie.{0,30}(\d{1,3})\s*%|batterie.{0,30}(\d{1,3})\s*%/.test(normalized)) {
+    const target = Number(RegExp.$1 || RegExp.$2);
+    answer = batteryChargeEtaGuidance({
+      now: new Date(),
+      batteryCapacityWh: context.dossier.batteryCapacityWh,
+      batteryPercent: context.current.batteryPercent,
+      targetPercent: target,
+      batteryWatts: context.current.batteryWatts,
+    });
   } else if (intent === "battery") {
     answer = batteryProtectionGuidance({
       batteryPercent: context.current.batteryPercent,
