@@ -13,7 +13,7 @@ import {
 import { tariffGuidance } from "../../../../lib/energy-insights";
 import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../../lib/coach-guardrails";
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
-import { asksForBatteryEndurance, asksForCoachActionPlan, asksForCurrentWeekCost, asksForFiltrationBatteryProtection, asksForHouseStatus, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
+import { asksForBatteryEndurance, asksForCoachActionPlan, asksForCurrentWeekCost, asksForFiltrationBatteryProtection, asksForHouseStatus, asksForLastWeekCost, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
 import { batteryProtectionGuidance, batterySavingsGuidance, filtrationBatteryProtectionGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from "../../../../lib/coach-local-advice";
 import { coachConversationContinuation } from "../../../../lib/coach-conversation";
 import { coachHouseFixture } from "../../../../scripts/coach-qa-fixture";
@@ -168,6 +168,14 @@ export function directCoachReply(
     return reply(measured.importCostEuros == null
       ? `Depuis lundi, ${kilowattHours(measured.importedWh)} ont été achetés au réseau, mais un tarif manque pour calculer le montant.`
       : `Depuis lundi, la maison a acheté ${kilowattHours(measured.importedWh)} au réseau pour environ ${euros(measured.importCostEuros)}, hors abonnement et taxes fixes.`);
+  }
+  if (asksForLastWeekCost(message)) {
+    const measured = context.gridCosts.lastWeek;
+    return reply(measured.observedDays < 1
+      ? "Aucun relevé n’est disponible pour la semaine dernière : je ne peux pas inventer de montant."
+      : measured.importCostEuros == null
+        ? `La semaine dernière, ${kilowattHours(measured.importedWh)} ont été achetés au réseau, mais un tarif manque pour calculer le montant.`
+        : `La semaine dernière, la maison a acheté ${kilowattHours(measured.importedWh)} au réseau pour environ ${euros(measured.importCostEuros)}, hors abonnement et taxes fixes. Le calcul couvre ${measured.observedDays} jour${measured.observedDays > 1 ? "s" : ""} de relevés.`);
   }
   if (/^et la batterie/.test(normalized)) {
     return reply(`La batterie est à ${context.current.batteryPercent} %, avec une réserve à ${reserve} %. Elle ${context.current.batteryWatts > 50 ? "alimente actuellement la maison" : context.current.batteryWatts < -50 ? "se recharge" : "est au repos"}.`);

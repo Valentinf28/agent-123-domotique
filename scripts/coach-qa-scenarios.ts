@@ -80,7 +80,7 @@ export const coachQAScenarios: QAScenario[] = [
     theme: "Coût réseau sur la période demandée",
     turns: [
       { message: "Combien ai-je dépensé depuis le début de la semaine ?", rule: rule({ require: [/depuis lundi/i, /€/, /kWh/i], forbid: [/par mois/i, /12 derniers jours/i, /13 jours/i, /projection/i, /ne permet pas d.isoler/i] }) },
-      { message: "Combien ai-je dépensé sur le réseau aujourd'hui seulement ?", rule: rule({ require: [/aujourd/i, /€|tarif.*manque/i], forbid: [/par mois/i, /depuis lundi/i] }) },
+      { message: "Combien ai-je dépensé la semaine dernière ?", rule: rule({ require: [/semaine dernière/i, /€|tarif.*manque/i, /kWh/i], forbid: [/13 jours/i, /ne permet pas d.isoler/i, /fournisseur/i] }) },
     ],
   },
   {

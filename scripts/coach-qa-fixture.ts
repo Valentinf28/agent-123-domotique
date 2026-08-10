@@ -26,6 +26,7 @@ export const coachHouseFixture = {
   gridCosts: {
     today: { importedWh: 800, exportedWh: 12_000, importCostEuros: 0.13, exportRevenueEuros: 1.2, observedDays: 1 },
     week: { importedWh: 3_100, exportedWh: 70_000, importCostEuros: 0.51, exportRevenueEuros: 7, observedDays: 7 },
+    lastWeek: { importedWh: 3_400, exportedWh: 72_000, importCostEuros: 0.56, exportRevenueEuros: 7.2, observedDays: 7 },
     last7: { importedWh: 3_500, exportedWh: 75_000, importCostEuros: 0.58, exportRevenueEuros: 7.5, observedDays: 7 },
     month: { importedWh: 6_200, exportedWh: 136_300, importCostEuros: 1.01, exportRevenueEuros: 13.63, observedDays: 13 },
   },

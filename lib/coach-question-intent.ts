@@ -42,3 +42,8 @@ export function asksForCurrentWeekCost(message: string) {
   const normalized = message.toLocaleLowerCase('fr-FR');
   return /(?:combien|quel montant).{0,35}d[ée]pens[ée].{0,35}(?:depuis (?:le )?d[ée]but de la semaine|cette semaine)|d[ée]pens[ée].{0,35}(?:depuis (?:le )?d[ée]but de la semaine|cette semaine)/.test(normalized);
 }
+
+export function asksForLastWeekCost(message: string) {
+  const normalized = message.toLocaleLowerCase('fr-FR');
+  return /(?:combien|quel montant).{0,35}d[ée]pens[ée].{0,25}(?:la semaine derni[èe]re|semaine pass[ée]e)|d[ée]pens[ée].{0,25}(?:la semaine derni[èe]re|semaine pass[ée]e)/.test(normalized);
+}

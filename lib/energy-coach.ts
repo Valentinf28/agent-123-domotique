@@ -125,7 +125,7 @@ function parisDateKey(date: Date) {
 
 function periodSamples<T extends { capturedAt: string }>(
   samples: T[],
-  period: "today" | "week" | "last7" | "month",
+  period: "today" | "week" | "lastWeek" | "last7" | "month",
   now: Date,
 ) {
   const today = parisDateKey(now);
@@ -134,12 +134,16 @@ function periodSamples<T extends { capturedAt: string }>(
   const dayOfWeek = localCalendarDay.getUTCDay() || 7;
   const start = new Date(localCalendarDay);
   if (period === "week") start.setUTCDate(start.getUTCDate() - dayOfWeek + 1);
+  if (period === "lastWeek") start.setUTCDate(start.getUTCDate() - dayOfWeek - 6);
   if (period === "last7") start.setUTCDate(start.getUTCDate() - 6);
   if (period === "month") start.setUTCDate(1);
   const startKey = period === "today" ? today : start.toISOString().slice(0, 10);
+  const end = new Date(localCalendarDay);
+  if (period === "lastWeek") end.setUTCDate(end.getUTCDate() - dayOfWeek);
+  const endKey = period === "lastWeek" ? end.toISOString().slice(0, 10) : today;
   return samples.filter((sample) => {
     const key = parisDateKey(new Date(sample.capturedAt));
-    return key >= startKey && key <= today;
+    return key >= startKey && key <= endKey;
   });
 }
 
@@ -595,13 +599,13 @@ async function loadEnergyCoachContext(dossierPublicId?: string | null) {
     periods: offPeakPeriods,
     prices: tariffPrices,
   });
-  const gridCosts = Object.fromEntries((["today", "week", "last7", "month"] as const).map((period) => {
+  const gridCosts = Object.fromEntries((["today", "week", "lastWeek", "last7", "month"] as const).map((period) => {
     const samples = periodSamples(history, period, now);
     return [period, {
       ...measuredGridCost({ samples, plan: tariffPlan, periods: offPeakPeriods, prices: tariffPrices }),
       observedDays: observedDays(samples),
     }];
-  })) as Record<"today" | "week" | "last7" | "month", ReturnType<typeof measuredGridCost> & { observedDays: number }>;
+  })) as Record<"today" | "week" | "lastWeek" | "last7" | "month", ReturnType<typeof measuredGridCost> & { observedDays: number }>;
   const vehicleEnergyToday = measuredVehicleEnergyToday(history, now);
   const filtrationEnergyToday = measuredFiltrationEnergyToday(history, now);
   return {
