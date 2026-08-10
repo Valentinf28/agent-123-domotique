@@ -1,5 +1,6 @@
 import { sha256 } from "../../../../lib/agent-auth";
 import {
+  portalApiAdminAuthorized,
   portalApiAuthorized,
   portalAuthorizedHouseIds,
   portalHouseAuthorized,
@@ -631,7 +632,8 @@ async function openAiReply(
 ): Promise<CoachReply | null> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) return null;
-  if (!await consumeAssistantRequest(context.dossier.id, "energy")) {
+  const quotaExempt = await portalApiAdminAuthorized();
+  if (!quotaExempt && !await consumeAssistantRequest(context.dossier.id, "energy")) {
     return {
       answer: "Le Coach est momentanément indisponible après un volume inhabituel de demandes. Réessayez dans quelques instants ; les équipements continuent de fonctionner normalement.",
       automationProposal: null,
