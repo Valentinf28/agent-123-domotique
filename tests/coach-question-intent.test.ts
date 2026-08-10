@@ -6,6 +6,7 @@ test('distingue économiser la batterie d’une économie financière', () => {
   assert.equal(coachQuestionIntent('Comment économiser ma batterie ce soir ?'), 'battery');
   assert.equal(needsDeterministicFinancialAnswer('Comment économiser ma batterie ce soir ?'), false);
   assert.equal(coachQuestionIntent('Comment préserver la réserve batterie ?'), 'battery');
+  assert.equal(coachQuestionIntent('Comment préserver la batterie après le solaire ?'), 'battery');
 });
 
 test('reconnaît une demande de plan issue des deux semaines d’analyse', () => {

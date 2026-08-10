@@ -14,7 +14,7 @@ import { tariffGuidance } from "../../../../lib/energy-insights";
 import { executableCoachProposal, safeCoachSuggestedQuestions } from "../../../../lib/coach-guardrails";
 import { poolHeatPumpCoachReply } from "../../../../lib/pool-heat-pump-coach";
 import { asksForBatteryEndurance, asksForCoachActionPlan, asksForFiltrationBatteryProtection, asksForHouseStatus, coachQuestionIntent, needsDeterministicFinancialAnswer } from "../../../../lib/coach-question-intent";
-import { batterySavingsGuidance, filtrationBatteryProtectionGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from "../../../../lib/coach-local-advice";
+import { batteryProtectionGuidance, batterySavingsGuidance, filtrationBatteryProtectionGuidance, financialCoachGuidance, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from "../../../../lib/coach-local-advice";
 import { coachConversationContinuation } from "../../../../lib/coach-conversation";
 import { coachHouseFixture } from "../../../../scripts/coach-qa-fixture";
 
@@ -495,6 +495,16 @@ export function localReply(
     answer = loads.length
       ? `Pour préserver la batterie, reportez d’abord les usages suivants : ${loads.map((plan) => plan.loadLabel).join(", ")}. Attendez que leur puissance soit couverte par le solaire. Les autres appareils ne sont pas proposés sans configuration explicite.`
       : "Aucun usage flexible n’est suffisamment configuré pour proposer une coupure automatique. Le Coach ne doit pas deviner quels appareils sont reportables.";
+  } else if (intent === "battery") {
+    answer = batteryProtectionGuidance({
+      batteryPercent: context.current.batteryPercent,
+      reservePercent: context.dossier.batteryReservePercent,
+      solarWatts: context.current.solarWatts,
+      batteryWatts: context.current.batteryWatts,
+      flexibleLoads: context.predictivePlans
+        .filter((plan) => plan.loadId !== "configuration" && plan.loadCategory !== "other")
+        .map((plan) => plan.loadLabel),
+    });
   } else if (intent === "money" && /batterie/.test(normalized)) {
     answer = batterySavingsGuidance(context.tariff.pricesConfigured);
   } else if (intent === "money" && context.historySamples >= 4) {

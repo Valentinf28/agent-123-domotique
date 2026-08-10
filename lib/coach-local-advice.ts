@@ -155,6 +155,25 @@ export function batterySavingsGuidance(pricesConfigured: boolean) {
   return `Pour calculer l’économie apportée par la batterie, il faut mesurer l’énergie qu’elle restitue à la place d’un achat réseau, puis déduire ses pertes. ${price} Le Coach peut néanmoins protéger la réserve et éviter les décharges pour des usages reportables.`;
 }
 
+export function batteryProtectionGuidance(input: {
+  batteryPercent: number;
+  reservePercent: number;
+  solarWatts: number;
+  batteryWatts: number;
+  flexibleLoads: string[];
+}) {
+  const loads = [...new Set(input.flexibleLoads)].filter(Boolean);
+  const flexible = loads.length
+    ? `Après le coucher du soleil, reportez en priorité ${loads.join(', ')} au prochain surplus réel.`
+    : "Après le coucher du soleil, reportez les usages non indispensables au prochain surplus réel.";
+  const state = input.solarWatts > 100
+    ? `Le solaire produit encore ${new Intl.NumberFormat('fr-FR').format(Math.round(input.solarWatts))} W : attendez qu’un appareil soit entièrement couvert avant de le démarrer.`
+    : input.batteryWatts > 100
+      ? `Le solaire est terminé et la batterie alimente actuellement la maison à environ ${new Intl.NumberFormat('fr-FR').format(Math.round(input.batteryWatts))} W.`
+      : "Le solaire est terminé, mais aucune décharge significative de la batterie n’est mesurée actuellement.";
+  return `${state} La batterie est à ${input.batteryPercent} %, avec une réserve configurée à ${input.reservePercent} %. ${flexible} Conservez seulement les usages essentiels sur la batterie et utilisez les heures creuses en repli uniquement si un appareil doit impérativement fonctionner avant le retour du solaire.`;
+}
+
 export function filtrationBatteryProtectionGuidance(input: {
   reservePercent: number;
   filtrationWatts: number;

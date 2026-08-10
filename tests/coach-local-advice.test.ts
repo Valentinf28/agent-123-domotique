@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { batterySavingsGuidance, filtrationBatteryProtectionGuidance, financialCoachGuidance, observedPeriodLabel, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from '../lib/coach-local-advice';
+import { batteryProtectionGuidance, batterySavingsGuidance, filtrationBatteryProtectionGuidance, financialCoachGuidance, observedPeriodLabel, solarAutoconsumptionGuidance, solarCoachGuidance, unavailableEquipmentGuidance, vehicleChargingGuidance } from '../lib/coach-local-advice';
 
 test('annonce exactement la période réellement observée', () => {
   assert.equal(observedPeriodLabel(1), 'Sur la journée disponible');
@@ -98,6 +98,21 @@ test('n’invente pas le gain financier de la batterie', () => {
   assert.match(answer, /prix du kWh n’est pas renseigné/i);
   assert.match(answer, /ne peut pas être converti honnêtement en euros/i);
   assert.match(answer, /protéger la réserve/i);
+});
+
+test('répond à la protection après le solaire sans répéter le bilan de surplus', () => {
+  const answer = batteryProtectionGuidance({
+    batteryPercent: 62,
+    reservePercent: 15,
+    solarWatts: 0,
+    batteryWatts: 820,
+    flexibleLoads: ['PAC piscine', 'Filtration piscine'],
+  });
+  assert.match(answer, /solaire est terminé/i);
+  assert.match(answer, /batterie est à 62 %/i);
+  assert.match(answer, /réserve configurée à 15 %/i);
+  assert.match(answer, /PAC piscine, Filtration piscine/i);
+  assert.doesNotMatch(answer, /kWh ont été injectés|autour de 15 h/i);
 });
 
 test('propose un vrai garde-fou pour la filtration quand la batterie atteint sa réserve', () => {
