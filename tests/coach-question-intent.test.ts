@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { asksForBatteryEndurance, asksForCoachActionPlan, asksForCurrentWeekCost, asksForFiltrationBatteryProtection, asksForLastWeekCost, coachQuestionIntent, needsDeterministicFinancialAnswer } from '../lib/coach-question-intent';
+import { asksForBatteryEndurance, asksForCoachActionPlan, asksForCurrentWeekCost, asksForFiltrationBatteryProtection, asksForLastWeekCost, batteryChargeTargetPercent, coachQuestionIntent, needsDeterministicFinancialAnswer } from '../lib/coach-question-intent';
 
 test('distingue économiser la batterie d’une économie financière', () => {
   assert.equal(coachQuestionIntent('Comment économiser ma batterie ce soir ?'), 'battery');
@@ -54,4 +54,10 @@ test('reconnaît le coût demandé pour la semaine dernière', () => {
   assert.equal(asksForLastWeekCost('Combien ai-je dépensé la semaine dernière ?'), true);
   assert.equal(asksForLastWeekCost('Quel montant ai-je dépensé la semaine passée ?'), true);
   assert.equal(asksForLastWeekCost('Combien ai-je dépensé cette semaine ?'), false);
+});
+
+test('extrait entièrement le niveau de batterie demandé', () => {
+  assert.equal(batteryChargeTargetPercent('À quelle heure la batterie sera à 95% ?'), 95);
+  assert.equal(batteryChargeTargetPercent('Quand ma batterie atteindra 100 % ?'), 100);
+  assert.equal(batteryChargeTargetPercent('La batterie est à 43 %'), null);
 });

@@ -47,3 +47,12 @@ export function asksForLastWeekCost(message: string) {
   const normalized = message.toLocaleLowerCase('fr-FR');
   return /(?:combien|quel montant).{0,35}d[ée]pens[ée].{0,25}(?:la semaine derni[èe]re|semaine pass[ée]e)|d[ée]pens[ée].{0,25}(?:la semaine derni[èe]re|semaine pass[ée]e)/.test(normalized);
 }
+
+export function batteryChargeTargetPercent(message: string) {
+  const normalized = message.toLocaleLowerCase('fr-FR');
+  if (!/batterie/.test(normalized) || !/(?:quelle heure|à quelle heure|a quelle heure|quand)/.test(normalized)) return null;
+  const match = normalized.match(/(\d{1,3})\s*%/);
+  if (!match) return null;
+  const target = Number(match[1]);
+  return Number.isFinite(target) && target >= 0 && target <= 100 ? target : null;
+}
