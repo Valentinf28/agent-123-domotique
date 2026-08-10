@@ -177,6 +177,12 @@ export function directCoachReply(
         ? `La semaine dernière, ${kilowattHours(measured.importedWh)} ont été achetés au réseau, mais un tarif manque pour calculer le montant.`
         : `La semaine dernière, la maison a acheté ${kilowattHours(measured.importedWh)} au réseau pour environ ${euros(measured.importCostEuros)}, hors abonnement et taxes fixes. Le calcul couvre ${measured.observedDays} jour${measured.observedDays > 1 ? "s" : ""} de relevés.`);
   }
+  if (/\bhier\b/.test(normalized) && /(?:kwh|[ée]nergie).{0,45}(?:voiture|v[ée]hicule|recharge)|(?:voiture|v[ée]hicule|recharge).{0,45}(?:kwh|[ée]nergie)/.test(normalized)) {
+    const measured = context.vehicleEnergyYesterday;
+    return reply(measured.available
+      ? `Hier, environ ${kilowattHours(measured.energyWh)} ont été envoyés à la voiture d’après ${measured.sampleCount} relevés de la borne. Le calcul couvre ${measured.coveredMinutes} minutes réellement mesurées et n’extrapole pas les périodes sans données.`
+      : "Je n’ai pas assez de relevés de la borne hier pour calculer honnêtement l’énergie envoyée à la voiture.");
+  }
   if (/^et la batterie/.test(normalized)) {
     return reply(`La batterie est à ${context.current.batteryPercent} %, avec une réserve à ${reserve} %. Elle ${context.current.batteryWatts > 50 ? "alimente actuellement la maison" : context.current.batteryWatts < -50 ? "se recharge" : "est au repos"}.`);
   }
