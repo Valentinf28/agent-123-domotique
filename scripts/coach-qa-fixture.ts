@@ -31,6 +31,7 @@ export const coachHouseFixture = {
     month: { importedWh: 6_200, exportedWh: 136_300, importCostEuros: 1.01, exportRevenueEuros: 13.63, observedDays: 13 },
   },
   vehicleEnergyToday: { available: true, energyWh: 7_400, sampleCount: 84, coveredMinutes: 315 },
+  vehicleEnergyYesterday: { available: true, energyWh: 9_200, sampleCount: 120, coveredMinutes: 540 },
   filtrationEnergyToday: { available: true, energyWh: 4_200, sampleCount: 96, coveredMinutes: 365 },
   actionPlan: {
     status: "ready", learningDays: 14, daysRemaining: 0,

@@ -97,7 +97,7 @@ export const coachQAScenarios: QAScenario[] = [
     theme: "Énergie réellement envoyée au véhicule",
     turns: [
       { message: "Combien de kWh ont été envoyés à la voiture aujourd'hui ?", rule: rule({ require: [/aujourd/i, /kWh/i, /relevés|pas assez/i], forbid: [/demain/i, /meilleur point/i, /quand recharger/i] }) },
-      { message: "Quelle quantité d'énergie la voiture a reçue aujourd'hui ?", rule: rule({ require: [/aujourd/i, /kWh|pas assez/i], forbid: [/demain/i, /meilleur point/i, /heures creuses/i] }) },
+      { message: "Combien de kWh a été envoyé à la voiture hier ?", rule: rule({ require: [/hier/i, /kWh|pas assez/i], forbid: [/aujourd/i, /demain/i, /meilleur point/i, /heures creuses/i] }) },
     ],
   },
   {

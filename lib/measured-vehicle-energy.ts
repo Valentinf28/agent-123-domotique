@@ -23,14 +23,23 @@ export function measuredLoadEnergyToday(
   power: (sample: PowerSample) => number,
   now = new Date(),
 ): MeasuredVehicleEnergy {
+  return measuredLoadEnergyForDay(samples, power, parisDay.format(now), now);
+}
+
+export function measuredLoadEnergyForDay(
+  samples: PowerSample[],
+  power: (sample: PowerSample) => number,
+  day: string,
+  now = new Date(),
+): MeasuredVehicleEnergy {
   const today = parisDay.format(now);
   const ordered = samples
-    .filter((sample) => parisDay.format(new Date(sample.capturedAt)) === today)
+    .filter((sample) => parisDay.format(new Date(sample.capturedAt)) === day)
     .map((sample) => ({
       at: Date.parse(sample.capturedAt),
       watts: Math.max(0, Number(power(sample)) || 0),
     }))
-    .filter((sample) => Number.isFinite(sample.at) && sample.at <= now.getTime())
+    .filter((sample) => Number.isFinite(sample.at) && (day !== today || sample.at <= now.getTime()))
     .sort((left, right) => left.at - right.at);
 
   if (ordered.length < 2) {
@@ -60,6 +69,12 @@ export function measuredLoadEnergyToday(
 
 export function measuredVehicleEnergyToday(samples: PowerSample[], now = new Date()) {
   return measuredLoadEnergyToday(samples, (sample) => sample.vehicleWatts ?? 0, now);
+}
+
+export function measuredVehicleEnergyYesterday(samples: PowerSample[], now = new Date()) {
+  const parts = parisDay.format(now).split("-").map(Number);
+  const previous = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] - 1, 12));
+  return measuredLoadEnergyForDay(samples, (sample) => sample.vehicleWatts ?? 0, parisDay.format(previous), now);
 }
 
 export function measuredFiltrationEnergyToday(samples: PowerSample[], now = new Date()) {

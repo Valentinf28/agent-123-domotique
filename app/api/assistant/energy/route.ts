@@ -463,9 +463,12 @@ export function localReply(
     } else {
       const exportWatts = Math.max(0, -context.current.gridWatts);
       if (/(?:combien|quelle quantité|quelle quantite).{0,35}(?:kwh|énergie|energie).{0,35}(?:voiture|véhicule|vehicule|recharge)|(?:kwh|énergie|energie).{0,35}(?:envoyés?|consommés?|reçus?).{0,35}(?:voiture|véhicule|vehicule).{0,20}aujourd/.test(normalized)) {
-        answer = context.vehicleEnergyToday.available
-          ? `Aujourd’hui, environ ${kilowattHours(context.vehicleEnergyToday.energyWh)} ont été envoyés à la voiture d’après ${context.vehicleEnergyToday.sampleCount} relevés de la borne. Le calcul couvre ${context.vehicleEnergyToday.coveredMinutes} minutes réellement mesurées et n’extrapole pas les périodes sans données.`
-          : "Je n’ai pas assez de relevés de la borne aujourd’hui pour calculer honnêtement l’énergie envoyée à la voiture. Je peux seulement indiquer sa puissance actuelle.";
+        const yesterday = /\bhier\b/.test(normalized);
+        const measured = yesterday ? context.vehicleEnergyYesterday : context.vehicleEnergyToday;
+        const periodLabel = yesterday ? "Hier" : "Aujourd’hui";
+        answer = measured.available
+          ? `${periodLabel}, environ ${kilowattHours(measured.energyWh)} ont été envoyés à la voiture d’après ${measured.sampleCount} relevés de la borne. Le calcul couvre ${measured.coveredMinutes} minutes réellement mesurées et n’extrapole pas les périodes sans données.`
+          : `Je n’ai pas assez de relevés de la borne ${yesterday ? "hier" : "aujourd’hui"} pour calculer honnêtement l’énergie envoyée à la voiture. Je peux seulement indiquer sa puissance actuelle.`;
       } else if (/charge-t-elle|charge t elle|actuellement/.test(normalized)) {
         answer = context.current.vehicleWatts > 100
           ? `Oui, une recharge à domicile est mesurée à ${watts(context.current.vehicleWatts)}.`
