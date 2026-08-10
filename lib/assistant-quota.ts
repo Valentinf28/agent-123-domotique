@@ -1,6 +1,9 @@
 export type AssistantQuotaKind = "automation" | "energy";
 
-export const ASSISTANT_MONTHLY_LIMIT = 100;
+// Le Coach est le service central de l’abonnement Premium. Cent échanges sont
+// trop vite atteints lors de dialogues et de relances normales ; 1 000 garde
+// une protection contre les abus sans bloquer un usage client quotidien.
+export const ASSISTANT_MONTHLY_LIMIT = 1_000;
 
 export function assistantQuotaBucket(
   kind: AssistantQuotaKind,

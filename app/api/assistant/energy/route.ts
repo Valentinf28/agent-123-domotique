@@ -633,7 +633,7 @@ async function openAiReply(
   if (!apiKey) return null;
   if (!await consumeAssistantRequest(context.dossier.id, "energy")) {
     return {
-      answer: "Le coach a atteint sa limite de protection pour ce mois. Les recommandations automatiques restent disponibles et le service reprendra au prochain cycle.",
+      answer: "Le Coach est momentanément indisponible après un volume inhabituel de demandes. Réessayez dans quelques instants ; les équipements continuent de fonctionner normalement.",
       automationProposal: null,
       suggestedQuestions: [],
     };
