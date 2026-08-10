@@ -37,3 +37,8 @@ export function asksForFiltrationBatteryProtection(message: string) {
   return /filtration/.test(normalized) && /batterie/.test(normalized) &&
     /solaire|production|réseau|reseau|météo|meteo|temps/.test(normalized);
 }
+
+export function asksForCurrentWeekCost(message: string) {
+  const normalized = message.toLocaleLowerCase('fr-FR');
+  return /(?:combien|quel montant).{0,35}d[ée]pens[ée].{0,35}(?:depuis (?:le )?d[ée]but de la semaine|cette semaine)|d[ée]pens[ée].{0,35}(?:depuis (?:le )?d[ée]but de la semaine|cette semaine)/.test(normalized);
+}
