@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 0.5.51
+
+- Détecte une liaison distante figée et force automatiquement une reconnexion en moins d’une minute.
+- Exige une réponse réelle du serveur au contrôle de connexion au lieu de considérer un simple envoi comme suffisant.
+
 ## 0.5.50
 
 - Vérifie toutes les 15 secondes que la voiture est réellement présente sur la borne Lektrico.

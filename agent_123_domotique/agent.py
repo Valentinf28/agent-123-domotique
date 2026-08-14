@@ -22,6 +22,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import websocket
 
 HA_TUNNELS: dict[str, websocket.WebSocket] = {}
+RELAY_IDLE_TIMEOUT_SECONDS = 30
+RELAY_PONG_TIMEOUT_SECONDS = 15
 
 OPTIONS_PATH = Path("/data/options.json")
 STATE_PATH = Path("/data/agent-state.json")
@@ -2545,37 +2547,63 @@ def relay_command(
         }
 
 
+def relay_connected_session(
+    socket: websocket.WebSocket,
+    house_id: str,
+    relay_token: str,
+    supervisor_token: str,
+) -> None:
+    """Run one authenticated relay session and fail fast on a zombie link."""
+    send_lock = threading.Lock()
+
+    def relay_send(payload: dict[str, Any]) -> None:
+        with send_lock:
+            socket.send(json.dumps(payload))
+
+    relay_send({
+        "type": "authenticate",
+        "houseId": house_id,
+        "token": relay_token,
+    })
+    reply = json.loads(socket.recv())
+    if reply.get("type") != "authenticated":
+        raise RuntimeError("Authentification du relais refusée")
+    log("Liaison sécurisée VPS active")
+
+    # A control-frame ping only proves that bytes were queued locally. Require
+    # an application-level pong so a half-open TCP connection cannot leave the
+    # process alive while the house remains permanently offline.
+    awaiting_pong = False
+    socket.settimeout(RELAY_IDLE_TIMEOUT_SECONDS)
+    while True:
+        try:
+            message = json.loads(socket.recv())
+        except websocket.WebSocketTimeoutException:
+            if awaiting_pong:
+                raise RuntimeError("Le relais ne répond plus au contrôle de liaison")
+            relay_send({"type": "ping", "sentAt": int(time.time() * 1000)})
+            awaiting_pong = True
+            socket.settimeout(RELAY_PONG_TIMEOUT_SECONDS)
+            continue
+
+        # Any valid inbound message proves the connection is alive. The pong
+        # is normally first, but a queued command is equally conclusive.
+        awaiting_pong = False
+        socket.settimeout(RELAY_IDLE_TIMEOUT_SECONDS)
+        if message.get("type") == "pong":
+            continue
+        if message.get("type") == "command":
+            relay_send(relay_command(supervisor_token, message, relay_send))
+
+
 def relay_forever(relay_url: str, house_id: str, relay_token: str, supervisor_token: str) -> None:
     delay = 2
     while True:
         socket: websocket.WebSocket | None = None
         try:
             socket = websocket.create_connection(relay_url, timeout=30)
-            send_lock = threading.Lock()
-
-            def relay_send(payload: dict[str, Any]) -> None:
-                with send_lock:
-                    socket.send(json.dumps(payload))
-
-            relay_send({
-                "type": "authenticate",
-                "houseId": house_id,
-                "token": relay_token,
-            })
-            reply = json.loads(socket.recv())
-            if reply.get("type") != "authenticated":
-                raise RuntimeError("Authentification du relais refusée")
-            log("Liaison sécurisée VPS active")
+            relay_connected_session(socket, house_id, relay_token, supervisor_token)
             delay = 2
-            socket.settimeout(45)
-            while True:
-                try:
-                    message = json.loads(socket.recv())
-                except websocket.WebSocketTimeoutException:
-                    socket.ping()
-                    continue
-                if message.get("type") == "command":
-                    relay_send(relay_command(supervisor_token, message, relay_send))
         except Exception as error:
             log(f"Relais indisponible ({error}), reconnexion dans {delay}s")
         finally:
