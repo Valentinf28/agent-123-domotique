@@ -74,11 +74,12 @@ class DeyeExportControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Solar Sell"):
             agent.deye_vehicle_export_automation(current_payload, current_states)
 
-    def test_policy_requires_the_solar_sell_switch(self) -> None:
+    def test_policy_does_not_block_solar_charging_without_export_switch(self) -> None:
         current_payload = payload()
         current_payload["inverterExportSwitchEntityId"] = ""
-        with self.assertRaisesRegex(ValueError, "indispensable"):
+        self.assertIsNone(
             agent.deye_vehicle_export_automation(current_payload, states())
+        )
 
     def test_initial_sync_blocks_export_for_a_waiting_vehicle(self) -> None:
         self.assertEqual(

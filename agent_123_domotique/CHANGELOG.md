@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 0.5.52
+
+- Autorise le mode Surplus Lektrico même lorsque l’onduleur n’expose plus l’ancienne commande Solar Sell.
+- Ne modifie pas le réglage d’injection de l’onduleur lorsque cette commande est absente.
+- Arrête immédiatement la recharge solaire lorsque la batterie domestique repasse sous le seuil configuré.
+
 ## 0.5.51
 
 - Détecte une liaison distante figée et force automatiquement une reconnexion en moins d’une minute.

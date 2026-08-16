@@ -1485,8 +1485,14 @@ def deye_vehicle_export_automation(
     export_switch_entity_id = str(payload.get("inverterExportSwitchEntityId", "")).strip()
     if not _valid_entity_id(charger_state_entity_id, "sensor"):
         raise ValueError("État de connexion du véhicule invalide")
+    # Older app builds can still request inverter export management while no
+    # compatible switch is exposed by the inverter integration. Surplus
+    # charging must remain usable in that case: it is regulated from the grid
+    # meter and must not depend on changing the inverter export policy.
+    if not export_switch_entity_id:
+        return None
     if not _valid_entity_id(export_switch_entity_id, "switch"):
-        raise ValueError("La commande Deye Solar Sell est indispensable")
+        raise ValueError("Commande d’injection Deye invalide")
 
     charger_state = _entity_state(states, charger_state_entity_id)
     export_switch_state = _entity_state(states, export_switch_entity_id)
@@ -2171,7 +2177,8 @@ def relay_command(
                 + str(minimum_amps) + ") }}"
             )
             sufficient_surplus_template = (
-                "{{ is_state('" + charger_state_entity_id + "', 'charging') and "
+                "{{ " + battery_ready_template + " and "
+                "is_state('" + charger_state_entity_id + "', 'charging') and "
                 "([states('" + charger_current_entity_id + "') | float(0), "
                 "states('" + dynamic_limit_entity_id + "') | float("
                 + str(minimum_amps) + ")] | max + "
@@ -2235,6 +2242,31 @@ def relay_command(
                 "condition": [],
                 "action": [{
                     "choose": [
+                        {
+                            "conditions": [
+                                {
+                                    "condition": "trigger",
+                                    "id": ["ajustement"],
+                                },
+                                {
+                                    "condition": "state",
+                                    "entity_id": charger_state_entity_id,
+                                    "state": "charging",
+                                },
+                                {
+                                    "condition": "template",
+                                    "value_template": (
+                                        "{{ not " + battery_ready_template + " }}"
+                                    ),
+                                },
+                            ],
+                            "sequence": [
+                                {
+                                    "service": "button.press",
+                                    "target": {"entity_id": stop_button_entity_id},
+                                },
+                            ],
+                        },
                         {
                             "conditions": [{
                                 "condition": "trigger",
