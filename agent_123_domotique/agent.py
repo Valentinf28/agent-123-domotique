@@ -1480,6 +1480,11 @@ def deye_vehicle_export_automation(
     """
     if payload.get("manageInverterExport") is not True:
         return None
+    # `manageInverterExport` existed in older mobile builds and could be set by
+    # a fuzzy entity match. Require a second, explicit capability flag so an
+    # old app can never change the inverter policy merely by selecting Surplus.
+    if payload.get("allowInverterExportControl") is not True:
+        return None
 
     charger_state_entity_id = str(payload.get("chargerStateEntityId", "")).strip()
     export_switch_entity_id = str(payload.get("inverterExportSwitchEntityId", "")).strip()

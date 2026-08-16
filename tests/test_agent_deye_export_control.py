@@ -34,6 +34,7 @@ def states(export_name: str = "Deye Solar Sell") -> list[dict]:
 def payload(enabled: bool = True) -> dict:
     return {
         "manageInverterExport": enabled,
+        "allowInverterExportControl": True,
         "chargerStateEntityId": "sensor.lektrico_vehicle_state",
         "inverterExportSwitchEntityId": "switch.onduleur_solar_sell",
     }
@@ -42,6 +43,13 @@ def payload(enabled: bool = True) -> dict:
 class DeyeExportControlTests(unittest.TestCase):
     def test_policy_is_strictly_opt_in(self) -> None:
         self.assertIsNone(agent.deye_vehicle_export_automation(payload(False), states()))
+
+    def test_legacy_mobile_flag_cannot_change_inverter_policy(self) -> None:
+        current_payload = payload()
+        current_payload.pop("allowInverterExportControl")
+        self.assertIsNone(
+            agent.deye_vehicle_export_automation(current_payload, states())
+        )
 
     def test_policy_exports_only_while_charging_and_probes_briefly(self) -> None:
         automation = agent.deye_vehicle_export_automation(payload(), states())

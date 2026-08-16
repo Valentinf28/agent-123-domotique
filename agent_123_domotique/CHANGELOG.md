@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 0.5.53
+
+- Empêche les anciennes versions de l’application de modifier par erreur la politique d’injection de l’onduleur lors du passage en mode Surplus.
+
 ## 0.5.52
 
 - Autorise le mode Surplus Lektrico même lorsque l’onduleur n’expose plus l’ancienne commande Solar Sell.
