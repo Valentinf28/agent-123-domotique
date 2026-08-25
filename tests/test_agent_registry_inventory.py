@@ -80,6 +80,31 @@ class RegistryInventoryTests(unittest.TestCase):
         self.assertNotIn("platform", fast["inventory"][0]["attributes"])
         registry.assert_called_once_with("token")
 
+    def test_fast_inventory_keeps_automation_trigger_for_remote_notifications(self):
+        config = {"version": "2026.8.0", "time_zone": "Europe/Paris"}
+        states = [{
+            "entity_id": "automation.couper_filtration",
+            "state": "on",
+            "attributes": {
+                "friendly_name": "Couper la filtration",
+                "last_triggered": "2026-08-26T08:15:00+00:00",
+            },
+        }]
+
+        def fake_request(url, **_kwargs):
+            return config if url.endswith("/config") else states
+
+        with patch.object(agent, "request_json", side_effect=fake_request), \
+                patch.object(agent, "maintain_daily_pv_peak"):
+            summary = agent.home_assistant_summary("token", full_inventory=False)
+
+        self.assertEqual(summary["agentVersion"], "0.6.0")
+        self.assertEqual(summary["inventory"][0]["entityId"], "automation.couper_filtration")
+        self.assertEqual(
+            summary["inventory"][0]["attributes"]["last_triggered"],
+            "2026-08-26T08:15:00+00:00",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
+AGENT_VERSION = "0.6.0"
 HA_TUNNELS: dict[str, websocket.WebSocket] = {}
 RELAY_IDLE_TIMEOUT_SECONDS = 30
 RELAY_PONG_TIMEOUT_SECONDS = 15
@@ -78,6 +79,7 @@ FAST_ENTITY_PREFIXES = (
     "input_number.chauffe_eau_",
     "input_select.demo_",
     "input_select.chauffe_eau_",
+    "automation.",
     "sensor.1p7k_",
     "number.1p7k_",
     "binary_sensor.1p7k_",
@@ -103,6 +105,7 @@ SAFE_ATTRIBUTE_KEYS = (
     "display_multiplier",
     "stale",
     "last_success_at",
+    "last_triggered",
     "orp_mv",
 )
 DEVICE_DAILY_ENERGY_BINDINGS = (
@@ -1062,6 +1065,7 @@ def home_assistant_summary(
         ))
         inventory.extend(solar_forecast_inventory(supervisor_token, states))
     return {
+        "agentVersion": AGENT_VERSION,
         "haVersion": str(config.get("version", "")),
         "inventoryCount": len(states),
         "inventoryMode": "full" if full_inventory else "delta",
@@ -2765,6 +2769,8 @@ def main() -> None:
                 log(f"Portail indisponible (HTTP {error.code}), nouvelle tentative")
         except (urllib.error.URLError, TimeoutError, OSError, RuntimeError, ValueError) as error:
             log(f"Connexion impossible ({error}), nouvelle tentative")
+        except Exception as error:
+            log(f"Erreur inattendue ({type(error).__name__}: {error}), nouvelle tentative")
         cycle_duration = time.monotonic() - cycle_started_at
         time.sleep(max(0.2, interval - cycle_duration))
 

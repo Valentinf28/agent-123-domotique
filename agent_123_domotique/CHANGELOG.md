@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 0.6.0
+
+- Transmet sa version exacte au portail afin de bloquer une livraison incomplète.
+- Remonte les déclenchements d’automatisations toutes les cinq secondes pour les notifications à distance.
+- Se relance automatiquement après une erreur inattendue d’un appareil ou d’une intégration.
+- Passe sur le canal stable pour permettre les mises à jour automatiques des box installées.
+
 ## 0.5.53
 
 - Empêche les anciennes versions de l’application de modifier par erreur la politique d’injection de l’onduleur lors du passage en mode Surplus.
