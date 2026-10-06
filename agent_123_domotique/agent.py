@@ -2593,6 +2593,7 @@ def relay_connected_session(
     house_id: str,
     relay_token: str,
     supervisor_token: str,
+    stop: threading.Event | None = None,
 ) -> None:
     """Run one authenticated relay session and fail fast on a zombie link."""
     send_lock = threading.Lock()
@@ -2611,14 +2612,17 @@ def relay_connected_session(
         raise RuntimeError("Authentification du relais refusée")
     log("Liaison sécurisée VPS active")
 
-    # A control-frame ping only proves that bytes were queued locally. Require
-    # an application-level pong so a half-open TCP connection cannot leave the
-    # process alive while the house remains permanently offline.
+    # A control-frame ping only proves that bytes were queued locally.  It does
+    # not prove that the remote VPS answered.  Require an application-level
+    # pong so a half-open TCP connection cannot leave the agent alive but
+    # permanently offline.
     awaiting_pong = False
     socket.settimeout(RELAY_IDLE_TIMEOUT_SECONDS)
-    while True:
+    while not (stop and stop.is_set()):
         try:
             message = json.loads(socket.recv())
+            if stop and stop.is_set():
+                return
         except websocket.WebSocketTimeoutException:
             if awaiting_pong:
                 raise RuntimeError("Le relais ne répond plus au contrôle de liaison")
@@ -2627,8 +2631,8 @@ def relay_connected_session(
             socket.settimeout(RELAY_PONG_TIMEOUT_SECONDS)
             continue
 
-        # Any valid inbound message proves the connection is alive. The pong
-        # is normally first, but a queued command is equally conclusive.
+        # Any valid inbound message proves the connection is alive.  The pong
+        # is normally the first one, but a queued command is equally valid.
         awaiting_pong = False
         socket.settimeout(RELAY_IDLE_TIMEOUT_SECONDS)
         if message.get("type") == "pong":
@@ -2637,13 +2641,14 @@ def relay_connected_session(
             relay_send(relay_command(supervisor_token, message, relay_send))
 
 
-def relay_forever(relay_url: str, house_id: str, relay_token: str, supervisor_token: str) -> None:
+def relay_forever(relay_url: str, house_id: str, relay_token: str, supervisor_token: str, stop: threading.Event | None = None) -> None:
+    stop = stop or threading.Event()
     delay = 2
-    while True:
+    while not stop.is_set():
         socket: websocket.WebSocket | None = None
         try:
             socket = websocket.create_connection(relay_url, timeout=30)
-            relay_connected_session(socket, house_id, relay_token, supervisor_token)
+            relay_connected_session(socket, house_id, relay_token, supervisor_token, stop)
             delay = 2
         except Exception as error:
             log(f"Relais indisponible ({error}), reconnexion dans {delay}s")
@@ -2653,7 +2658,7 @@ def relay_forever(relay_url: str, house_id: str, relay_token: str, supervisor_to
                     socket.close()
                 except Exception:
                     pass
-        time.sleep(delay)
+        stop.wait(delay)
         delay = min(delay * 2, 60)
 
 
@@ -2669,6 +2674,38 @@ def heartbeat(portal_url: str, agent_token: str, summary: dict[str, Any]) -> dic
     return result
 
 
+def fetch_relay_configuration(portal_url: str, agent_token: str) -> dict[str, str]:
+    """Fetch only this enrolled box's relay identity; never follow a redirect."""
+    parsed = urllib.parse.urlsplit(portal_url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise RuntimeError("Le rattachement automatique nécessite un portail HTTPS")
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            raise RuntimeError("Redirection du portail refusée")
+
+    request = urllib.request.Request(
+        portal_url.rstrip("/") + "/agent/configuration",
+        headers={"Authorization": "Bearer " + agent_token, "Accept": "application/json"},
+    )
+    with urllib.request.build_opener(NoRedirect).open(request, timeout=10) as response:
+        result = json.loads(response.read(16384))
+    relay = result.get("relay") if isinstance(result, dict) else None
+    if not isinstance(relay, dict):
+        raise RuntimeError("Configuration de liaison invalide")
+    url, house, token = (relay.get(key) for key in ("url", "houseId", "token"))
+    if not all(isinstance(value, str) and value for value in (url, house, token)):
+        raise RuntimeError("Configuration de liaison incomplète")
+    target = urllib.parse.urlsplit(url)
+    if target.scheme != "wss" or not target.hostname or target.username or target.password or target.query or target.fragment:
+        raise RuntimeError("La liaison distante doit être chiffrée")
+    if len(house) > 160 or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-" for c in house):
+        raise RuntimeError("Identité de liaison invalide")
+    if len(token) != 64 or any(c not in "0123456789abcdef" for c in token):
+        raise RuntimeError("Clé de liaison invalide")
+    return {"url": url, "houseId": house, "token": token}
+
+
 def main() -> None:
     options = read_json(OPTIONS_PATH, {})
     portal_url = str(options.get("portal_url", "")).rstrip("/")
@@ -2680,7 +2717,8 @@ def main() -> None:
     supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not supervisor_token:
         raise SystemExit("Accès interne à Home Assistant indisponible")
-    if not enrollment_code and not (relay_url and relay_house_id and relay_token):
+    state = read_json(STATE_PATH, {})
+    if not enrollment_code and not state.get("token") and not (relay_url and relay_house_id and relay_token):
         raise SystemExit("Configuration incomplète : code d'installation ou liaison VPS requis")
 
     pool_camera_enabled = option_enabled(options.get("pool_camera_enabled", False))
@@ -2701,7 +2739,8 @@ def main() -> None:
         ).start()
         log(f"Lecture caméra piscine activée · {pool_camera_url}")
 
-    state = read_json(STATE_PATH, {})
+    automatic_relay_stop = None
+    last_relay_attempt = 0.0
     last_full_inventory_at = 0.0
     if relay_url and relay_house_id and relay_token:
         threading.Thread(
@@ -2711,7 +2750,7 @@ def main() -> None:
         ).start()
     else:
         log("Liaison VPS non configurée")
-    if not enrollment_code:
+    if not enrollment_code and not state.get("token"):
         log("Portail technicien non enrôlé ; liaison VPS uniquement")
         while True:
             time.sleep(300)
@@ -2732,6 +2771,19 @@ def main() -> None:
             if command_results:
                 summary["commandResults"] = command_results
             heartbeat_result = heartbeat(portal_url, str(state["token"]), summary)
+            if not (relay_url and relay_house_id and relay_token) and automatic_relay_stop is None and (last_relay_attempt == 0.0 or time.monotonic() - last_relay_attempt >= 60):
+                last_relay_attempt = time.monotonic()
+                try:
+                    configuration = fetch_relay_configuration(portal_url, str(state["token"]))
+                    automatic_relay_stop = threading.Event()
+                    threading.Thread(
+                        target=relay_forever,
+                        args=(configuration["url"], configuration["houseId"], configuration["token"], supervisor_token, automatic_relay_stop),
+                        daemon=True,
+                    ).start()
+                except Exception:
+                    # Do not log credentials or let a relay outage stop inventory.
+                    log("Liaison distante en attente ; nouvel essai dans une minute")
             if full_inventory:
                 last_full_inventory_at = time.monotonic()
             interval = max(5, min(300, int(heartbeat_result.get("nextHeartbeatSeconds", 5))))
@@ -2760,6 +2812,9 @@ def main() -> None:
         except urllib.error.HTTPError as error:
             if error.code == 401 and state.get("token"):
                 log("Identité de box refusée ; nouvel enrôlement requis")
+                if automatic_relay_stop is not None:
+                    automatic_relay_stop.set()
+                    automatic_relay_stop = None
                 state = {}
                 try:
                     STATE_PATH.unlink()
