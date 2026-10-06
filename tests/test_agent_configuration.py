@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import types
 import unittest
+from contextlib import ExitStack
 from unittest.mock import Mock, patch
 
 if 'websocket' not in sys.modules:
@@ -46,6 +47,42 @@ class ConfigurationTests(unittest.TestCase):
         with patch.object(agent.websocket, 'create_connection', create=True) as connect:
             agent.relay_forever('wss://relay.example', 'house', 'token', 'supervisor', stop)
             connect.assert_not_called()
+
+class StartupTests(unittest.TestCase):
+    def run_cycle(self, configuration_error=False, explicit=False):
+        options={'portal_url':'https://portal.example/api','enrollment_code':''}
+        if explicit:
+            options.update(relay_url='wss://existing.example',relay_house_id='existing-house',relay_token='existing-token')
+        with ExitStack() as stack:
+            stack.enter_context(patch.dict(agent.os.environ, {'SUPERVISOR_TOKEN':'internal-test'}))
+            stack.enter_context(patch.object(agent,'read_json',side_effect=[options,{'token':'saved-identity'}]))
+            enroll=stack.enter_context(patch.object(agent,'enroll'))
+            stack.enter_context(patch.object(agent,'home_assistant_summary',return_value={'haVersion':'test','inventoryCount':0}))
+            heartbeat=stack.enter_context(patch.object(agent,'heartbeat',return_value={}))
+            fetch=stack.enter_context(patch.object(agent,'fetch_relay_configuration',return_value={'url':'wss://relay.example','houseId':'own-house','token':'a'*64}))
+            if configuration_error: fetch.side_effect=RuntimeError('relay offline')
+            thread=stack.enter_context(patch.object(agent.threading,'Thread'))
+            stack.enter_context(patch.object(agent.time,'sleep',side_effect=KeyboardInterrupt))
+            with self.assertRaises(KeyboardInterrupt):agent.main()
+            enroll.assert_not_called()
+            heartbeat.assert_called_once()
+            if explicit:
+                fetch.assert_not_called()
+                self.assertEqual(thread.call_args.kwargs['args'][:3],('wss://existing.example','existing-house','existing-token'))
+            elif configuration_error:
+                thread.assert_not_called()
+            else:
+                fetch.assert_called_once_with('https://portal.example/api','saved-identity')
+                thread.return_value.start.assert_called_once()
+
+    def test_restart_uses_saved_identity_without_new_enrollment(self):
+        self.run_cycle()
+
+    def test_relay_failure_does_not_stop_portal_heartbeat(self):
+        self.run_cycle(configuration_error=True)
+
+    def test_existing_manual_relay_is_preserved(self):
+        self.run_cycle(explicit=True)
 
 if __name__ == '__main__':
     unittest.main()
