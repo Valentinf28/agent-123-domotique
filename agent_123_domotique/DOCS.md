@@ -100,3 +100,19 @@ Le résultat `configured` reste `measurementsVerified: false`.
 
 69 tests Python passent. Activation après copie, compatibilité réelle du formulaire,
 mesures et signes de puissance restent à vérifier sur le Showroom avant diffusion.
+
+### Activation depuis le portail
+
+`commissioning.activate_solarman` vérifie que le connecteur embarqué est présent,
+puis consulte les formulaires disponibles. Un connecteur disponible donne `ready`.
+Sinon l’agent demande le redémarrage du service Home Assistant et retourne
+`activation_pending`, sans prétendre que le redémarrage est terminé. Le journal
+local interdit de redemander un redémarrage pendant cinq minutes, même si la réponse
+HTTP est perdue. Un refus HTTP explicite échoue. Une nouvelle vérification après le
+retour du service confirme sa disponibilité. Le portail bloque la configuration
+jusqu’au résultat `ready`. Aucun redémarrage n’est demandé sans connecteur préparé.
+
+74 tests Python passent. Le contrôle réel du 7 octobre confirme le relais du
+Showroom en ligne, mais le jeton de l’agent 0.6.0 n’a pas les droits Supervisor
+(`supervisor/api` répond `unauthorized`). Une mise à jour contrôlée du Showroom
+reste nécessaire pour tester les nouvelles commandes sur le matériel.

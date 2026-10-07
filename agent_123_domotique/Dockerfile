@@ -10,6 +10,7 @@ COPY vendor /opt/agent/vendor
 COPY profiles /opt/agent/profiles
 COPY solar_profile.py /opt/agent/solar_profile.py
 COPY solar_setup.py /opt/agent/solar_setup.py
+COPY solar_activation.py /opt/agent/solar_activation.py
 COPY run.sh /run.sh
 RUN chmod a+x /run.sh
 
