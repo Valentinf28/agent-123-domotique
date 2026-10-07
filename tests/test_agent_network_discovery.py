@@ -62,3 +62,20 @@ class AgentDiscoveryTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertFalse(result["result"]["physicalTestVerified"])
         self.assertTrue(all("method" not in call.kwargs for call in requests.call_args_list))
+
+    def test_temporary_box_failure_has_actionable_message_without_headers(self):
+        import urllib.error
+        class HandshakeFailure(Exception):
+            status_code = 502
+        failures = [urllib.error.HTTPError('local', 503, 'raw headers', {}, None), HandshakeFailure('raw headers'), TimeoutError('raw socket')]
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__), patch.object(agent, 'home_assistant_ws_command', side_effect=failure):
+                result=agent.relay_command('internal-token', {'id':'verify', 'action':'commissioning.verify_deye', 'payload':{}})
+            self.assertFalse(result['ok'])
+            self.assertIn('Attendez son retour', result['error'])
+            self.assertNotIn('raw', result['error'])
+
+    def test_validation_failure_keeps_specific_explanation(self):
+        with patch.object(agent,'home_assistant_ws_command',side_effect=ValueError('Numéro invalide')):
+            result=agent.relay_command('internal-token',{'id':'verify','action':'commissioning.verify_deye'})
+        self.assertEqual(result['error'],'Numéro invalide')

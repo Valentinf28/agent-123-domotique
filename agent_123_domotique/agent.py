@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1-dev6"
+AGENT_VERSION = "0.6.1-dev7"
 HA_TUNNELS: dict[str, websocket.WebSocket] = {}
 RELAY_IDLE_TIMEOUT_SECONDS = 30
 RELAY_PONG_TIMEOUT_SECONDS = 15
@@ -2635,11 +2635,16 @@ def relay_command(
             raise ValueError("Commande non autorisée")
         return {"type": "command.result", "id": command_id, "ok": True, "result": result}
     except Exception as error:
+        message = str(error)[:240]
+        if action.startswith("commissioning."):
+            status = error.code if isinstance(error, urllib.error.HTTPError) else getattr(error, "status_code", None)
+            if status in (502, 503, 504) or isinstance(error, (TimeoutError, urllib.error.URLError, ConnectionError)):
+                message = "Le service de la box est momentanément indisponible. Attendez son retour puis réessayez cette étape."
         return {
             "type": "command.result",
             "id": command_id,
             "ok": False,
-            "error": str(error)[:240],
+            "error": message,
         }
 
 
