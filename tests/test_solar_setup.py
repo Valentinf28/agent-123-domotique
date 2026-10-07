@@ -64,9 +64,9 @@ class SolarSetupTests(unittest.TestCase):
     def test_form_error_resumes_same_flow(self):
         call=Mock(side_effect=[[],{'type':'form','step_id':'user','flow_id':'flow1'},{'type':'form','errors':{'base':'cannot_connect'}}])
         with self.assertRaisesRegex(RuntimeError,'refusée'):self.run_setup(call)
-        retry=Mock(side_effect=[[],{'type':'create_entry','result':{'entry_id':'created'}}])
+        retry=Mock(side_effect=[[],{'type':'form','step_id':'user','flow_id':'flow1'},{'type':'create_entry','result':{'entry_id':'created'}}])
         self.assertEqual(self.run_setup(retry)['entryId'],'created')
-        self.assertEqual(retry.call_count,2)
+        self.assertEqual(retry.call_count,3)
 
     def test_pending_flow_is_resumed_without_starting_another(self):
         call=Mock(side_effect=[[],{'type':'form','step_id':'user','flow_id':'flow1'},TimeoutError()])
@@ -81,5 +81,18 @@ class SolarSetupTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'lookup_file') as caught: self.run_setup(call)
         self.assertNotIn('secret',str(caught.exception))
         self.assertFalse(json.loads((self.data/'solar-2974839220.json').read_text()).get('submitted'))
-        retry=Mock(side_effect=[[],{'type':'create_entry','result':{'entry_id':'created'}}])
+        retry=Mock(side_effect=[[],{'type':'form','step_id':'user','flow_id':'flow1'},{'type':'create_entry','result':{'entry_id':'created'}}])
         self.assertEqual(self.run_setup(retry)['entryId'],'created')
+
+    def test_unsubmitted_expired_flow_can_restart_but_ambiguous_one_cannot(self):
+        self.data.mkdir(exist_ok=True)
+        journal=self.data/'solar-2974839220.json'
+        for submitted in (True, False):
+            journal.write_text(json.dumps({'settings':settings(PAYLOAD,ADAPTERS),'flowId':'old','submitted':submitted}))
+            call=Mock(side_effect=[[],urllib.error.HTTPError('local',404,'missing',{},None),{'type':'form','step_id':'user','flow_id':'new'},{'type':'create_entry','result':{'entry_id':'created'}}])
+            if submitted:
+                with self.assertRaisesRegex(RuntimeError,'déjà été envoyée'):self.run_setup(call)
+                self.assertEqual(call.call_count,2)
+            else:
+                self.assertEqual(self.run_setup(call)['entryId'],'created')
+                self.assertEqual(call.call_args.args[0],'/config/config_entries/flow/new')

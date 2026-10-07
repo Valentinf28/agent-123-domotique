@@ -83,6 +83,19 @@ def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), 
             if not isinstance(progress, dict) or progress.get('type') != 'form' or progress.get('step_id') != 'user' or progress.get('flow_id') != flow_id:
                 raise RuntimeError('La demande a déjà été envoyée. Son résultat doit être vérifié avant de créer une autre connexion.')
             save({'flowId':flow_id})
+        elif flow_id:
+            # A refused/unsubmitted form may disappear on a core restart. Only this
+            # known-unsubmitted case may start a replacement after an explicit 404.
+            try:
+                progress = call(f'/config/config_entries/flow/{flow_id}')
+            except urllib.error.HTTPError as error:
+                if error.code != 404:
+                    raise
+                flow_id = None
+                save({})
+            else:
+                if not isinstance(progress, dict) or progress.get('type') != 'form' or progress.get('step_id') != 'user' or progress.get('flow_id') != flow_id:
+                    raise RuntimeError('Le formulaire solaire ne peut pas encore être repris. Vérification nécessaire.')
         if not flow_id:
             flow = call('/config/config_entries/flow',method='POST',payload={'handler':'solarman','show_advanced_options':False})
             flow_id = flow.get('flow_id')

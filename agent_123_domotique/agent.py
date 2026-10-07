@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1-dev3"
+AGENT_VERSION = "0.6.1-dev4"
 HA_TUNNELS: dict[str, websocket.WebSocket] = {}
 RELAY_IDLE_TIMEOUT_SECONDS = 30
 RELAY_PONG_TIMEOUT_SECONDS = 15
@@ -1811,7 +1811,8 @@ def relay_command(
             from solar_activation import activate
             def call_activation(path, **kwargs):
                 return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
-            result = activate(call_activation)
+            result = activate(call_activation, loaded_manifest=home_assistant_ws_command(
+                supervisor_token, {"type": "manifest/get", "integration": "solarman"}))
         elif action == "commissioning.verify_deye":
             from solar_measurements import inspect_measurements
             registry = home_assistant_ws_command(supervisor_token, {"type": "config/entity_registry/list"})

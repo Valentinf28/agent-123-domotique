@@ -5,9 +5,10 @@ import os
 from pathlib import Path
 import time
 import urllib.error
+from connector_install import VERSION
 
 
-def activate(call, *, config=Path('/homeassistant_config'), data=Path('/data'), now=None):
+def activate(call, *, loaded_manifest, config=Path('/homeassistant_config'), data=Path('/data'), now=None):
     now = time.time() if now is None else now
     config, data = Path(config), Path(data)
     if not (config / 'custom_components/solarman/123home-bundle.json').is_file():
@@ -19,7 +20,7 @@ def activate(call, *, config=Path('/homeassistant_config'), data=Path('/data'), 
         handlers = call('/config/config_entries/flow_handlers')
         if not isinstance(handlers,list):
             raise RuntimeError('La box ne peut pas vérifier les connecteurs disponibles.')
-        if 'solarman' in handlers:
+        if 'solarman' in handlers and isinstance(loaded_manifest, dict) and loaded_manifest.get('domain') == 'solarman' and loaded_manifest.get('is_built_in') is False and loaded_manifest.get('version') == VERSION:
             return {'connector':'solarman','status':'ready','configured':False}
         journal = data / 'solar-activation.json'
         state = json.loads(journal.read_text()) if journal.exists() else {}
