@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1-dev4"
+AGENT_VERSION = "0.6.1-dev5"
 HA_TUNNELS: dict[str, websocket.WebSocket] = {}
 RELAY_IDLE_TIMEOUT_SECONDS = 30
 RELAY_PONG_TIMEOUT_SECONDS = 15

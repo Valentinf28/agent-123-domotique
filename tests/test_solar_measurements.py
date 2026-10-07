@@ -56,4 +56,13 @@ class MeasurementTests(unittest.TestCase):
         self.registry[1]['platform'] = 'other'
         self.assertFalse(self.inspect()['readingsAvailable'])
 
+    def test_bundled_profile_device_serial_attribute(self):
+        self.registry[0]['original_name']='Device'
+        self.states[0].update(state='HV 3-Phase Hybrid Inverter', attributes={'Serial Number':'2406150574'})
+        self.assertTrue(self.inspect()['readingsAvailable'])
+        self.states[0]['attributes']['Serial Number']='other'
+        self.assertEqual(self.inspect()['identityStatus'],'mismatch')
+        self.registry[0]['config_entry_id']='other'
+        self.assertEqual(self.inspect()['identityStatus'],'missing')
+
 if __name__ == '__main__': unittest.main()

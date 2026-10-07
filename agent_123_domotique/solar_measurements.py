@@ -32,6 +32,12 @@ def inspect_measurements(entry_id, expected_serial, entries, registry, states, *
         return readings[0] if len(readings) == 1 else None
     identity = entity_state('Device Serial Number')
     observed = str(identity.get('state', '')).strip() if identity else ''
+    if identity is None:
+        # The bundled SG01HP3 profile exposes its serial as a Device attribute.
+        # Resolve through the same entry registry, never another inverter.
+        device = entity_state('Device')
+        if device and device.get('state') not in ('unknown', 'unavailable'):
+            observed = str(device.get('attributes', {}).get('Serial Number', '')).strip()
     identity_status = ('missing' if observed.lower() in ('', 'unknown', 'unavailable', 'none')
                        else 'matched' if observed == expected_serial else 'mismatch')
     measurements = {}
