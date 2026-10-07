@@ -4,6 +4,8 @@ import tempfile
 import json
 import unittest
 from unittest.mock import Mock
+import urllib.error
+import io
 sys.path.append(str(Path(__file__).parents[1]/'agent_123_domotique'))
 from solar_setup import configure, settings
 from connector_install import install_solarman
@@ -36,7 +38,7 @@ class SolarSetupTests(unittest.TestCase):
         with self.assertRaises(TimeoutError): self.run_setup(call)
         retry=Mock(return_value=[])
         with self.assertRaisesRegex(RuntimeError,'déjà été envoyée'): self.run_setup(retry)
-        self.assertEqual(retry.call_count,1)
+        self.assertEqual(retry.call_count,2)
     def test_existing_matching_connection_is_reused_after_lost_response(self):
         self.storage.write_text(json.dumps({'data':{'entries':[{'domain':'solarman','entry_id':'saved','options':settings(PAYLOAD,ADAPTERS)}]}}))
         call=Mock(return_value=[{'entry_id':'saved','title':'existing'}])
@@ -65,3 +67,19 @@ class SolarSetupTests(unittest.TestCase):
         retry=Mock(side_effect=[[],{'type':'create_entry','result':{'entry_id':'created'}}])
         self.assertEqual(self.run_setup(retry)['entryId'],'created')
         self.assertEqual(retry.call_count,2)
+
+    def test_pending_flow_is_resumed_without_starting_another(self):
+        call=Mock(side_effect=[[],{'type':'form','step_id':'user','flow_id':'flow1'},TimeoutError()])
+        with self.assertRaises(TimeoutError): self.run_setup(call)
+        retry=Mock(side_effect=[[],{'type':'form','step_id':'user','flow_id':'flow1'},{'type':'create_entry','result':{'entry_id':'created'}}])
+        self.assertEqual(self.run_setup(retry)['entryId'],'created')
+        self.assertEqual(retry.call_args_list[1].args[0],'/config/config_entries/flow/flow1')
+        self.assertEqual(retry.call_args_list[2].args[0],'/config/config_entries/flow/flow1')
+    def test_schema_rejection_is_explicit_and_can_retry_same_flow(self):
+        error=urllib.error.HTTPError('local',400,'bad request',{},io.BytesIO(b'{"errors":{"lookup_file":"invalid","token":"secret"}}'))
+        call=Mock(side_effect=[[],{'type':'form','step_id':'user','flow_id':'flow1'},error])
+        with self.assertRaisesRegex(RuntimeError,'lookup_file') as caught: self.run_setup(call)
+        self.assertNotIn('secret',str(caught.exception))
+        self.assertFalse(json.loads((self.data/'solar-2974839220.json').read_text()).get('submitted'))
+        retry=Mock(side_effect=[[],{'type':'create_entry','result':{'entry_id':'created'}}])
+        self.assertEqual(self.run_setup(retry)['entryId'],'created')
