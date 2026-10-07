@@ -2772,10 +2772,14 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            command_results = state.pop("command_results", [])
+            summary["capabilities"] = ["commissioning.discover_solar"]
+            command_results = state.get("command_results", [])
             if command_results:
                 summary["commandResults"] = command_results
             heartbeat_result = heartbeat(portal_url, str(state["token"]), summary)
+            if command_results:
+                state.pop("command_results", None)
+                write_state(state)
             if not (relay_url and relay_house_id and relay_token) and automatic_relay_stop is None and (last_relay_attempt == 0.0 or time.monotonic() - last_relay_attempt >= 60):
                 last_relay_attempt = time.monotonic()
                 try:
@@ -2803,6 +2807,7 @@ def main() -> None:
                         "id": str(command.get("id", "")),
                         "ok": bool(result.get("ok")),
                         "error": str(result.get("error", ""))[:240],
+                        **({"result": result.get("result")} if command.get("action") == "commissioning.discover_solar" and result.get("ok") else {}),
                     })
                 if results:
                     state["command_results"] = results

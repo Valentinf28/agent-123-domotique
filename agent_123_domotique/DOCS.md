@@ -54,7 +54,10 @@ n'est créé. Le résultat n'atteste pas la compatibilité d'un onduleur.
 
 Le mode réseau hôte est nécessaire pour envoyer les annonces depuis les interfaces
 de la box. Aucun serveur entrant n'est ajouté. Cette modification reste à tester
-sur HAOS avant publication. Le portail n'appelle pas encore cette commande.
+sur HAOS avant publication. Le portail dispose dans ses sources d'une file de
+recherche réservée à l'équipe ; seules les box annonçant explicitement la
+capacité `commissioning.discover_solar` peuvent recevoir la demande. Les
+résultats sont transportés par le heartbeat et conservés jusqu'à son succès.
 
 Validation du 7 octobre 2026 : exécution du module depuis le Mac sur le réseau
 Showroom, logger UDP trouvé en .66 et candidat TCP en .178. La connexion autonome
