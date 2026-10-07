@@ -1796,6 +1796,9 @@ def relay_command(
             result = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
         elif action == "ha.config":
             result = request_json(f"{SUPERVISOR_API}/config", token=supervisor_token)
+        elif action == "commissioning.install_solarman":
+            from connector_install import install_solarman
+            result = install_solarman()
         elif action == "commissioning.discover_solar":
             from network_discovery import discover_solarman
             # Network boundaries originate from the box, not a remote caller.
@@ -2787,7 +2790,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["commissioning.discover_solar"]
+            summary["capabilities"] = ["commissioning.discover_solar", "commissioning.install_solarman"]
             command_results = state.get("command_results", [])
             if command_results:
                 summary["commandResults"] = command_results
@@ -2822,7 +2825,7 @@ def main() -> None:
                         "id": str(command.get("id", "")),
                         "ok": bool(result.get("ok")),
                         "error": str(result.get("error", ""))[:240],
-                        **({"result": result.get("result")} if command.get("action") == "commissioning.discover_solar" and result.get("ok") else {}),
+                        **({"result": result.get("result")} if command.get("action") in {"commissioning.discover_solar", "commissioning.install_solarman"} and result.get("ok") else {}),
                     })
                 if results:
                     state["command_results"] = results

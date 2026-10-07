@@ -9,6 +9,9 @@ startup: application
 boot: auto
 homeassistant_api: true
 host_network: true
+map:
+  - type: homeassistant_config
+    read_only: false
 arch:
   - aarch64
   - amd64

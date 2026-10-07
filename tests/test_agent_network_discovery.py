@@ -27,6 +27,18 @@ class AgentDiscoveryTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["result"]["scope"], "solar_loggers")
 
+    def test_installer_accepts_no_remote_path_or_download(self):
+        module = types.ModuleType("connector_install")
+        module.install_solarman = Mock(return_value={"connector": "solarman", "status": "installed", "configured": False})
+        with patch.dict(sys.modules, {"connector_install": module}):
+            result = agent.relay_command("internal-token", {
+                "id": "install", "action": "commissioning.install_solarman",
+                "payload": {"config": "/etc", "bundle": "https://untrusted.example/code.zip"},
+            })
+        module.install_solarman.assert_called_once_with()
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["result"]["configured"])
+
     def test_access_error_is_reported_not_empty_success(self):
         module = types.ModuleType("network_discovery")
         module.discover_solarman = Mock()

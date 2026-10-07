@@ -2,6 +2,9 @@
 
 ## En développement — non publié
 
+- Préparation du connecteur SolarMAN officiel embarqué, sans HACS : archive fixe vérifiée, installation atomique et conservation de toute installation existante. Montage de configuration requis ; aucun redémarrage ni paramétrage onduleur automatique.
+- 61 tests Python passent ; le chargement du connecteur sur HAOS et le formulaire portail restent à valider.
+
 - Configure le relais d’une nouvelle box depuis son identité d’enrôlement, sans écraser un relais renseigné manuellement.
 - Ajoute une recherche locale et bornée des loggers solaires, annoncée au portail par une capacité explicite.
 - Conserve les résultats de commandes jusqu’à leur transmission réussie au portail.

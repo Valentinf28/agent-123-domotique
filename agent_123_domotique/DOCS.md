@@ -62,3 +62,22 @@ résultats sont transportés par le heartbeat et conservés jusqu'à son succès
 Validation du 7 octobre 2026 : exécution du module depuis le Mac sur le réseau
 Showroom, logger UDP trouvé en .66 et candidat TCP en .178. La connexion autonome
 depuis la box, l'installation de SolarMAN et le parcours portail restent à valider.
+
+### Connecteur SolarMAN embarqué — développement non publié
+
+`commissioning.install_solarman` prépare le connecteur officiel 25.08.16 depuis
+une archive embarquée dont le SHA-256 est vérifié. Aucun chemin ni téléchargement
+fourni par un appelant n’est accepté. Le montage `homeassistant_config` en écriture
+est requis ; l’installation ne modifie que `custom_components/solarman` et un
+verrou de coordination. Les fichiers sont préparés à part puis déplacés ensemble.
+
+Un connecteur existant, même incomplet, est conservé et signalé
+`existing_preserved`. Le statut `installed` indique uniquement la copie des fichiers,
+avec `restartRequired: true` et `configured: false`. La commande ne redémarre pas
+Home Assistant, ne crée aucune intégration et n’écrit rien dans l’onduleur.
+Le parcours portail doit encore gérer l’activation, le formulaire de connexion et
+la vérification des mesures. Ne pas présenter cette étape comme une connexion réussie.
+
+Sept nouveaux tests couvrent le paquet officiel, l’intégrité, la concurrence,
+l’échec de copie, la conservation d’une installation existante, les liens et le
+refus de paramètres distants. Le montage et le chargement sur HAOS restent à tester.
