@@ -30,7 +30,7 @@ def settings(payload, adapters):
         raise ValueError('Ce modèle nécessite un autre profil de connexion.')
     return {'name': f'1.2.3 Home Deye {serial}', 'host': str(host), 'port': 8899,
             'transport': 'tcp', 'logger_serial': serial,
-            'lookup_file': f'custom/{PROFILE}', 'additional_options': {}}
+            'lookup_file': f'custom/{PROFILE}', 'additional_options': {'mod': 1}}
 
 
 def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), data=Path('/data')):
@@ -57,6 +57,8 @@ def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), 
             if len(matching) != 1 or any(matching[0].get('options',{}).get(k) != values[k]
                                        for k in ('host','logger_serial','lookup_file')):
                 raise RuntimeError('Ce boîtier possède déjà une connexion différente. Elle a été conservée ; une vérification est nécessaire.')
+            if matching[0].get('options', {}).get('additional_options', {}).get('mod') != 1:
+                raise RuntimeError('Le profil haute tension de cette connexion doit être corrigé avant validation.')
             if matching[0]['entry_id'] not in {entry['entry_id'] for entry in live}:
                 raise RuntimeError('La connexion enregistrée n’est plus active. Vérification nécessaire.')
             return {'connector':'solarman','status':'configured','entryId':matching[0]['entry_id'], 'measurementsVerified':False}

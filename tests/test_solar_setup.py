@@ -31,6 +31,7 @@ class SolarSetupTests(unittest.TestCase):
         self.assertFalse(result['measurementsVerified'])
         submitted=call.call_args.kwargs['payload']
         self.assertEqual(submitted['logger_serial'],2974839220)
+        self.assertEqual(submitted['additional_options']['mod'],1)
         self.assertEqual(submitted['lookup_file'],'custom/deye_sg01hp3_readonly.yaml')
         self.assertEqual(json.loads(self.storage.read_text()),{'data':{'entries':[]}},'Never edit HA storage')
     def test_lost_response_never_repeats_creation(self):
@@ -96,3 +97,10 @@ class SolarSetupTests(unittest.TestCase):
             else:
                 self.assertEqual(self.run_setup(call)['entryId'],'created')
                 self.assertEqual(call.call_args.args[0],'/config/config_entries/flow/new')
+
+    def test_existing_wrong_voltage_modifier_never_validated(self):
+        options=settings(PAYLOAD,ADAPTERS);options['additional_options']={}
+        self.storage.write_text(json.dumps({'data':{'entries':[{'domain':'solarman','entry_id':'saved','options':options}]}}))
+        call=Mock(return_value=[{'entry_id':'saved'}])
+        with self.assertRaisesRegex(RuntimeError,'haute tension'):self.run_setup(call)
+        self.assertEqual(call.call_count,1)
