@@ -1,5 +1,13 @@
 # Journal des versions
 
+## En développement — non publié
+
+- Configure le relais d’une nouvelle box depuis son identité d’enrôlement, sans écraser un relais renseigné manuellement.
+- Ajoute une recherche locale et bornée des loggers solaires, annoncée au portail par une capacité explicite.
+- Conserve les résultats de commandes jusqu’à leur transmission réussie au portail.
+- Interrompt le lecteur d’un tunnel avant de fermer sa socket, pour éviter de bloquer les autres commandes pendant la fermeture.
+- Validation : 54 tests ; recherche réseau depuis le Mac au Showroom. Nouvelle version non installée sur HAOS, installation des connecteurs et parcours complet encore à tester.
+
 ## 0.6.0
 
 - Transmet sa version exacte au portail afin de bloquer une livraison incomplète.

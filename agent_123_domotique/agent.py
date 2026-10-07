@@ -1764,6 +1764,23 @@ def _refresh_solar_forecast_inventory(
         return SOLAR_FORECAST_CACHE
 
 
+def close_ha_tunnel(upstream) -> None:
+    """Wake the dedicated reader before disposing of its socket.
+
+    WebSocket.close() reads the close reply itself. Concurrently calling it
+    while forward() is blocked in recv() can stall the entire relay command
+    loop on the frame reader lock, despite close's nominal timeout.
+    """
+    try:
+        upstream.abort()
+    except Exception:
+        pass
+    try:
+        upstream.shutdown()
+    except Exception:
+        pass
+
+
 def relay_command(
     supervisor_token: str,
     message: dict[str, Any],
@@ -2560,11 +2577,9 @@ def relay_command(
                     log(f"Tunnel Lovelace {tunnel_id[:8]} fermé ({error})")
                     relay_send({"type": "tunnel.closed", "tunnelId": tunnel_id})
                 finally:
-                    HA_TUNNELS.pop(tunnel_id, None)
-                    try:
-                        upstream.close()
-                    except Exception:
-                        pass
+                    if HA_TUNNELS.get(tunnel_id) is upstream:
+                        HA_TUNNELS.pop(tunnel_id, None)
+                    close_ha_tunnel(upstream)
 
             threading.Thread(target=forward, daemon=True).start()
             result = {"opened": True}
@@ -2579,7 +2594,7 @@ def relay_command(
             tunnel_id = str(payload.get("tunnelId", ""))
             upstream = HA_TUNNELS.pop(tunnel_id, None)
             if upstream:
-                upstream.close()
+                close_ha_tunnel(upstream)
             result = {"closed": True}
         else:
             raise ValueError("Commande non autorisée")
