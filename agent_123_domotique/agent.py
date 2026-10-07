@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.0"
+AGENT_VERSION = "0.6.1-dev1"
 HA_TUNNELS: dict[str, websocket.WebSocket] = {}
 RELAY_IDLE_TIMEOUT_SECONDS = 30
 RELAY_PONG_TIMEOUT_SECONDS = 15
@@ -2760,6 +2760,39 @@ def fetch_relay_configuration(portal_url: str, agent_token: str) -> dict[str, st
     return {"url": url, "houseId": house, "token": token}
 
 
+def restore_identity(portal_url: str, encoded: str) -> dict[str, Any]:
+    """Import an existing identity only into an empty agent, after checking its house."""
+    state = read_json(STATE_PATH, {})
+    if not encoded:
+        return state
+    if len(encoded) > 2048:
+        raise RuntimeError("Identité de reprise invalide")
+    try:
+        identity = json.loads(encoded)
+        agent_id, token, house_id = (identity[key] for key in ("agent_id", "token", "house_id"))
+        if not isinstance(agent_id, str) or not agent_id.startswith("box_") or len(agent_id) > 100:
+            raise ValueError()
+        if not isinstance(token, str) or len(token) != 64 or any(c not in "0123456789abcdef" for c in token):
+            raise ValueError()
+        if not isinstance(house_id, str) or not house_id.startswith("installation_") or len(house_id) > 100:
+            raise ValueError()
+    except (ValueError, TypeError, KeyError):
+        raise RuntimeError("Identité de reprise invalide") from None
+    if state.get("token"):
+        if state.get("token") != token or state.get("agent_id") != agent_id:
+            raise RuntimeError("Une identité existe déjà ; reprise refusée")
+        return state
+    if state:
+        raise RuntimeError("Une association est déjà en cours ; reprise refusée")
+    configuration = fetch_relay_configuration(portal_url, token)
+    if configuration["houseId"] != house_id:
+        raise RuntimeError("Cette identité appartient à une autre installation")
+    state = {"agent_id": agent_id, "token": token}
+    write_state(state)
+    log("Identité existante reprise ; aucun nouvel enrôlement")
+    return state
+
+
 def main() -> None:
     options = read_json(OPTIONS_PATH, {})
     portal_url = str(options.get("portal_url", "")).rstrip("/")
@@ -2771,7 +2804,7 @@ def main() -> None:
     supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not supervisor_token:
         raise SystemExit("Accès interne à Home Assistant indisponible")
-    state = read_json(STATE_PATH, {})
+    state = restore_identity(portal_url, str(options.get("restore_identity", "")))
     if not enrollment_code and not state.get("token") and not (relay_url and relay_house_id and relay_token):
         raise SystemExit("Configuration incomplète : code d'installation ou liaison VPS requis")
 
