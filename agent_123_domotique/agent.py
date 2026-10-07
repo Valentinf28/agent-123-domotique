@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import base64
 import math
 import os
@@ -995,14 +996,24 @@ def period_energy_inventory(
 
 
 def enroll(portal_url: str, code: str) -> dict[str, Any]:
+    state = read_json(STATE_PATH, {})
+    if state.get("token"):
+        return state  # An established identity is never replaced by a new code.
+    context = hashlib.sha256((portal_url.rstrip("/") + "\n" + code).encode()).hexdigest()
+    pending = state.get("pending_enrollment")
+    if not isinstance(pending, dict) or pending.get("context") != context:
+        pending = {"context": context, "token": secrets.token_hex(32)}
+        state["pending_enrollment"] = pending
+        write_state(state)  # Persist before sending; a timeout or restart must reuse this secret.
     result = request_json(
         f"{portal_url}/agent/enroll",
         method="POST",
-        payload={"code": code, "label": "Box Home Assistant"},
+        payload={"code": code, "label": "Box Home Assistant", "enrollmentToken": pending["token"]},
     )
-    if not isinstance(result, dict) or not result.get("token"):
+    if not isinstance(result, dict) or not result.get("token") or not result.get("agentId"):
         raise RuntimeError("Réponse d'enrôlement invalide")
-    state = {"agent_id": result["agentId"], "token": result["token"]}
+    state.pop("pending_enrollment", None)
+    state.update({"agent_id": result["agentId"], "token": result["token"]})
     write_state(state)
     log("Box associée au portail")
     return state
