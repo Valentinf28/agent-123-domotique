@@ -60,8 +60,29 @@ def inspect_measurements(entry_id, expected_serial, entries, registry, states, *
             except (TypeError, ValueError, OverflowError):
                 result = {'status': 'unavailable'}
         measurements[key] = result
+    # Battery percentage is optional (some installations have no storage).
+    # Resolve only within this connector, including when sensors were renamed.
+    level = entity_state('Battery')
+    battery_level = {'status': 'missing'}
+    if level:
+        try:
+            percent = float(level.get('state'))
+            attrs = level.get('attributes', {})
+            if (not math.isfinite(percent) or not 0 <= percent <= 100
+                    or attrs.get('unit_of_measurement') != '%'
+                    or attrs.get('device_class') != 'battery'):
+                raise ValueError()
+            reported = datetime.fromisoformat(level.get('last_reported', '').replace('Z', '+00:00'))
+            if reported.tzinfo is None:
+                raise ValueError()
+            age = (now - reported).total_seconds()
+            battery_level = {'status': 'recent' if -5 <= age <= 180 else 'stale',
+                             'percent': percent, 'reportedAt': reported.isoformat()}
+        except (TypeError, ValueError, OverflowError):
+            battery_level = {'status': 'unavailable'}
     return {'connector': 'solarman', 'entryId': entry_id,
             'identityStatus': identity_status,
             'readingsAvailable': identity_status == 'matched' and all(
                 item['status'] == 'recent' for item in measurements.values()),
-            'measurements': measurements, 'physicalTestVerified': False}
+            'measurements': measurements, 'batteryLevel': battery_level,
+            'physicalTestVerified': False}

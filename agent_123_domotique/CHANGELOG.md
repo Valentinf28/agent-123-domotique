@@ -2,6 +2,8 @@
 
 ## En développement — non publié
 
+- Vérification guidée : ajoute le pourcentage de batterie, limité au connecteur vérifié, avec validation de l’unité, de la plage et de la fraîcheur. Ce contrôle optionnel ne certifie ni le câblage ni la remise client.
+
 - Activation guidée du connecteur : contrôle de disponibilité, demande de redémarrage si nécessaire, délai de cinq minutes contre les répétitions après réponse perdue. 74 tests Python ; validation matérielle non effectuée.
 
 - Connexion guidée Deye SG01HP3 via le formulaire interne, numéro de logger explicite et profil de mesure. Conservation des connexions existantes et journal anti-doublon après réponse perdue. 69 tests Python ; activation et mesures sur le Showroom non encore validées.

@@ -65,4 +65,36 @@ class MeasurementTests(unittest.TestCase):
         self.registry[0]['config_entry_id']='other'
         self.assertEqual(self.inspect()['identityStatus'],'missing')
 
+    def add_battery_level(self):
+        self.registry.append({'entity_id': 'sensor.renamed_soc', 'config_entry_id': 'ours',
+                              'platform': 'solarman', 'original_name': 'Battery'})
+        self.states.append({'entity_id': 'sensor.renamed_soc', 'state': '94',
+                            'attributes': {'unit_of_measurement': '%', 'device_class': 'battery'},
+                            'last_reported': self.now.isoformat()})
+
+    def test_battery_percentage_is_optional_and_scoped(self):
+        self.assertEqual(self.inspect()['batteryLevel']['status'], 'missing')
+        self.assertTrue(self.inspect()['readingsAvailable'])
+        self.add_battery_level()
+        self.assertEqual(self.inspect()['batteryLevel']['percent'], 94)
+        self.registry[-1]['config_entry_id'] = 'other'
+        self.assertEqual(self.inspect()['batteryLevel']['status'], 'missing')
+
+    def test_battery_percentage_rejects_invalid_or_old_values(self):
+        self.add_battery_level()
+        for value in ['unknown', 'NaN', '-1', '101']:
+            self.states[-1]['state'] = value
+            self.assertEqual(self.inspect()['batteryLevel']['status'], 'unavailable')
+        self.states[-1]['state'] = '0'
+        self.assertEqual(self.inspect()['batteryLevel']['percent'], 0)
+        self.states[-1]['last_reported'] = '2026-10-07T11:00:00+00:00'
+        self.assertEqual(self.inspect()['batteryLevel']['status'], 'stale')
+        self.states[-1]['attributes']['unit_of_measurement'] = 'W'
+        self.assertEqual(self.inspect()['batteryLevel']['status'], 'unavailable')
+
+    def test_duplicate_battery_percentage_is_not_selected(self):
+        self.add_battery_level()
+        self.registry.append(dict(self.registry[-1]))
+        self.assertEqual(self.inspect()['batteryLevel']['status'], 'missing')
+
 if __name__ == '__main__': unittest.main()
