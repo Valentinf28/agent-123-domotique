@@ -1779,6 +1779,11 @@ def relay_command(
             result = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
         elif action == "ha.config":
             result = request_json(f"{SUPERVISOR_API}/config", token=supervisor_token)
+        elif action == "commissioning.discover_solar":
+            from network_discovery import discover_solarman
+            # Network boundaries originate from the box, not a remote caller.
+            network = home_assistant_ws_command(supervisor_token, {"type": "network"})
+            result = discover_solarman(network.get("adapters", []))
         elif action == "ha.services.call":
             domain = str(payload.get("domain", "")).strip()
             service = str(payload.get("service", "")).strip()

@@ -43,3 +43,19 @@ chlore est activée. Home Assistant affiche alors une notification persistante.
 Une perte d'image pendant plus de 15 minutes rend l'état de communication
 indisponible. La dernière mesure valide reste affichée au lieu d'être remplacée
 par une valeur inventée ou momentanément illisible.
+## Recherche solaire de mise en service (en développement)
+
+La commande `commissioning.discover_solar` interroge les interfaces actives de
+la box puis recherche les loggers SolarMAN en UDP. Un passage TCP limité au
+port 8899 complète la recherche sur les sous-réseaux de 256 adresses maximum.
+Aucun hôte, masque ou port transmis par le demandeur n'est utilisé. Les appareils
+TCP sans annonce d'identité restent « à identifier » ; aucun profil ni association
+n'est créé. Le résultat n'atteste pas la compatibilité d'un onduleur.
+
+Le mode réseau hôte est nécessaire pour envoyer les annonces depuis les interfaces
+de la box. Aucun serveur entrant n'est ajouté. Cette modification reste à tester
+sur HAOS avant publication. Le portail n'appelle pas encore cette commande.
+
+Validation du 7 octobre 2026 : exécution du module depuis le Mac sur le réseau
+Showroom, logger UDP trouvé en .66 et candidat TCP en .178. La connexion autonome
+depuis la box, l'installation de SolarMAN et le parcours portail restent à valider.
