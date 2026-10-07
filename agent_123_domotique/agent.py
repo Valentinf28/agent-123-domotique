@@ -1801,6 +1801,15 @@ def relay_command(
             def call_activation(path, **kwargs):
                 return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
             result = activate(call_activation)
+        elif action == "commissioning.verify_deye":
+            from solar_measurements import inspect_measurements
+            registry = home_assistant_ws_command(supervisor_token, {"type": "config/entity_registry/list"})
+            result = inspect_measurements(
+                payload.get("entryId"), payload.get("inverterSerial"),
+                request_json(f"{SUPERVISOR_API}/config/config_entries/entry?domain=solarman", token=supervisor_token),
+                registry.get("result"),
+                request_json(f"{SUPERVISOR_API}/states", token=supervisor_token),
+            )
         elif action == "commissioning.configure_deye":
             from solar_setup import configure
             network = home_assistant_ws_command(supervisor_token, {"type": "network"})
@@ -2801,7 +2810,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.activate_solarman"]
+            summary["capabilities"] = ["commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.activate_solarman", "commissioning.verify_deye"]
             command_results = state.get("command_results", [])
             if command_results:
                 summary["commandResults"] = command_results
@@ -2836,7 +2845,7 @@ def main() -> None:
                         "id": str(command.get("id", "")),
                         "ok": bool(result.get("ok")),
                         "error": str(result.get("error", ""))[:240],
-                        **({"result": result.get("result")} if command.get("action") in {"commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.activate_solarman"} and result.get("ok") else {}),
+                        **({"result": result.get("result")} if command.get("action") in {"commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.activate_solarman", "commissioning.verify_deye"} and result.get("ok") else {}),
                     })
                 if results:
                     state["command_results"] = results

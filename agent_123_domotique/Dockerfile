@@ -9,6 +9,7 @@ COPY connector_install.py /opt/agent/connector_install.py
 COPY vendor /opt/agent/vendor
 COPY profiles /opt/agent/profiles
 COPY solar_profile.py /opt/agent/solar_profile.py
+COPY solar_measurements.py /opt/agent/solar_measurements.py
 COPY solar_setup.py /opt/agent/solar_setup.py
 COPY solar_activation.py /opt/agent/solar_activation.py
 COPY run.sh /run.sh

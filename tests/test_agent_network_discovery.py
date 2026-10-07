@@ -46,3 +46,19 @@ class AgentDiscoveryTests(unittest.TestCase):
             result = agent.relay_command("internal-token", {"id": "scan", "action": "commissioning.discover_solar"})
         self.assertFalse(result["ok"])
         module.discover_solarman.assert_not_called()
+
+    def test_measurement_verification_uses_box_data_not_caller_values(self):
+        module = types.ModuleType("solar_measurements")
+        module.inspect_measurements = Mock(return_value={"readingsAvailable": False, "physicalTestVerified": False})
+        entries = [{"entry_id": "ours"}]
+        states = [{"entity_id": "sensor.real"}]
+        registry = [{"config_entry_id": "ours"}]
+        with patch.dict(sys.modules, {"solar_measurements": module}), patch.object(agent, "home_assistant_ws_command", return_value={"result": registry}), patch.object(agent, "request_json", side_effect=[entries, states]) as requests:
+            result = agent.relay_command("internal-token", {
+                "id": "verify", "action": "commissioning.verify_deye",
+                "payload": {"entryId": "ours", "inverterSerial": "1234567890", "states": [{"fake": True}]},
+            })
+        module.inspect_measurements.assert_called_once_with("ours", "1234567890", entries, registry, states)
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["result"]["physicalTestVerified"])
+        self.assertTrue(all("method" not in call.kwargs for call in requests.call_args_list))
