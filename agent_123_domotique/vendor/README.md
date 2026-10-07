@@ -14,3 +14,11 @@ Bundling permits offline placement of the integration without HACS. Home Assista
 may still need Internet to install Python requirements when first loading it.
 No compatibility claim with a new HA version is implied by packaging. Validate
 loading, configuration and real readings on the Showroom before releasing.
+
+Installation applies two documented 1.2.3 Home adaptations to the extracted copy
+(the archived upstream asset remains unchanged): config_flow accepts an explicit
+`logger_serial`, and the endpoint uses that serial without UDP discovery or the
+upstream automatic HTTP logger configuration. The original discovery behavior is
+retained for connections without an explicit serial. A separate, attributed Deye
+measurement-only profile is installed under `inverter_definitions/custom`.
+The setup action always selects that profile and supplies the explicit serial.

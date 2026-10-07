@@ -2,6 +2,8 @@
 
 ## En développement — non publié
 
+- Connexion guidée Deye SG01HP3 via le formulaire interne, numéro de logger explicite et profil de mesure. Conservation des connexions existantes et journal anti-doublon après réponse perdue. 69 tests Python ; activation et mesures sur le Showroom non encore validées.
+
 - Préparation du connecteur SolarMAN officiel embarqué, sans HACS : archive fixe vérifiée, installation atomique et conservation de toute installation existante. Montage de configuration requis ; aucun redémarrage ni paramétrage onduleur automatique.
 - 61 tests Python passent ; le chargement du connecteur sur HAOS et le formulaire portail restent à valider.
 

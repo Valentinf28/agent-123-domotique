@@ -1,8 +1,14 @@
 import importlib.util
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import ast
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import Mock
 from pathlib import Path
 import tempfile
+import sys
+sys.path.append(str(Path(__file__).parents[1] / "agent_123_domotique"))
 import unittest
 from unittest.mock import patch
 
@@ -27,6 +33,21 @@ class ConnectorInstallTests(unittest.TestCase):
             self.assertEqual(installer.install_solarman(config)['status'], 'existing_preserved')
             self.assertEqual((root / 'user-customization').read_text(),'keep')
             self.assertEqual(unrelated.read_text(),'do not modify')
+
+    def test_explicit_logger_serial_skips_upstream_network_reconfiguration(self):
+        with tempfile.TemporaryDirectory() as folder:
+            installer.install_solarman(folder)
+            root = Path(folder) / 'custom_components/solarman'
+            tree = ast.parse((root / 'provider.py').read_text())
+            cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'EndPointProvider')
+            method = next(node for node in cls.body if isinstance(node, ast.AsyncFunctionDef) and node.name == 'discover')
+            namespace = {'request': Mock(side_effect=AssertionError('Logger network must not be changed'))}
+            exec(compile(ast.fix_missing_locations(ast.Module(body=[method],type_ignores=[])), 'provider.py', 'exec'), namespace)
+            endpoint = SimpleNamespace(config=SimpleNamespace(_options={'logger_serial':2974839220}),serial=0)
+            asyncio.run(namespace['discover'](endpoint))
+            self.assertEqual(endpoint.serial,2974839220)
+            namespace['request'].assert_not_called()
+            self.assertTrue((root / 'inverter_definitions/custom/deye_sg01hp3_readonly.yaml').is_file())
 
     def test_existing_connector_even_incomplete_is_never_replaced(self):
         with tempfile.TemporaryDirectory() as folder:

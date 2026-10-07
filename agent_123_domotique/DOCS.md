@@ -81,3 +81,22 @@ la vérification des mesures. Ne pas présenter cette étape comme une connexion
 Sept nouveaux tests couvrent le paquet officiel, l’intégrité, la concurrence,
 l’échec de copie, la conservation d’une installation existante, les liens et le
 refus de paramètres distants. Le montage et le chargement sur HAOS restent à tester.
+
+### Connexion Deye guidée — développement non publié
+
+`commissioning.configure_deye` reçoit `host`, `loggerSerial` et
+`model: deye_sg01hp3`. L’adresse doit appartenir à un réseau privé actif de la box.
+L’action utilise le formulaire interne du connecteur embarqué : numéro du logger
+explicite, TCP 8899 et profil `custom/deye_sg01hp3_readonly.yaml` (capteurs seulement).
+L’adaptation du connecteur contourne la reconfiguration HTTP automatique du logger
+quand ce numéro explicite est fourni.
+
+La commande lit les connexions existantes sans modifier le stockage Home Assistant.
+Une configuration différente du même appareil est conservée et bloque la création.
+Un journal local est écrit avant l’envoi : après une réponse perdue, l’agent vérifie
+l’entrée enregistrée plutôt que d’en créer une seconde. Une réponse incertaine
+nécessite encore une vérification ; elle ne déclenche pas une création en boucle.
+Le résultat `configured` reste `measurementsVerified: false`.
+
+69 tests Python passent. Activation après copie, compatibilité réelle du formulaire,
+mesures et signes de puissance restent à vérifier sur le Showroom avant diffusion.

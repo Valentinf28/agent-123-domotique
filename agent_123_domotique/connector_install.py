@@ -59,8 +59,11 @@ def install_solarman(config=CONFIG, bundle=BUNDLE):
             manifest = json.loads((temporary / "manifest.json").read_text())
             if manifest.get("domain") != "solarman" or manifest.get("version") != VERSION:
                 raise RuntimeError("Version du connecteur solaire inattendue.")
+            from solar_profile import adapt_connector
+            adapt_connector(temporary)
             shutil.copyfile(bundle.parent / "SOLARMAN-LICENSE", temporary / "LICENSE-123HOME-BUNDLE")
             # Destination is absent and staging is on the same filesystem.
+            temporary.chmod(0o755)
             temporary.rename(destination)
         finally:
             if temporary.exists():
