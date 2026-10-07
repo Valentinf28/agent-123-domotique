@@ -1,6 +1,6 @@
 FROM ghcr.io/home-assistant/base:latest
 
-RUN apk add --no-cache python3 py3-websocket-client py3-pillow
+RUN apk add --no-cache python3 py3-websocket-client py3-pillow tzdata
 
 COPY agent.py /opt/agent/agent.py
 COPY pool_camera.py /opt/agent/pool_camera.py
@@ -11,6 +11,7 @@ COPY profiles /opt/agent/profiles
 COPY solar_profile.py /opt/agent/solar_profile.py
 COPY solar_measurements.py /opt/agent/solar_measurements.py
 COPY solar_setup.py /opt/agent/solar_setup.py
+COPY site_location.py /opt/agent/site_location.py
 COPY solar_activation.py /opt/agent/solar_activation.py
 COPY run.sh /run.sh
 RUN chmod a+x /run.sh

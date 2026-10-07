@@ -1807,6 +1807,9 @@ def relay_command(
             result = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
         elif action == "ha.config":
             result = request_json(f"{SUPERVISOR_API}/config", token=supervisor_token)
+        elif action == "commissioning.configure_location":
+            from site_location import configure as configure_location
+            result = configure_location(payload, lambda command: home_assistant_ws_command(supervisor_token, command))
         elif action == "commissioning.activate_solarman":
             from solar_activation import activate
             def call_activation(path, **kwargs):
@@ -2860,7 +2863,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.activate_solarman", "commissioning.verify_deye"]
             command_results = state.get("command_results", [])
             if command_results:
                 summary["commandResults"] = command_results
@@ -2895,7 +2898,7 @@ def main() -> None:
                         "id": str(command.get("id", "")),
                         "ok": bool(result.get("ok")),
                         "error": str(result.get("error", ""))[:240],
-                        **({"result": result.get("result")} if command.get("action") in {"commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.activate_solarman", "commissioning.verify_deye"} and result.get("ok") else {}),
+                        **({"result": result.get("result")} if command.get("action") in {"commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.activate_solarman", "commissioning.verify_deye"} and result.get("ok") else {}),
                     })
                 if results:
                     state["command_results"] = results

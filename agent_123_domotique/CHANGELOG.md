@@ -1,3 +1,8 @@
+## 0.6.1-dev9
+
+- Ajout de la configuration guidée de la localisation : coordonnées et fuseau validés, relecture obligatoire, autres réglages conservés.
+- La confirmation géographique reste distincte du contrôle des données météo.
+
 # Journal des versions
 
 ## En développement — non publié
