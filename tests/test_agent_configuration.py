@@ -70,10 +70,10 @@ class StartupTests(unittest.TestCase):
                 fetch.assert_not_called()
                 self.assertEqual(thread.call_args.kwargs['args'][:3],('wss://existing.example','existing-house','existing-token'))
             elif configuration_error:
-                thread.assert_not_called()
+                self.assertFalse(any(call.kwargs.get("target") == agent.relay_forever for call in thread.call_args_list))
             else:
                 fetch.assert_called_once_with('https://portal.example/api','saved-identity')
-                thread.return_value.start.assert_called_once()
+                self.assertEqual(sum(call.kwargs.get("target") == agent.relay_forever for call in thread.call_args_list), 1)
 
     def test_restart_uses_saved_identity_without_new_enrollment(self):
         self.run_cycle()

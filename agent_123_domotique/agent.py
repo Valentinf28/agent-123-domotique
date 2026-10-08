@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1-dev9"
+AGENT_VERSION = "0.6.1-dev10"
 HA_TUNNELS: dict[str, websocket.WebSocket] = {}
 RELAY_IDLE_TIMEOUT_SECONDS = 30
 RELAY_PONG_TIMEOUT_SECONDS = 15
@@ -2802,6 +2802,38 @@ def restore_identity(portal_url: str, encoded: str) -> dict[str, Any]:
     return state
 
 
+def prepare_backups_forever(portal_url: str, supervisor_token: str) -> None:
+    """Independent retries must not delay energy inventory or remote access."""
+    from backup_setup import configure, fetch_configuration
+    previous = None
+    while True:
+        status = "waiting"
+        try:
+            identity = read_json(STATE_PATH, {})
+            token = identity.get("token")
+            if token:
+                configuration = fetch_configuration(portal_url, str(token))
+                if read_json(STATE_PATH, {}).get("token") != token:
+                    time.sleep(60)
+                    continue
+                if configuration.get("state") == "inactive":
+                    status = "inactive"
+                else:
+                    result = configure(configuration, lambda path, **kwargs: request_json(
+                        SUPERVISOR_API + path, token=supervisor_token, timeout=15, **kwargs))
+                    status = result["state"]
+        except Exception:
+            # HTTP bodies may contain credentials: never log exception details.
+            status = "waiting"
+        if status != previous:
+            log({"waiting": "Destination de sauvegarde en attente ; nouvel essai automatique",
+                 "inactive": "Sauvegarde distante non activée par l’abonnement",
+                 "destination_pending": "Destination de sauvegarde créée ; vérification en cours",
+                 "destination_ready": "Destination de sauvegarde prête ; première archive à vérifier"}[status])
+            previous = status
+        time.sleep(60 if status in {"waiting", "destination_pending"} else 300)
+
+
 def main() -> None:
     options = read_json(OPTIONS_PATH, {})
     portal_url = str(options.get("portal_url", "")).rstrip("/")
@@ -2816,6 +2848,9 @@ def main() -> None:
     state = restore_identity(portal_url, str(options.get("restore_identity", "")))
     if not enrollment_code and not state.get("token") and not (relay_url and relay_house_id and relay_token):
         raise SystemExit("Configuration incomplète : code d'installation ou liaison VPS requis")
+
+    if portal_url:
+        threading.Thread(target=prepare_backups_forever, args=(portal_url, supervisor_token), daemon=True).start()
 
     pool_camera_enabled = option_enabled(options.get("pool_camera_enabled", False))
     log(
