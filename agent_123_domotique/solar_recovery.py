@@ -48,6 +48,8 @@ def recover(call, ws, *, config=Path('/homeassistant_config'), discover=discover
             continue
         sensors = [states[r['entity_id']] for r in registry
                    if r.get('config_entry_id') == entry['entry_id'] and not r.get('disabled_by')
+                   and r.get('entity_category') != 'diagnostic'
+                   and not r.get('entity_id', '').endswith('_update_interval')
                    and r.get('entity_id', '').startswith('sensor.') and r['entity_id'] in states]
         if not sensors or any(s.get('state') not in ('unknown', 'unavailable') for s in sensors):
             continue

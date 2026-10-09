@@ -28,8 +28,8 @@ class RecoveryFlowTests(unittest.TestCase):
    (root/'custom_components/solarman/123home-bundle.json').write_text('{}')
    options={**O,'lookup_file':'custom/deye_sg01hp3_readonly.yaml','additional_options':{'mod':1}}
    (root/'.storage/core.config_entries').write_text(json.dumps({'data':{'entries':[{'domain':'solarman','entry_id':'entry','options':options}]}}))
-   call=Mock(side_effect=[[{'entity_id':'sensor.battery','state':'unavailable','last_changed':'2020-01-01T00:00:00Z'}],{'type':'form','step_id':'init','flow_id':'flow'},{'type':'create_entry'}])
-   ws=Mock(side_effect=[{'result':[{'entity_id':'sensor.battery','config_entry_id':'entry'}]},{'adapters':A}])
+   call=Mock(side_effect=[[{'entity_id':'sensor.logger_update_interval','state':'5','last_changed':'2020-01-01T00:00:00Z'},{'entity_id':'sensor.battery','state':'unavailable','last_changed':'2020-01-01T00:00:00Z'}],{'type':'form','step_id':'init','flow_id':'flow'},{'type':'create_entry'}])
+   ws=Mock(side_effect=[{'result':[{'entity_id':'sensor.logger_update_interval','entity_category':'diagnostic','config_entry_id':'entry'},{'entity_id':'sensor.battery','config_entry_id':'entry'}]},{'adapters':A}])
    self.assertEqual(recover(call,ws,config=root,discover=lambda _: {'devices':[D]}),[{'entryId':'entry','host':D['host']}])
    self.assertEqual(call.call_args.kwargs['payload'],{**options,'host':D['host']})
    self.assertEqual(json.loads((root/'.storage/core.config_entries').read_text())['data']['entries'][0]['options'],options)
