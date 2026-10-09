@@ -2870,6 +2870,20 @@ def main() -> None:
         ).start()
         log(f"Lecture caméra piscine activée · {pool_camera_url}")
 
+    def recover_solar_forever():
+        from solar_recovery import recover
+        while True:
+            time.sleep(300)
+            try:
+                def call(path, **kwargs):
+                    return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+                changed = recover(call, lambda command: home_assistant_ws_command(supervisor_token, command))
+                if changed:
+                    log("Connexion solaire retrouvée après changement d’adresse réseau")
+            except Exception:
+                log("Recherche de reconnexion solaire différée ; nouvel essai dans cinq minutes")
+    threading.Thread(target=recover_solar_forever, daemon=True).start()
+
     automatic_relay_stop = None
     last_relay_attempt = 0.0
     last_full_inventory_at = 0.0

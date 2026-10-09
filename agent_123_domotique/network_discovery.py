@@ -10,6 +10,8 @@ import ipaddress
 import re
 import socket
 import time
+import json
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
 MESSAGES = (b"WIFIKIT-214028-READ", b"HF-A11ASSISTHREAD")
@@ -39,6 +41,26 @@ def local_interfaces(adapters):
     return interfaces[:8]
 
 
+def current_adapters(fallback):
+    """Read live OS addresses; HA may retain an address from before DHCP renewal."""
+    try:
+        result = subprocess.run(['ip', '-j', '-4', 'address', 'show', 'up'],
+                                capture_output=True, text=True, timeout=3, check=True)
+        rows = json.loads(result.stdout)
+        adapters = [{'name': row.get('ifname'), 'enabled': True,
+                     'ipv4': [{'address': item['local'], 'network_prefix': item['prefixlen']}
+                              for item in row.get('addr_info', [])
+                              if item.get('family') == 'inet']}
+                    for row in rows if isinstance(row, dict)
+                    and row.get('ifname') != 'lo'
+                    and not row.get('ifname', '').startswith(('docker', 'veth', 'hassio', 'br-'))]
+        if local_interfaces(adapters):
+            return adapters
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+        pass
+    return fallback
+
+
 def parse_reply(data, sender, interface):
     if len(data) > 256:
         return None
@@ -65,7 +87,7 @@ def parse_reply(data, sender, interface):
 
 
 def discover_solarman(adapters, duration=2.0):
-    interfaces = local_interfaces(adapters)
+    interfaces = local_interfaces(current_adapters(adapters))
     if not interfaces:
         raise RuntimeError("Aucun réseau local utilisable pour la recherche.")
     # One bounded window per interface, at most 8 interfaces / 16 seconds.
