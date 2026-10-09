@@ -91,3 +91,18 @@ def recover(call, ws, *, config=Path('/homeassistant_config'), discover=discover
         if result.get('type') == 'create_entry':
             results.append({'entryId': entry['entry_id'], 'host': host})
     return results
+
+
+def diagnostics(adapters, config=Path('/homeassistant_config')):
+    result = ['Réseaux actifs : ' + ', '.join(str(i) for i in local_interfaces(current_adapters(adapters)))]
+    marker = config / 'custom_components/solarman/123home-bundle.json'
+    result.append('Connecteur géré : ' + str(marker.is_file()))
+    try:
+        entries = json.loads((config / '.storage/core.config_entries').read_text())['data']['entries']
+        for entry in entries:
+            if entry.get('domain') == 'solarman':
+                options=entry.get('options', {})
+                result.append('Connexion solaire : ' + json.dumps({key:options.get(key) for key in ('host','logger_serial','lookup_file')}))
+    except (OSError, ValueError, KeyError):
+        result.append('Configuration solaire illisible')
+    return result[:6]

@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1-dev12"
+AGENT_VERSION = "0.6.1-dev13"
 HA_TUNNELS: dict[str, websocket.WebSocket] = {}
 RELAY_IDLE_TIMEOUT_SECONDS = 30
 RELAY_PONG_TIMEOUT_SECONDS = 15
@@ -1839,6 +1839,8 @@ def relay_command(
             # Network boundaries originate from the box, not a remote caller.
             network = home_assistant_ws_command(supervisor_token, {"type": "network"})
             result = discover_solarman(network.get("adapters", []))
+            from solar_recovery import diagnostics
+            result['warnings'].extend(diagnostics(network.get('adapters', [])))
         elif action == "ha.services.call":
             domain = str(payload.get("domain", "")).strip()
             service = str(payload.get("service", "")).strip()
