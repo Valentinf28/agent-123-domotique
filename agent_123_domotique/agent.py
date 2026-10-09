@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1-dev13"
+AGENT_VERSION = "0.6.1-dev14"
 HA_TUNNELS: dict[str, websocket.WebSocket] = {}
 RELAY_IDLE_TIMEOUT_SECONDS = 30
 RELAY_PONG_TIMEOUT_SECONDS = 15
@@ -2853,6 +2853,18 @@ def main() -> None:
 
     if portal_url:
         threading.Thread(target=prepare_backups_forever, args=(portal_url, supervisor_token), daemon=True).start()
+
+    def local_identity_forever():
+        from local_identity import serve
+        def call(path, **kwargs):
+            return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+        while True:
+            try:
+                serve(call)
+            except Exception:
+                log("Identification locale en attente ; nouvel essai dans une minute")
+                time.sleep(60)
+    threading.Thread(target=local_identity_forever, daemon=True).start()
 
     pool_camera_enabled = option_enabled(options.get("pool_camera_enabled", False))
     log(
