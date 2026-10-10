@@ -11,6 +11,7 @@ import os
 import secrets
 import ssl
 import threading
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -22,13 +23,37 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1-dev14"
+AGENT_VERSION = "0.6.1-dev15"
+
+def grid_automation_sources(payload):
+    sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
+    multiplier = payload.get("gridPowerMultiplier", 1)
+    if (not isinstance(sources, list) or len(sources) not in (1, 3)
+            or any(not isinstance(value, str) for value in sources)
+            or len(set(sources)) != len(sources)
+            or isinstance(multiplier, bool) or multiplier not in (-1, 1)):
+        raise ValueError("Configuration du compteur réseau invalide")
+    for entity_id in sources:
+        parts = entity_id.split(".", 1)
+        if (len(parts) != 2 or parts[0] != "sensor" or not parts[1]
+                or not all(char in "abcdefghijklmnopqrstuvwxyz0123456789_" for char in parts[1])
+                or entity_id == "sensor.home_configured_grid_power"):
+            raise ValueError("Voie du compteur réseau invalide")
+    terms = ["((states('" + entity + "') | float(0)) * (1000 if "
+             "(state_attr('" + entity + "', 'unit_of_measurement') | default('', true) | lower) == 'kw' else 1))"
+             for entity in sources]
+    expression = "((" + " + ".join(terms) + ") * " + str(multiplier) + ")"
+    return sources, expression
+
+
 HA_TUNNELS: dict[str, websocket.WebSocket] = {}
 RELAY_IDLE_TIMEOUT_SECONDS = 30
 RELAY_PONG_TIMEOUT_SECONDS = 15
 
 OPTIONS_PATH = Path("/data/options.json")
 STATE_PATH = Path("/data/agent-state.json")
+LOCAL_CONFIGURATION_PATH = Path("/data/local-configuration.json")
+LOCAL_CONFIGURATION_PUBLISHED_AT = 0.0
 PV_PEAK_STATE_PATH = Path("/data/pv-peak-state.json")
 POOL_CAMERA_STATE_PATH = Path("/data/pool-camera-state.json")
 SUPERVISOR_API = "http://supervisor/core/api"
@@ -1039,7 +1064,7 @@ def home_assistant_summary(
         if not isinstance(state, dict):
             continue
         entity_id = str(state.get("entity_id", ""))
-        if not full_inventory and not entity_id.startswith(FAST_ENTITY_PREFIXES):
+        if not full_inventory and entity_id != "sensor.home_local_configuration" and not entity_id.startswith(FAST_ENTITY_PREFIXES):
             continue
         attributes = state.get("attributes")
         if not isinstance(attributes, dict):
@@ -1056,6 +1081,8 @@ def home_assistant_summary(
             "domain": entity_id.split(".", 1)[0] if "." in entity_id else "",
             "state": str(state.get("state", "")),
             "deviceClass": attributes.get("device_class"),
+            "lastReported": state.get("last_reported"),
+            "lastUpdated": state.get("last_updated"),
             "attributes": safe_attributes,
         })
     if full_inventory:
@@ -2136,8 +2163,9 @@ def relay_command(
             if not isinstance(fault_entity_ids, list):
                 raise ValueError("Liste des défauts invalide")
 
+            grid_sources, grid_expression = grid_automation_sources(payload)
             required_entities = {
-                grid_power_entity_id: "sensor",
+                **{entity: "sensor" for entity in grid_sources},
                 charger_state_entity_id: "sensor",
                 charger_current_entity_id: "sensor",
                 charger_voltage_entity_id: "sensor",
@@ -2260,6 +2288,37 @@ def relay_command(
                 + str(minimum_amps) + " }}"
             )
 
+            old_grid_expression = "states('" + grid_power_entity_id + "') | float(0)"
+            start_threshold_template = start_threshold_template.replace(old_grid_expression, grid_expression)
+            target_current_template = target_current_template.replace(old_grid_expression, grid_expression)
+            insufficient_surplus_template = insufficient_surplus_template.replace(old_grid_expression, grid_expression)
+            sufficient_surplus_template = sufficient_surplus_template.replace(old_grid_expression, grid_expression)
+
+            # Never calculate a charging setpoint from unavailable or stale measurements.
+            watched_measurements = [*grid_sources, charger_voltage_entity_id,
+                                    charger_current_entity_id]
+            watched_measurements += [value for value in (battery_power_entity_id, battery_level_entity_id) if value]
+            readings_ready = " and ".join(
+                "(is_number(states('" + entity + "')) and "
+                "0 <= as_timestamp(now()) - as_timestamp("
+                "states['" + entity + "'].last_reported | default(states['" + entity + "'].last_updated), 0) <= 180)"
+                for entity in watched_measurements
+            )
+            required_units = {charger_voltage_entity_id: "V", charger_current_entity_id: "A"}
+            if battery_power_entity_id: required_units[battery_power_entity_id] = "W"
+            if battery_level_entity_id: required_units[battery_level_entity_id] = "%"
+            readings_ready += " and " + " and ".join(
+                "state_attr('" + entity + "', 'unit_of_measurement') == '" + unit + "'"
+                for entity, unit in required_units.items()
+            )
+            readings_ready += " and " + " and ".join(
+                "(state_attr('" + entity + "', 'unit_of_measurement') | default('', true) | lower) in ['w', 'kw']"
+                for entity in grid_sources
+            )
+            start_threshold_template = start_threshold_template.replace("{{ ", "{{ (" + readings_ready + ") and ", 1)
+            sufficient_surplus_template = sufficient_surplus_template.replace("{{ ", "{{ (" + readings_ready + ") and ", 1)
+            available_template = available_template.replace("{{ ", "{{ (" + readings_ready + ") and ", 1)
+
             inverter_export_automation = deye_vehicle_export_automation(payload, states)
 
             automation_payload = {
@@ -2291,9 +2350,8 @@ def relay_command(
                         "id": "arret_surplus",
                     },
                     {
-                        "platform": "numeric_state",
-                        "entity_id": [grid_power_entity_id],
-                        "above": 700,
+                        "platform": "template",
+                        "value_template": "{{ (" + readings_ready + ") and " + grid_expression + " > 700 }}",
                         "for": {"hours": 0, "minutes": 1, "seconds": 0},
                         "id": "arret_import",
                     },
@@ -2313,6 +2371,11 @@ def relay_command(
                 "condition": [],
                 "action": [{
                     "choose": [
+                        {
+                            "conditions": [{"condition": "state", "entity_id": charger_state_entity_id, "state": "charging"},
+                                           {"condition": "template", "value_template": "{{ not (" + readings_ready + ") }}"}],
+                            "sequence": [{"service": "button.press", "target": {"entity_id": stop_button_entity_id}}],
+                        },
                         {
                             "conditions": [
                                 {
@@ -2535,7 +2598,7 @@ def relay_command(
                     raise ValueError("Période d'historique trop longue")
             start = urllib.parse.quote(raw_start, safe=":TZ+-")
             entity_id = urllib.parse.quote(raw_entity_id, safe="._")
-            query = f"filter_entity_id={entity_id}&minimal_response&no_attributes"
+            query = f"filter_entity_id={entity_id}&minimal_response"
             if raw_end:
                 end = urllib.parse.quote(raw_end, safe=":TZ+-")
                 query += f"&end_time={end}"
@@ -2835,6 +2898,58 @@ def prepare_backups_forever(portal_url: str, supervisor_token: str) -> None:
             previous = status
         time.sleep(60 if status in {"waiting", "destination_pending"} else 300)
 
+def store_local_configuration(value, agent_id):
+    # The portal response is bound to this authenticated box. Never restore a
+    # configuration retained from a different enrollment.
+    if (not isinstance(value, dict) or value.get("version") != 1
+            or not agent_id or value.get("agentId") != agent_id
+            or not isinstance(value.get("installationId"), str)
+            or not value["installationId"]
+            or not isinstance(value.get("configuration"), dict)
+            or not isinstance(value.get("revision"), str)
+            or len(value["revision"]) != 64
+            or any(char not in "0123456789abcdef" for char in value["revision"])):
+        raise ValueError("Configuration locale invalide")
+    allowed = {"electricalSupply", "equipmentRoles", "waterHeating", "devices", "automations"}
+    if set(value["configuration"]) - allowed:
+        raise ValueError("Champs de configuration locale inconnus")
+    document = {key:value[key] for key in ("version", "agentId", "installationId", "revision", "configuration")}
+    encoded = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode()) > 262144:
+        raise ValueError("Configuration locale trop volumineuse")
+    if read_json(LOCAL_CONFIGURATION_PATH, {}) == document:
+        return False
+    LOCAL_CONFIGURATION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    name = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=LOCAL_CONFIGURATION_PATH.parent, delete=False) as stream:
+            name = stream.name
+            os.chmod(name, 0o600)
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(name, LOCAL_CONFIGURATION_PATH)
+    finally:
+        if name and os.path.exists(name): os.unlink(name)
+    return True
+
+
+def publish_local_configuration(supervisor_token, agent_id, force=False):
+    global LOCAL_CONFIGURATION_PUBLISHED_AT
+    if not force and time.monotonic() - LOCAL_CONFIGURATION_PUBLISHED_AT < 60:
+        return
+    value = read_json(LOCAL_CONFIGURATION_PATH, {})
+    if not agent_id or value.get("agentId") != agent_id or value.get("version") != 1:
+        return
+    request_json(f"{SUPERVISOR_API}/states/sensor.home_local_configuration",
+                 method="POST", token=supervisor_token,
+                 payload={"state":value["revision"], "attributes":{
+                     "friendly_name":"Configuration locale 1.2.3 Home",
+                     "version":1,"installation_id":value["installationId"],
+                     "configuration":value["configuration"],
+                 }})
+    LOCAL_CONFIGURATION_PUBLISHED_AT = time.monotonic()
+
 
 def main() -> None:
     options = read_json(OPTIONS_PATH, {})
@@ -2918,6 +3033,10 @@ def main() -> None:
         try:
             if not state.get("token"):
                 state = enroll(portal_url, enrollment_code)
+            try:
+                publish_local_configuration(supervisor_token, state.get("agent_id"))
+            except Exception:
+                log("Configuration locale en attente de republication")
             full_inventory = (
                 last_full_inventory_at == 0.0 or
                 time.monotonic() - last_full_inventory_at >= FULL_INVENTORY_SECONDS
@@ -2934,6 +3053,14 @@ def main() -> None:
             if command_results:
                 state.pop("command_results", None)
                 write_state(state)
+
+            local_configuration = heartbeat_result.get("localConfiguration")
+            if local_configuration is not None:
+                try:
+                    changed = store_local_configuration(local_configuration, state.get("agent_id"))
+                    if changed: publish_local_configuration(supervisor_token, state.get("agent_id"), force=True)
+                except Exception:
+                    log("Synchronisation des réglages locaux en attente ; dernière copie conservée")
             if not (relay_url and relay_house_id and relay_token) and automatic_relay_stop is None and (last_relay_attempt == 0.0 or time.monotonic() - last_relay_attempt >= 60):
                 last_relay_attempt = time.monotonic()
                 try:

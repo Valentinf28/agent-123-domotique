@@ -15,9 +15,11 @@ spec.loader.exec_module(agent)
 class AgentDiscoveryTests(unittest.TestCase):
     def test_uses_box_interfaces_not_remote_targets(self):
         module = types.ModuleType("network_discovery")
-        module.discover_solarman = Mock(return_value={"devices": [], "scope": "solar_loggers"})
+        module.discover_solarman = Mock(return_value={"devices": [], "scope": "solar_loggers", "warnings": []})
+        recovery = types.ModuleType("solar_recovery")
+        recovery.diagnostics = Mock(return_value=["Diagnostic local"])
         adapters = [{"enabled": True, "ipv4": [{"address": "192.168.6.179", "network_prefix": 24}]}]
-        with patch.dict(sys.modules, {"network_discovery": module}), patch.object(agent, "home_assistant_ws_command", return_value={"adapters": adapters}) as network:
+        with patch.dict(sys.modules, {"network_discovery": module, "solar_recovery": recovery}), patch.object(agent, "home_assistant_ws_command", return_value={"adapters": adapters}) as network:
             result = agent.relay_command("internal-token", {
                 "id": "scan", "action": "commissioning.discover_solar",
                 "payload": {"host": "8.8.8.8", "adapters": [{"address": "8.8.8.8"}]},
@@ -26,6 +28,8 @@ class AgentDiscoveryTests(unittest.TestCase):
         module.discover_solarman.assert_called_once_with(adapters)
         self.assertTrue(result["ok"])
         self.assertEqual(result["result"]["scope"], "solar_loggers")
+        recovery.diagnostics.assert_called_once_with(adapters)
+        self.assertEqual(result["result"]["warnings"], ["Diagnostic local"])
 
     def test_installer_accepts_no_remote_path_or_download(self):
         module = types.ModuleType("connector_install")
