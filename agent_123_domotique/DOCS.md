@@ -43,3 +43,76 @@ chlore est activée. Home Assistant affiche alors une notification persistante.
 Une perte d'image pendant plus de 15 minutes rend l'état de communication
 indisponible. La dernière mesure valide reste affichée au lieu d'être remplacée
 par une valeur inventée ou momentanément illisible.
+## Recherche solaire de mise en service (en développement)
+
+La commande `commissioning.discover_solar` interroge les interfaces actives de
+la box puis recherche les loggers SolarMAN en UDP. Un passage TCP limité au
+port 8899 complète la recherche sur les sous-réseaux de 256 adresses maximum.
+Aucun hôte, masque ou port transmis par le demandeur n'est utilisé. Les appareils
+TCP sans annonce d'identité restent « à identifier » ; aucun profil ni association
+n'est créé. Le résultat n'atteste pas la compatibilité d'un onduleur.
+
+Le mode réseau hôte est nécessaire pour envoyer les annonces depuis les interfaces
+de la box. Aucun serveur entrant n'est ajouté. Cette modification reste à tester
+sur HAOS avant publication. Le portail dispose dans ses sources d'une file de
+recherche réservée à l'équipe ; seules les box annonçant explicitement la
+capacité `commissioning.discover_solar` peuvent recevoir la demande. Les
+résultats sont transportés par le heartbeat et conservés jusqu'à son succès.
+
+Validation du 7 octobre 2026 : exécution du module depuis le Mac sur le réseau
+Showroom, logger UDP trouvé en .66 et candidat TCP en .178. La connexion autonome
+depuis la box, l'installation de SolarMAN et le parcours portail restent à valider.
+
+### Connecteur SolarMAN embarqué — développement non publié
+
+`commissioning.install_solarman` prépare le connecteur officiel 25.08.16 depuis
+une archive embarquée dont le SHA-256 est vérifié. Aucun chemin ni téléchargement
+fourni par un appelant n’est accepté. Le montage `homeassistant_config` en écriture
+est requis ; l’installation ne modifie que `custom_components/solarman` et un
+verrou de coordination. Les fichiers sont préparés à part puis déplacés ensemble.
+
+Un connecteur existant, même incomplet, est conservé et signalé
+`existing_preserved`. Le statut `installed` indique uniquement la copie des fichiers,
+avec `restartRequired: true` et `configured: false`. La commande ne redémarre pas
+Home Assistant, ne crée aucune intégration et n’écrit rien dans l’onduleur.
+Le parcours portail doit encore gérer l’activation, le formulaire de connexion et
+la vérification des mesures. Ne pas présenter cette étape comme une connexion réussie.
+
+Sept nouveaux tests couvrent le paquet officiel, l’intégrité, la concurrence,
+l’échec de copie, la conservation d’une installation existante, les liens et le
+refus de paramètres distants. Le montage et le chargement sur HAOS restent à tester.
+
+### Connexion Deye guidée — développement non publié
+
+`commissioning.configure_deye` reçoit `host`, `loggerSerial` et
+`model: deye_sg01hp3`. L’adresse doit appartenir à un réseau privé actif de la box.
+L’action utilise le formulaire interne du connecteur embarqué : numéro du logger
+explicite, TCP 8899 et profil `custom/deye_sg01hp3_readonly.yaml` (capteurs seulement).
+L’adaptation du connecteur contourne la reconfiguration HTTP automatique du logger
+quand ce numéro explicite est fourni.
+
+La commande lit les connexions existantes sans modifier le stockage Home Assistant.
+Une configuration différente du même appareil est conservée et bloque la création.
+Un journal local est écrit avant l’envoi : après une réponse perdue, l’agent vérifie
+l’entrée enregistrée plutôt que d’en créer une seconde. Une réponse incertaine
+nécessite encore une vérification ; elle ne déclenche pas une création en boucle.
+Le résultat `configured` reste `measurementsVerified: false`.
+
+69 tests Python passent. Activation après copie, compatibilité réelle du formulaire,
+mesures et signes de puissance restent à vérifier sur le Showroom avant diffusion.
+
+### Activation depuis le portail
+
+`commissioning.activate_solarman` vérifie que le connecteur embarqué est présent,
+puis consulte les formulaires disponibles. Un connecteur disponible donne `ready`.
+Sinon l’agent demande le redémarrage du service Home Assistant et retourne
+`activation_pending`, sans prétendre que le redémarrage est terminé. Le journal
+local interdit de redemander un redémarrage pendant cinq minutes, même si la réponse
+HTTP est perdue. Un refus HTTP explicite échoue. Une nouvelle vérification après le
+retour du service confirme sa disponibilité. Le portail bloque la configuration
+jusqu’au résultat `ready`. Aucun redémarrage n’est demandé sans connecteur préparé.
+
+74 tests Python passent. Le contrôle réel du 7 octobre confirme le relais du
+Showroom en ligne, mais le jeton de l’agent 0.6.0 n’a pas les droits Supervisor
+(`supervisor/api` répond `unauthorized`). Une mise à jour contrôlée du Showroom
+reste nécessaire pour tester les nouvelles commandes sur le matériel.

@@ -1,4 +1,26 @@
+## 0.6.1-dev9
+
+- Ajout de la configuration guidée de la localisation : coordonnées et fuseau validés, relecture obligatoire, autres réglages conservés.
+- La confirmation géographique reste distincte du contrôle des données météo.
+
 # Journal des versions
+
+## En développement — non publié
+
+- Vérification guidée : ajoute le pourcentage de batterie, limité au connecteur vérifié, avec validation de l’unité, de la plage et de la fraîcheur. Ce contrôle optionnel ne certifie ni le câblage ni la remise client.
+
+- Activation guidée du connecteur : contrôle de disponibilité, demande de redémarrage si nécessaire, délai de cinq minutes contre les répétitions après réponse perdue. 74 tests Python ; validation matérielle non effectuée.
+
+- Connexion guidée Deye SG01HP3 via le formulaire interne, numéro de logger explicite et profil de mesure. Conservation des connexions existantes et journal anti-doublon après réponse perdue. 69 tests Python ; activation et mesures sur le Showroom non encore validées.
+
+- Préparation du connecteur SolarMAN officiel embarqué, sans HACS : archive fixe vérifiée, installation atomique et conservation de toute installation existante. Montage de configuration requis ; aucun redémarrage ni paramétrage onduleur automatique.
+- 61 tests Python passent ; le chargement du connecteur sur HAOS et le formulaire portail restent à valider.
+
+- Configure le relais d’une nouvelle box depuis son identité d’enrôlement, sans écraser un relais renseigné manuellement.
+- Ajoute une recherche locale et bornée des loggers solaires, annoncée au portail par une capacité explicite.
+- Conserve les résultats de commandes jusqu’à leur transmission réussie au portail.
+- Interrompt le lecteur d’un tunnel avant de fermer sa socket, pour éviter de bloquer les autres commandes pendant la fermeture.
+- Validation : 54 tests ; recherche réseau depuis le Mac au Showroom. Nouvelle version non installée sur HAOS, installation des connecteurs et parcours complet encore à tester.
 
 ## 0.6.0
 
