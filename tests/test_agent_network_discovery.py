@@ -54,6 +54,7 @@ class AgentDiscoveryTests(unittest.TestCase):
     def test_measurement_verification_uses_box_data_not_caller_values(self):
         module = types.ModuleType("solar_measurements")
         module.inspect_measurements = Mock(return_value={"readingsAvailable": False, "physicalTestVerified": False})
+        module.measurement_template = Mock(return_value="trusted-template")
         entries = [{"entry_id": "ours"}]
         states = [{"entity_id": "sensor.real"}]
         registry = [{"config_entry_id": "ours"}]
@@ -65,7 +66,10 @@ class AgentDiscoveryTests(unittest.TestCase):
         module.inspect_measurements.assert_called_once_with("ours", "1234567890", entries, registry, states)
         self.assertTrue(result["ok"])
         self.assertFalse(result["result"]["physicalTestVerified"])
-        self.assertTrue(all("method" not in call.kwargs for call in requests.call_args_list))
+        module.measurement_template.assert_called_once_with("ours", registry)
+        self.assertTrue(requests.call_args_list[1].args[0].endswith("/template"))
+        self.assertEqual(requests.call_args_list[1].kwargs["method"], "POST")
+        self.assertEqual(requests.call_args_list[1].kwargs["payload"], {"template":"trusted-template"})
 
     def test_temporary_box_failure_has_actionable_message_without_headers(self):
         import urllib.error

@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 import unittest
 sys.path.append(str(Path(__file__).parents[1] / 'agent_123_domotique'))
-from solar_measurements import inspect_measurements, POWER_NAMES
+from solar_measurements import inspect_measurements, POWER_NAMES, measurement_template
 
 class MeasurementTests(unittest.TestCase):
     def setUp(self):
@@ -96,5 +96,23 @@ class MeasurementTests(unittest.TestCase):
         self.add_battery_level()
         self.registry.append(dict(self.registry[-1]))
         self.assertEqual(self.inspect()['batteryLevel']['status'], 'missing')
+
+class LiveTemplateTests(unittest.TestCase):
+    def test_template_scopes_live_reads_and_rejects_injection(self):
+        row={'entity_id':'sensor.ours','config_entry_id':'ours','platform':'solarman','original_name':'Battery'}
+        registry=[row,dict(row,entity_id='sensor.other',config_entry_id='other'),
+                  dict(row,entity_id='sensor.disabled',disabled_by='user'),
+                  dict(row,entity_id='sensor.foreign',platform='other'),
+                  dict(row,entity_id='sensor.unrelated',original_name='Password'),
+                  dict(row,entity_id="sensor.x']{{ secrets }}")]
+        template=measurement_template('ours',registry)
+        self.assertIn('["sensor.ours"]',template)
+        for forbidden in ['sensor.other','sensor.disabled','sensor.foreign','sensor.unrelated','secrets','as_dict','now()']:
+            self.assertNotIn(forbidden,template)
+        self.assertIn('s.last_reported.isoformat()',template)
+        self.assertIn('state=s.state',template)
+        self.assertIn('attributes=dict(s.attributes)',template)
+        with self.assertRaises(ValueError): measurement_template("x'",registry)
+        with self.assertRaises(RuntimeError): measurement_template('ours',None)
 
 if __name__ == '__main__': unittest.main()

@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1-dev15"
+AGENT_VERSION = "0.6.1-dev16"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1844,13 +1844,14 @@ def relay_command(
             result = activate(call_activation, loaded_manifest=home_assistant_ws_command(
                 supervisor_token, {"type": "manifest/get", "integration": "solarman"}))
         elif action == "commissioning.verify_deye":
-            from solar_measurements import inspect_measurements
+            from solar_measurements import inspect_measurements, measurement_template
             registry = home_assistant_ws_command(supervisor_token, {"type": "config/entity_registry/list"})
             result = inspect_measurements(
                 payload.get("entryId"), payload.get("inverterSerial"),
                 request_json(f"{SUPERVISOR_API}/config/config_entries/entry?domain=solarman", token=supervisor_token),
                 registry.get("result"),
-                request_json(f"{SUPERVISOR_API}/states", token=supervisor_token),
+                request_json(f"{SUPERVISOR_API}/template", method="POST", token=supervisor_token,
+                             payload={"template": measurement_template(payload.get("entryId"), registry.get("result"))}),
             )
         elif action == "commissioning.configure_deye":
             from solar_setup import configure

@@ -6,9 +6,36 @@ Missing report timestamps fail closed rather than treating old cached values as 
 from datetime import datetime, timezone
 import math
 import re
+import json
 
 POWER_NAMES = {'production': 'PV Power', 'grid': 'Grid Power',
                'consumption': 'Load Power', 'battery': 'Battery Power'}
+
+
+def measurement_template(entry_id, registry):
+    """Read live State properties, avoiding HA's cached serialized last_reported.
+
+    Only read measurement/identity sensors registered to this connector. Never
+    interpolate a caller-supplied template or fall back to a stale REST snapshot.
+    """
+    if not isinstance(entry_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', entry_id):
+        raise ValueError('Connexion solaire invalide.')
+    if not isinstance(registry, list):
+        raise RuntimeError('Registre solaire indisponible.')
+    names = {'Device Serial Number', 'Device', 'Battery', *POWER_NAMES.values()}
+    ids = sorted({row.get('entity_id') for row in registry
+                  if row.get('config_entry_id') == entry_id
+                  and row.get('platform') == 'solarman' and not row.get('disabled_by')
+                  and row.get('original_name') in names
+                  and isinstance(row.get('entity_id'), str)
+                  and re.fullmatch(r'sensor\.[a-z0-9_]+', row['entity_id'])})
+    if len(ids) > 32:
+        raise ValueError('Registre solaire ambigu.')
+    return ("{% set ns = namespace(rows=[]) %}{% for id in " + json.dumps(ids) + " %}"
+            "{% set s = states[id] %}{% if s is defined and s is not none %}"
+            "{% set ns.rows = ns.rows + [dict(entity_id=id, state=s.state, "
+            "attributes=dict(s.attributes), last_reported=s.last_reported.isoformat())] %}"
+            "{% endif %}{% endfor %}{{ ns.rows | to_json }}")
 
 
 def inspect_measurements(entry_id, expected_serial, entries, registry, states, *, now=None):
