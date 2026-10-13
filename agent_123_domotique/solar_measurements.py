@@ -107,7 +107,12 @@ def inspect_measurements(entry_id, expected_serial, entries, registry, states, *
                              'percent': percent, 'reportedAt': reported.isoformat()}
         except (TypeError, ValueError, OverflowError):
             battery_level = {'status': 'unavailable'}
+    device = entity_state('Device')
+    entities = {key: row['entity_id'] for key,name in POWER_NAMES.items()
+                if (row := entity_state(name)) and isinstance(row.get('entity_id'),str)}
+    if level and isinstance(level.get('entity_id'),str): entities['batteryLevel']=level['entity_id']
     return {'connector': 'solarman', 'entryId': entry_id,
+            'deviceFamily': str(device.get('state','')) if device else '', 'entities': entities,
             'identityStatus': identity_status,
             'readingsAvailable': identity_status == 'matched' and all(
                 item['status'] == 'recent' for item in measurements.values()),

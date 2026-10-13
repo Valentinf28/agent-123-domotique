@@ -1,0 +1,1106 @@
+# La Box — Deye SG0*LP1 basse tension, lecture seule.
+# Source: ha-solarman v25.08.16, deye_hybrid.yaml.
+# Entités de mesure uniquement ; aucun réglage exposé.
+info:
+  manufacturer: Deye
+  model: SG0*LP1
+default:
+  update_interval: 60
+  digits: 6
+parameters:
+- group: Info
+  update_interval: 3600
+  items:
+  - name: Device
+    class: enum
+    rule: 1
+    registers:
+    - 0
+    icon: mdi:information
+    lookup:
+    - key: 0
+      value: Unknown
+    - key:
+      - 2
+      - 512
+      value: String Inverter
+    - key:
+      - 3
+      - 768
+      value: Single-Phase Hybrid Inverter
+    - key:
+      - 4
+      - 1024
+      value: Microinverter
+    - key:
+      - 5
+      - 1280
+      value: LV 3-Phase Hybrid Inverter
+    - key: 6
+      value: HV 3-Phase Hybrid Inverter
+    - key:
+      - 7
+      - 1536
+      value: HV 3-Phase Inverter 6-15kw
+    - key:
+      - 8
+      - 1537
+      value: HV 3-Phase Inverter 20-50kw
+    attributes:
+    - Device Modbus Address
+    - Device Protocol Version
+    - Device Serial Number
+    - Device Rated Phase
+    - Device Chip Type
+    - Device Control Board Firmware Version
+    - Device Communication Board Firmware Version
+    - Device Rated Power
+    - Device MPPTs
+    - Device Phases
+  - name: Device Modbus Address
+    attribute: null
+    rule: 1
+    registers:
+    - 1
+  - name: Device Protocol Version
+    attribute: null
+    rule: 7
+    remove: '0.'
+    registers:
+    - 2
+  - name: Device Serial Number
+    attribute: null
+    rule: 5
+    registers:
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+  - name: Device Rated Phase
+    attribute: null
+    class: enum
+    rule: 1
+    registers:
+    - 8
+    lookup:
+    - key:
+      - 0
+      - 1
+      - 2
+      value: Single-Phase
+    - key: 3
+      value: Three-Phase
+    - key: 8
+      value: Single-Phase Storage
+  - name: Device Chip Type
+    attribute: null
+    class: enum
+    rule: 1
+    registers:
+    - 9
+    lookup:
+    - key: 0
+      value: AT32F403A
+    - key: 1
+      value: SXX32F103
+    - key: 2
+      value: GD32F103
+    - key: 3
+      value: GD32F303
+  - name: Device Control Board Firmware Version
+    attribute: null
+    rule: 7
+    delimiter: ''
+    registers:
+    - 13
+    - 12
+    - 11
+  - name: Device Communication Board Firmware Version
+    attribute: null
+    rule: 7
+    hex: null
+    delimiter: ''
+    registers:
+    - 14
+    - 10
+  - name: Device Rated Power
+    attribute: null
+    class: power
+    state_class: measurement
+    uom: W
+    scale: 0.1
+    rule: 4
+    registers:
+    - 16
+    - 17
+    validation:
+      min: 0
+      max: 24000
+  - name: Device MPPTs
+    attribute: null
+    rule: 1
+    mask: 3840
+    divide: 256
+    registers:
+    - 18
+    range:
+      min: 257
+    validation:
+      max: 12
+      default: 2
+  - name: Device Phases
+    attribute: null
+    rule: 1
+    mask: 15
+    registers:
+    - 18
+    range:
+      min: 257
+    validation:
+      max: 3
+      default: 3
+- group: Control
+  update_interval: 5
+  items:
+  - name: Device State
+    class: enum
+    update_interval: 10
+    rule: 1
+    registers:
+    - 59
+    icon: mdi:state-machine
+    range:
+      min: 0
+      max: 5
+    lookup:
+    - key: 0
+      value: Standby
+    - key: 1
+      value: Self-test
+    - key: 2
+      value: Normal
+    - key: 3
+      value: Alarm
+    - key: 4
+      value: Fault
+  - name: Device Alarm
+    class: enum
+    rule: 3
+    registers:
+    - 101
+    - 102
+    icon: mdi:alert-outline
+    lookup:
+    - key: 0
+      value: OK
+    - bit: 1
+      value: Fan failure
+    - bit: 2
+      value: Grid phase failure
+    - bit: 3
+      value: Meter communication failure
+    - bit: 30
+      value: Battery loss
+    - bit: 31
+      value: Parallel communication quality
+    - key: default
+      value: Problem
+  - name: Device Fault
+    class: enum
+    rule: 3
+    registers:
+    - 103
+    - 104
+    - 105
+    - 106
+    icon: mdi:message-alert-outline
+    lookup:
+    - key: 0
+      value: OK
+    - bit: 6
+      value: DC/DC Soft Start failure
+    - bit: 9
+      value: Auxiliary power supply failure
+    - bit: 12
+      value: Working mode changed
+    - bit: 17
+      value: AC Over-current failure
+    - bit: 18
+      value: Tz_Integ_Fault failure
+    - bit: 19
+      value: DC Over-current failure
+    - bit: 22
+      value: AC current leakage failure
+    - bit: 63
+      value: Temperature is too high
+    - key: default
+      value: Problem
+- group: PV
+  update_interval: 5
+  items:
+  - name: PV Power
+    alt: DC Power
+    mppt: 1
+    description: Combined power of all inputs
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 1
+    digits: 0
+    sensors:
+    - registers:
+      - 186
+    - registers:
+      - 187
+    - registers:
+      - 188
+    - registers:
+      - 189
+    validation:
+      min: 0
+      max: 24000
+      invalidate_all: null
+    icon: mdi:solar-power-variant
+  - name: PV1 Voltage
+    alt: DC1 Voltage
+    mppt: 1
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 109
+    icon: mdi:solar-power-variant
+  - name: PV1 Current
+    alt: DC1 Current
+    mppt: 1
+    class: current
+    uom: A
+    scale: 0.1
+    rule: 1
+    registers:
+    - 110
+    icon: mdi:solar-power-variant
+  - name: PV2 Voltage
+    alt: DC2 Voltage
+    mppt: 2
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 111
+    icon: mdi:solar-power-variant
+  - name: PV2 Current
+    alt: DC2 Current
+    mppt: 2
+    class: current
+    state_class: measurement
+    uom: A
+    scale: 0.1
+    rule: 1
+    registers:
+    - 112
+    icon: mdi:solar-power-variant
+  - name: PV3 Voltage
+    alt: DC3 Voltage
+    mppt: 3
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 113
+    icon: mdi:solar-power-variant
+  - name: PV3 Current
+    alt: DC3 Current
+    mppt: 3
+    class: current
+    state_class: measurement
+    uom: A
+    scale: 0.1
+    rule: 1
+    registers:
+    - 114
+    icon: mdi:solar-power-variant
+  - name: PV4 Voltage
+    alt: DC4 Voltage
+    mppt: 4
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 115
+    icon: mdi:solar-power-variant
+  - name: PV4 Current
+    alt: DC4 Current
+    mppt: 4
+    class: current
+    state_class: measurement
+    uom: A
+    scale: 0.1
+    rule: 1
+    registers:
+    - 116
+    icon: mdi:solar-power-variant
+  - name: PV1 Power
+    alt: DC1 Power
+    mppt: 1
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 1
+    registers:
+    - 186
+    icon: mdi:solar-power-variant
+  - name: PV2 Power
+    alt: DC2 Power
+    mppt: 2
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 1
+    registers:
+    - 187
+    icon: mdi:solar-power-variant
+  - name: PV3 Power
+    alt: DC3 Power
+    mppt: 3
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 1
+    registers:
+    - 188
+    icon: mdi:solar-power-variant
+  - name: PV4 Power
+    alt: DC4 Power
+    mppt: 4
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 1
+    registers:
+    - 189
+    icon: mdi:solar-power-variant
+- group: Meter
+  update_interval: 30
+  items:
+  - name: Today Energy
+    alt: Daily Energy
+    friendly_name: Today's Energy
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 2
+    registers:
+    - 60
+  - name: Total Energy
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 4
+    registers:
+    - 63
+    - 64
+    validation:
+      min: 0.1
+  - name: Today Battery Charge
+    friendly_name: Today's Battery Charge
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 1
+    registers:
+    - 70
+    icon: mdi:battery-plus
+  - name: Today Battery Discharge
+    friendly_name: Today's Battery Discharge
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 1
+    registers:
+    - 71
+    icon: mdi:battery-minus
+  - name: Total Battery Charge
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 3
+    registers:
+    - 72
+    - 73
+    icon: mdi:battery-plus
+    validation:
+      min: 0.1
+  - name: Total Battery Discharge
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 3
+    registers:
+    - 74
+    - 75
+    icon: mdi:battery-minus
+    validation:
+      min: 0.1
+  - name: Today Energy Import
+    alt: Today Energy Bought
+    friendly_name: Today's Energy Import
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 1
+    registers:
+    - 76
+    icon: mdi:transmission-tower-export
+  - name: Today Energy Export
+    alt: Today Energy Sold
+    friendly_name: Today's Energy Export
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 1
+    registers:
+    - 77
+    icon: mdi:transmission-tower-import
+  - name: Total Energy Import
+    alt: Total Energy Bought
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 1
+    registers:
+    - 78
+    - 80
+    icon: mdi:transmission-tower-export
+    validation:
+      min: 0.1
+  - name: Total Energy Export
+    alt: Total Energy Sold
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 3
+    registers:
+    - 81
+    - 82
+    icon: mdi:transmission-tower-import
+    validation:
+      min: 0.1
+  - name: Today Load Consumption
+    friendly_name: Today's Load Consumption
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 1
+    registers:
+    - 84
+  - name: Total Load Consumption
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 3
+    registers:
+    - 85
+    - 86
+    validation:
+      min: 0.1
+  - name: Generator Energy - today
+    name_lookup: io_mode_select
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 1
+    registers:
+    - 62
+  - name: Generator Energy
+    name_lookup: io_mode_select
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 3
+    registers:
+    - 92
+    - 95
+    validation:
+      min: 0.1
+  - name: Today Production
+    friendly_name: Today's Production
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 1
+    registers:
+    - 108
+    icon: mdi:solar-power
+    validation:
+      dev: 100
+      invalidate_all: null
+  - name: Total Production
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 3
+    registers:
+    - 96
+    - 97
+    icon: mdi:solar-power
+    validation:
+      min: 0.1
+      dev: 100
+      invalidate_all: 2
+  - name: Today Losses
+    alt: Daily Losses
+    friendly_name: Today's Losses
+    description: Includes today's consumption of the inverter device itself as well
+      AC/DC conversion losses
+    class: energy
+    state_class: total_increasing
+    ensure_increasing: null
+    uom: kWh
+    rule: 1
+    digits: 1
+    scale: 0.1
+    uint: enforce
+    sensors:
+    - registers:
+      - 76
+    - registers:
+      - 108
+    - registers:
+      - 62
+      enabled_lookup:
+        io_mode_select:
+        - Generator
+        - Microinverter
+    - registers:
+      - 71
+    - operator: subtract
+      registers:
+      - 77
+    - operator: subtract
+      registers:
+      - 70
+    - operator: subtract
+      registers:
+      - 84
+  - name: Total Losses
+    description: Includes total consumption of the inverter device itself as well
+      AC/DC conversion losses
+    class: energy
+    state_class: total_increasing
+    ensure_increasing: null
+    uom: kWh
+    rule: 3
+    digits: 1
+    scale: 0.1
+    uint: enforce
+    sensors:
+    - registers:
+      - 78
+      - 80
+    - registers:
+      - 96
+      - 97
+    - registers:
+      - 92
+      - 95
+      enabled_lookup:
+        io_mode_select:
+        - Generator
+        - Microinverter
+    - registers:
+      - 74
+      - 75
+    - operator: subtract
+      registers:
+      - 81
+      - 82
+    - operator: subtract
+      registers:
+      - 72
+      - 73
+    - operator: subtract
+      registers:
+      - 85
+      - 86
+    validation:
+      min: 1
+- group: Battery
+  items:
+  - name: Battery Temperature
+    class: temperature
+    state_class: measurement
+    uom: °C
+    scale: 0.1
+    rule: 1
+    offset: 1000
+    registers:
+    - 182
+  - name: Battery Voltage
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.01
+    rule: 1
+    registers:
+    - 183
+  - name: Battery
+    class: battery
+    state_class: measurement
+    uom: '%'
+    rule: 1
+    registers:
+    - 184
+  - name: Battery State
+    description: Determines battery state from battery power by +-50 W
+    class: enum
+    rule: 0
+    options:
+    - charging
+    - idle
+    - discharging
+    icon: mdi:battery
+  - name: Battery Power
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    registers:
+    - 190
+    attributes:
+    - inverse
+  - name: Battery Current
+    class: current
+    state_class: measurement
+    uom: A
+    scale: 0.01
+    rule: 2
+    registers:
+    - 191
+    icon: mdi:current-dc
+  - name: Battery Capacity
+    description: Estimates capacity of the battery during (dis)charging
+    class: energy_storage
+    state_class: measurement
+    uom: kWh
+    rule: 0
+    digits: 1
+    icon: mdi:battery-check
+- group: Grid
+  items:
+  - name: Grid Frequency
+    l: 1
+    class: frequency
+    state_class: measurement
+    uom: Hz
+    scale: 0.01
+    rule: 1
+    registers:
+    - 79
+  - name: Grid L1 Voltage
+    l: 1
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 150
+    icon: mdi:transmission-tower
+  - name: Grid L2 Voltage
+    l: 2
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 151
+    icon: mdi:transmission-tower
+  - name: Grid Voltage
+    l: 2
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 152
+    icon: mdi:transmission-tower
+  - name: Grid L1 Current
+    l: 1
+    class: current
+    state_class: measurement
+    uom: A
+    scale: 0.01
+    rule: 2
+    registers:
+    - 160
+    icon: mdi:transmission-tower
+  - name: Grid L2 Current
+    l: 2
+    class: current
+    state_class: measurement
+    uom: A
+    scale: 0.01
+    rule: 2
+    registers:
+    - 161
+    icon: mdi:transmission-tower
+  - name: Grid L1 Power
+    l: 1
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    scale:
+    - 1
+    - 10
+    registers:
+    - 167
+    icon: mdi:transmission-tower
+  - name: Grid L2 Power
+    l: 2
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    scale:
+    - 1
+    - 10
+    registers:
+    - 168
+    icon: mdi:transmission-tower
+  - name: Grid Power
+    l: 1
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    scale:
+    - 1
+    - 10
+    registers:
+    - 169
+    icon: mdi:transmission-tower
+    attributes:
+    - inverse
+  - name: External CT1 Current
+    l: 1
+    class: current
+    state_class: measurement
+    uom: A
+    scale: 0.01
+    rule: 2
+    registers:
+    - 162
+    icon: mdi:transmission-tower
+  - name: External CT2 Current
+    l: 2
+    class: current
+    state_class: measurement
+    uom: A
+    scale: 0.01
+    rule: 2
+    registers:
+    - 163
+    icon: mdi:transmission-tower
+  - name: External CT1 Power
+    l: 1
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    scale:
+    - 1
+    - 10
+    registers:
+    - 170
+    icon: mdi:transmission-tower
+  - name: External CT2 Power
+    l: 2
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    scale:
+    - 1
+    - 10
+    registers:
+    - 171
+    icon: mdi:transmission-tower
+  - name: External Power
+    l: 1
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    scale:
+    - 1
+    - 10
+    registers:
+    - 172
+    icon: mdi:transmission-tower
+- group: Load
+  items:
+  - name: Load L1 Voltage
+    l: 1
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 157
+  - name: Load L2 Voltage
+    l: 2
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 158
+  - name: Load L1 Power
+    l: 1
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    scale:
+    - 1
+    - 10
+    registers:
+    - 176
+  - name: Load L2 Power
+    l: 2
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    scale:
+    - 1
+    - 10
+    registers:
+    - 177
+  - name: Load Power
+    l: 1
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    scale:
+    - 1
+    - 10
+    registers:
+    - 178
+  - name: Load L1 Current
+    l: 1
+    class: current
+    state_class: measurement
+    uom: A
+    scale: 0.01
+    rule: 2
+    registers:
+    - 179
+  - name: Load L2 Current
+    l: 2
+    class: current
+    state_class: measurement
+    uom: A
+    scale: 0.01
+    rule: 2
+    registers:
+    - 180
+  - name: Load Frequency
+    l: 1
+    state_class: measurement
+    uom: Hz
+    scale: 0.01
+    rule: 1
+    registers:
+    - 192
+  - name: Generator
+    name_lookup: io_mode_select
+    update_interval: 30
+    platform: binary_sensor
+    device_class: power
+    rule: 1
+    registers:
+    - 195
+    bit: 0
+  - name: Output Frequency
+    l: 1
+    state_class: measurement
+    uom: Hz
+    scale: 0.01
+    rule: 1
+    registers:
+    - 193
+  - name: Output L1 Voltage
+    l: 1
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 154
+    icon: mdi:transmission-tower
+  - name: Output L2 Voltage
+    l: 2
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 155
+    icon: mdi:transmission-tower
+  - name: Output Voltage
+    l: 2
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 156
+    icon: mdi:transmission-tower
+  - name: Output L1 Current
+    l: 1
+    class: current
+    state_class: measurement
+    uom: A
+    scale: 0.01
+    rule: 2
+    registers:
+    - 164
+  - name: Output L2 Current
+    l: 2
+    class: current
+    uom: A
+    scale: 0.01
+    rule: 2
+    registers:
+    - 165
+  - name: Output L1 Power
+    l: 1
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    registers:
+    - 173
+  - name: Output L2 Power
+    l: 2
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    registers:
+    - 174
+  - name: Power
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 2
+    registers:
+    - 175
+  - name: Power losses
+    description: Includes consumption of the inverter device itself as well AC/DC
+      conversion losses
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 1
+    digits: 0
+    uint: enforce
+    sensors:
+    - registers:
+      - 186
+    - registers:
+      - 187
+    - signed: null
+      registers:
+      - 190
+    - operator: subtract
+      signed: null
+      registers:
+      - 175
+  - name: DC Temperature
+    class: temperature
+    state_class: measurement
+    uom: °C
+    scale: 0.1
+    rule: 2
+    offset: 1000
+    registers:
+    - 90
+  - name: Temperature
+    class: temperature
+    state_class: measurement
+    uom: °C
+    scale: 0.1
+    rule: 2
+    offset: 1000
+    registers:
+    - 91
+  - name: Grid
+    update_interval: 30
+    platform: binary_sensor
+    device_class: power
+    rule: 1
+    registers:
+    - 194
+    icon: mdi:transmission-tower
+  - name: Generator Power
+    name_lookup: io_mode_select
+    class: power
+    state_class: measurement
+    uom: W
+    rule: 1
+    registers:
+    - 166
+  - name: Generator Voltage
+    name_lookup: io_mode_select
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers:
+    - 181
+  - name: Generator Frequency
+    name_lookup: io_mode_select
+    state_class: measurement
+    uom: Hz
+    scale: 0.01
+    rule: 1
+    registers:
+    - 196

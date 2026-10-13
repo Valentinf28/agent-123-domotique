@@ -1,3 +1,10 @@
+## 0.6.1-dev17 — 13 octobre 2026
+
+- Connexion guidée des Deye hybrides monophasés SG0*LP1 avec profil basse tension en lecture seule, issu du connecteur épinglé 25.08.16.
+- Capacité explicite pour empêcher l’envoi de ce profil aux anciennes versions ; récupération d’adresse également prise en charge.
+- La vérification expose les identifiants des mesures du seul connecteur contrôlé, pour terminer leur association côté portail sans confondre les onduleurs.
+- Connexions désactivées et profils personnalisés conservés. Aucun réglage ni courant de charge modifié.
+
 ## 0.6.1-dev9
 
 - Ajout de la configuration guidée de la localisation : coordonnées et fuseau validés, relecture obligatoire, autres réglages conservés.

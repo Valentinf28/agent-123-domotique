@@ -44,7 +44,7 @@ def recover(call, ws, *, config=Path('/homeassistant_config'), discover=discover
         options = entry.get('options', {})
         if entry.get('domain') != 'solarman' or entry.get('disabled_by') or not options.get('logger_serial'):
             continue
-        if options.get('lookup_file') != 'custom/deye_sg01hp3_readonly.yaml':
+        if options.get('lookup_file') not in ('custom/deye_sg01hp3_readonly.yaml','custom/deye_lp1_readonly.yaml'):
             continue
         sensors = [states[r['entity_id']] for r in registry
                    if r.get('config_entry_id') == entry['entry_id'] and not r.get('disabled_by')

@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import urllib.error
 from network_discovery import local_interfaces
-from solar_profile import PROFILE
+from solar_profile import PROFILE, LP1_PROFILE, ensure_profile
 
 
 def settings(payload, adapters):
@@ -26,11 +26,12 @@ def settings(payload, adapters):
     serial = payload.get('loggerSerial')
     if type(serial) is not int or not 0 < serial <= 0xffffffff:
         raise ValueError('Numéro du boîtier solaire invalide.')
-    if payload.get('model') != 'deye_sg01hp3':
+    if payload.get('model') not in ('deye_sg01hp3','deye_lp1'):
         raise ValueError('Ce modèle nécessite un autre profil de connexion.')
     return {'name': f'1.2.3 Home Deye {serial}', 'host': str(host), 'port': 8899,
             'transport': 'tcp', 'logger_serial': serial,
-            'lookup_file': f'custom/{PROFILE}', 'additional_options': {'mod': 1}}
+            'lookup_file': f'custom/{LP1_PROFILE if payload["model"] == "deye_lp1" else PROFILE}',
+            'additional_options': {'mod':0,'phase':1,'mppt':2} if payload['model']=='deye_lp1' else {'mod':1}}
 
 
 def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), data=Path('/data')):
@@ -43,6 +44,7 @@ def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), 
     lock = os.open(data / 'solar-setup.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     with os.fdopen(lock,'w') as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
+        ensure_profile(root, values['lookup_file'].split('/')[-1])
         # Read persisted options solely to avoid modifying/duplicating another setup.
         storage = json.loads((config / '.storage/core.config_entries').read_text())
         stored = storage['data']['entries']
@@ -57,8 +59,10 @@ def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), 
             if len(matching) != 1 or any(matching[0].get('options',{}).get(k) != values[k]
                                        for k in ('host','logger_serial','lookup_file')):
                 raise RuntimeError('Ce boîtier possède déjà une connexion différente. Elle a été conservée ; une vérification est nécessaire.')
-            if matching[0].get('options', {}).get('additional_options', {}).get('mod') != 1:
-                raise RuntimeError('Le profil haute tension de cette connexion doit être corrigé avant validation.')
+            if matching[0].get('options', {}).get('additional_options', {}).get('mod') != values['additional_options']['mod']:
+                raise RuntimeError('Le profil '+('haute tension' if payload['model']=='deye_sg01hp3' else 'basse tension')+' de cette connexion doit être corrigé avant validation.')
+            if matching[0].get('disabled_by') or any(entry.get('disabled_by') for entry in live if entry['entry_id']==matching[0]['entry_id']):
+                raise RuntimeError('Cette ancienne connexion est désactivée. Elle n’a pas été réactivée automatiquement.')
             if matching[0]['entry_id'] not in {entry['entry_id'] for entry in live}:
                 raise RuntimeError('La connexion enregistrée n’est plus active. Vérification nécessaire.')
             return {'connector':'solarman','status':'configured','entryId':matching[0]['entry_id'], 'measurementsVerified':False}

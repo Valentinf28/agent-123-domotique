@@ -34,6 +34,30 @@ class SolarSetupTests(unittest.TestCase):
         self.assertEqual(submitted['additional_options']['mod'],1)
         self.assertEqual(submitted['lookup_file'],'custom/deye_sg01hp3_readonly.yaml')
         self.assertEqual(json.loads(self.storage.read_text()),{'data':{'entries':[]}},'Never edit HA storage')
+    def test_monophase_low_voltage_uses_its_own_readonly_profile(self):
+        call=Mock(side_effect=[[],{'type':'form','step_id':'user','flow_id':'mono'},{'type':'create_entry','result':{'entry_id':'mono1'}}])
+        result=self.run_setup(call,PAYLOAD|{'model':'deye_lp1','loggerSerial':2613499005})
+        self.assertEqual(result['entryId'],'mono1')
+        submitted=call.call_args.kwargs['payload']
+        self.assertEqual(submitted['lookup_file'],'custom/deye_lp1_readonly.yaml')
+        self.assertEqual(submitted['additional_options'],{'mod':0,'phase':1,'mppt':2})
+        self.assertFalse(result['measurementsVerified'])
+        profile=(self.config/'custom_components/solarman/inverter_definitions/custom/deye_lp1_readonly.yaml').read_text()
+        self.assertNotRegex(profile,r'platform:\s*(number|select|switch|time|datetime|button)\b')
+        for measurement in ['PV Power','Load Power','Grid Power','Battery Power','Battery Voltage']:
+            self.assertIn(measurement,profile)
+    def test_disabled_old_connection_is_not_reactivated_or_reported_connected(self):
+        self.storage.write_text(json.dumps({'data':{'entries':[{'domain':'solarman','entry_id':'saved','disabled_by':'user','options':settings(PAYLOAD,ADAPTERS)}]}}))
+        call=Mock(return_value=[{'entry_id':'saved','title':'existing','disabled_by':'user'}])
+        with self.assertRaisesRegex(RuntimeError,'désactivée'):self.run_setup(call)
+        self.assertEqual(call.call_count,1)
+    def test_changed_lp1_profile_is_preserved(self):
+        profile=self.config/'custom_components/solarman/inverter_definitions/custom/deye_lp1_readonly.yaml'
+        profile.write_text('custom profile must be preserved')
+        call=Mock()
+        with self.assertRaisesRegex(RuntimeError,'conservé'):self.run_setup(call,PAYLOAD|{'model':'deye_lp1'})
+        self.assertEqual(profile.read_text(),'custom profile must be preserved')
+        call.assert_not_called()
     def test_lost_response_never_repeats_creation(self):
         call=Mock(side_effect=[[],{'type':'form','step_id':'user','flow_id':'flow1'},TimeoutError()])
         with self.assertRaises(TimeoutError): self.run_setup(call)
