@@ -1,3 +1,11 @@
+## 0.6.1-dev22 — 14 octobre 2026
+
+- Pilote ciblé : recommencer l’installation depuis le portail, avec aperçu exact, confirmation propriétaire et journal durable.
+- Sauvegarde Home Assistant complète vérifiée avant suppression des intégrations d’équipements prises en charge et automatismes modifiables ; historique, identité, réseau et accès distant conservés.
+- Permissions administrateur Home Assistant vérifiées ; accès Supervisor limité au rôle sauvegarde. Modifications concurrentes suspendues pendant l’opération.
+- Reprise explicite après interruption ; aucune suppression automatique au redémarrage et aucune modification directe des fichiers internes Home Assistant.
+- Cette version ne comprend pas les connecteurs expérimentaux des versions locales non publiées après dev17.
+
 ## 0.6.1-dev17 — 13 octobre 2026
 
 - Connexion guidée des Deye hybrides monophasés SG0*LP1 avec profil basse tension en lecture seule, issu du connecteur épinglé 25.08.16.

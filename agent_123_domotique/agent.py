@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1-dev17"
+AGENT_VERSION = "0.6.1-dev22"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -598,6 +598,11 @@ def home_assistant_ws_command(
     command: dict[str, Any],
     timeout: int = 20,
 ) -> dict[str, Any]:
+    from installation_reset import blocks_mutations
+    if blocks_mutations() and command.get("type") not in (
+        "config/entity_registry/list", "config/device_registry/list", "config/area_registry/list",
+        "energy/solar_forecast", "network", "manifest/get", "auth/current_user"):
+        raise RuntimeError("La remise à zéro suspend temporairement les modifications.")
     socket = websocket.create_connection("ws://supervisor/core/websocket", timeout=timeout)
     try:
         auth_required = json.loads(socket.recv())
@@ -706,6 +711,14 @@ def request_json(
     payload: dict[str, Any] | None = None,
     timeout: int = 15,
 ) -> dict[str, Any] | list[Any]:
+    # A reset owns HA writes across relay commands and background maintenance.
+    # Its worker alone may perform the backed-up, journaled removal sequence.
+    if (method.upper() != "GET" and url.startswith(SUPERVISOR_API)
+            and not (method.upper() == "POST" and url.startswith(SUPERVISOR_API + "/states/"))
+            and threading.current_thread().name != "installation-reset"):
+        from installation_reset import blocks_mutations
+        if blocks_mutations():
+            raise RuntimeError("La remise à zéro suspend temporairement les modifications.")
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
@@ -1819,6 +1832,13 @@ def close_ha_tunnel(upstream) -> None:
         pass
 
 
+def queued_command_result(supervisor_token: str, command: dict[str, Any]) -> dict[str, Any]:
+    """Reset commands are direct-session only and never durable-heartbeat jobs."""
+    if command.get("action") == "installation.reset":
+        return {"ok": False, "error": "Cette opération nécessite une session directe."}
+    return relay_command(supervisor_token, command)
+
+
 def relay_command(
     supervisor_token: str,
     message: dict[str, Any],
@@ -1830,7 +1850,24 @@ def relay_command(
     if not isinstance(payload, dict):
         payload = {}
     try:
-        if action == "ha.states":
+        from installation_reset import Reset, blocks_mutations, verify_supervisor_archive
+        if blocks_mutations() and action not in ("installation.reset", "ha.states", "ha.config"):
+            raise RuntimeError("La remise à zéro est en cours. Les commandes sont temporairement suspendues.")
+        if action == "installation.reset":
+            def call_reset(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            def supervisor_reset(path, **kwargs):
+                response = request_json("http://supervisor" + path, token=supervisor_token, **kwargs)
+                if not isinstance(response, dict) or response.get("result") != "ok" or not isinstance(response.get("data"), dict):
+                    raise RuntimeError("La sauvegarde de cette box est indisponible.")
+                return response["data"]
+            result = Reset(call_reset, supervisor_reset, lambda slug: verify_supervisor_archive(slug, supervisor_token),
+                           authorize=lambda: home_assistant_ws_command(supervisor_token, {"type": "auth/current_user"})).command(payload)
+            if result.get("state") in ("backing_up", "removing", "partial", "backup_uncertain"):
+                for tunnel_id in list(HA_TUNNELS):
+                    upstream = HA_TUNNELS.pop(tunnel_id, None)
+                    if upstream: close_ha_tunnel(upstream)
+        elif action == "ha.states":
             result = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
         elif action == "ha.config":
             result = request_json(f"{SUPERVISOR_API}/config", token=supervisor_token)
@@ -2692,6 +2729,8 @@ def relay_command(
             upstream = HA_TUNNELS.get(tunnel_id)
             if not upstream:
                 raise ValueError("Tunnel fermé")
+            if blocks_mutations():
+                raise RuntimeError("La remise à zéro suspend temporairement les commandes.")
             upstream.send(str(payload.get("data", "")))
             result = {"sent": True}
         elif action == "ha.ws.close":
@@ -3046,7 +3085,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             command_results = state.get("command_results", [])
             if command_results:
                 summary["commandResults"] = command_results
@@ -3084,7 +3123,7 @@ def main() -> None:
                 for command in commands[:20]:
                     if not isinstance(command, dict):
                         continue
-                    result = relay_command(supervisor_token, command)
+                    result = queued_command_result(supervisor_token, command)
                     results.append({
                         "id": str(command.get("id", "")),
                         "ok": bool(result.get("ok")),

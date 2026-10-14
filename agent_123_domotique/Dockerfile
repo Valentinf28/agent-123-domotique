@@ -12,6 +12,7 @@ COPY profiles /opt/agent/profiles
 COPY solar_profile.py /opt/agent/solar_profile.py
 COPY solar_measurements.py /opt/agent/solar_measurements.py
 COPY backup_setup.py /opt/agent/backup_setup.py
+COPY installation_reset.py /opt/agent/installation_reset.py
 COPY solar_identity.py /opt/agent/solar_identity.py
 COPY solar_recovery.py /opt/agent/solar_recovery.py
 COPY solar_setup.py /opt/agent/solar_setup.py
