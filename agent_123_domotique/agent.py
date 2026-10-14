@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1-dev23"
+AGENT_VERSION = "0.6.1-dev24"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -715,7 +715,7 @@ def request_json(
     # Its worker alone may perform the backed-up, journaled removal sequence.
     if (method.upper() != "GET" and url.startswith(SUPERVISOR_API)
             and not (method.upper() == "POST" and url.startswith(SUPERVISOR_API + "/states/"))
-            and threading.current_thread().name != "installation-reset"):
+            and threading.current_thread().name not in ("installation-reset", "installation-update")):
         from installation_reset import blocks_mutations
         if blocks_mutations():
             raise RuntimeError("La remise à zéro suspend temporairement les modifications.")
@@ -1834,7 +1834,7 @@ def close_ha_tunnel(upstream) -> None:
 
 def queued_command_result(supervisor_token: str, command: dict[str, Any]) -> dict[str, Any]:
     """Reset commands are direct-session only and never durable-heartbeat jobs."""
-    if command.get("action") in ("installation.reset", "commissioning.activate_ddzy422"):
+    if command.get("action") in ("installation.reset", "installation.update", "commissioning.activate_ddzy422"):
         return {"ok": False, "error": "Cette opération nécessite une session directe."}
     return relay_command(supervisor_token, command)
 
@@ -1851,7 +1851,7 @@ def relay_command(
         payload = {}
     try:
         from installation_reset import Reset, blocks_mutations, verify_supervisor_archive
-        if blocks_mutations() and action not in ("installation.reset", "ha.states", "ha.config"):
+        if blocks_mutations() and action not in ("installation.reset", "installation.update", "ha.states", "ha.config"):
             raise RuntimeError("La remise à zéro est en cours. Les commandes sont temporairement suspendues.")
         if action == "installation.reset":
             def call_reset(path, **kwargs):
@@ -1867,6 +1867,18 @@ def relay_command(
                 for tunnel_id in list(HA_TUNNELS):
                     upstream = HA_TUNNELS.pop(tunnel_id, None)
                     if upstream: close_ha_tunnel(upstream)
+        elif action == "installation.update":
+            from installation_update import Update
+            def call_update(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            def supervisor_update(path, **kwargs):
+                response = request_json("http://supervisor" + path, token=supervisor_token, **kwargs)
+                if not isinstance(response, dict) or response.get("result") != "ok" or not isinstance(response.get("data"), dict):
+                    raise RuntimeError("Le service de mise à jour de cette box est indisponible.")
+                return response["data"]
+            result = Update(call_update, supervisor_update, lambda slug: verify_supervisor_archive(slug, supervisor_token),
+                registry=lambda: home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"}).get("result"),
+                runtime_version=AGENT_VERSION, authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"})).command(payload)
         elif action == "ha.states":
             result = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
         elif action == "ha.config":
@@ -3128,7 +3140,22 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            from installation_update import Update, heartbeat_status
+            update_status = heartbeat_status(AGENT_VERSION)
+            if update_status:
+                def call_update_observe(path, **kwargs):
+                    return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, timeout=3, **kwargs)
+                def supervisor_update_observe(path, **kwargs):
+                    response = request_json("http://supervisor" + path, token=supervisor_token, timeout=3, **kwargs)
+                    if not isinstance(response, dict) or response.get("result") != "ok" or not isinstance(response.get("data"), dict):
+                        raise RuntimeError("La version native de cette box reste à vérifier.")
+                    return response["data"]
+                observer = Update(call_update_observe, supervisor_update_observe, lambda slug: None,
+                    registry=lambda: home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"}, timeout=3).get("result"),
+                    runtime_version=AGENT_VERSION)
+                update_status = observer.observe_heartbeat()
+                if update_status: summary["updateStatus"] = update_status
             command_results = state.get("command_results", [])
             if command_results:
                 summary["commandResults"] = command_results

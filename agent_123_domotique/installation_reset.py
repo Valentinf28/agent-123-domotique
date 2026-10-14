@@ -145,7 +145,7 @@ class Reset:
         self.require_admin()
         # Unique name allows reconciliation after a lost POST response. Never
         # submit another backup for the same operation after an uncertain send.
-        name = 'La Box avant reconfiguration ' + state['operationId']
+        name = getattr(self, 'backup_name', 'La Box avant reconfiguration ') + state['operationId']
         if not state.get('backupSubmitted'):
             state['backupSubmitted'] = True
             self.save(state)
@@ -186,7 +186,7 @@ class Reset:
         try:
             # Process-wide and OS locks prevent a second worker/add-on instance.
             self.data.mkdir(exist_ok=True, parents=True)
-            fd = os.open(self.data / 'installation-reset-worker.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            fd = os.open(self.data / 'installation-maintenance.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
             with os.fdopen(fd, 'w') as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 state = self.load()
@@ -236,6 +236,8 @@ class Reset:
             raise RuntimeError('Le propriétaire de cette maison doit être vérifié.')
         operation = payload.get('operation')
         if operation in ('prepare', 'execute'):
+            from installation_update import busy
+            if busy(self.data):raise RuntimeError('Terminez la mise à jour avant de recommencer l’installation.')
             self.require_admin()
         with _MUTEX:
             state = self.load()
@@ -296,6 +298,8 @@ class Reset:
 def blocks_mutations(data=Path('/data')):
     """Fail closed for corrupt journals, permit read-only diagnostics."""
     path = Path(data) / 'installation-reset.json'
+    from installation_update import busy
+    if busy(data):return True
     if not path.exists(): return False
     try:
         return json.loads(path.read_text()).get('state') in ('backing_up', 'removing', 'partial', 'backup_uncertain')

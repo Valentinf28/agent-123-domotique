@@ -13,6 +13,7 @@ COPY solar_profile.py /opt/agent/solar_profile.py
 COPY solar_measurements.py /opt/agent/solar_measurements.py
 COPY backup_setup.py /opt/agent/backup_setup.py
 COPY installation_reset.py /opt/agent/installation_reset.py
+COPY installation_update.py /opt/agent/installation_update.py
 COPY ddzy422_setup.py /opt/agent/ddzy422_setup.py
 COPY ddzy422_activation.py /opt/agent/ddzy422_activation.py
 COPY micro_setup.py /opt/agent/micro_setup.py

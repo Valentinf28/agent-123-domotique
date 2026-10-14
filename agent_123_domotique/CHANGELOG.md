@@ -1,3 +1,11 @@
+## 0.6.1-dev24 — candidat non publié
+
+- Mise à jour de l’agent depuis le portail, réservée aux versions stables approuvées : consentement propriétaire, opération et commit attendu liés à un aperçu confirmé.
+- Identification stricte de l’entité de mise à jour Home Assistant, du slug et de l’identifiant natif du dépôt connu ; refus des rétrogradations, des mises à jour automatiques et d’un catalogue différent de la cible consentie.
+- Sauvegarde native complète vérifiée avant l’installation. Journal persistant empêchant tout second envoi après une réponse perdue ; confirmation seulement par version effectivement observée et preuve de retour dans le heartbeat authentifié.
+- L’API native installe la version courante du catalogue : aucun verrouillage d’image ni contrôle d’empreinte binaire n’est prétendu. Une version inattendue nécessite une vérification.
+- Première installation du support sur un ancien agent à réaliser par l’opérateur. Aucun déploiement de flotte ni redémarrage n’est exécuté par la préparation de ce candidat.
+
 ## 0.6.1-dev23 — 14 octobre 2026 — candidat non publié
 
 - Compteur monophasé DDZY422-D2 : composant Home Assistant natif local, UDP AT+INVDATA, identité MAC et numéro, trames et CRC vérifiés. Aucun profil Solarman V5 pour ce compteur.
