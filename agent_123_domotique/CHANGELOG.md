@@ -1,3 +1,13 @@
+## 0.6.1-dev23 — 14 octobre 2026 — candidat non publié
+
+- Compteur monophasé DDZY422-D2 : composant Home Assistant natif local, UDP AT+INVDATA, identité MAC et numéro, trames et CRC vérifiés. Aucun profil Solarman V5 pour ce compteur.
+- Neuf capteurs : puissance réseau signée, soutirage/injection, index physiques kWh et mesures électriques. Entités indisponibles sur échec ou données périmées ; continuité des index persistée au rechargement.
+- Installation du composant par paquet vérifié, préservation de tout composant tiers, puis configuration par formulaire natif. Premier chargement nécessitant un redémarrage Home Assistant explicite ; aucun redémarrage déclenché par ce code.
+- Activation native depuis le portail : disponibilité vérifiée en lecture seule ; redémarrage uniquement après confirmation explicite et contrôle administrateur, journal persistant et délai de cinq minutes contre les répétitions après réponse perdue.
+- Vérification en lecture seule limitée à l’entrée et au modèle, données actuelles et identifiants natifs pour l’association des mesures. Disponibilité des connecteurs consultable sans activation.
+- Micro-onduleurs Deye M100G4/M200G4 : profil AC minimal en lecture seule du connecteur Solarman existant, avec contrôle préalable d’identité locale. Aucun réglage d’onduleur ou compteur modifié.
+- Tests unitaires natifs avec interfaces Home Assistant simulées. Chargement réel dans Home Assistant et recette permanente sur les appareils encore à effectuer.
+
 ## 0.6.1-dev22 — 14 octobre 2026
 
 - Pilote ciblé : recommencer l’installation depuis le portail, avec aperçu exact, confirmation propriétaire et journal durable.

@@ -1,0 +1,13 @@
+{
+  "domain": "labox_ddzy422",
+  "name": "La Box — compteur DDZY422-D2 local",
+  "version": "0.1.0",
+  "config_flow": true,
+  "documentation": "https://github.com/Valentinf28/agent-123-domotique",
+  "issue_tracker": "https://github.com/Valentinf28/agent-123-domotique/issues",
+  "codeowners": ["@Valentinf28"],
+  "iot_class": "local_polling",
+  "integration_type": "device",
+  "requirements": [],
+  "dependencies": ["network"]
+}

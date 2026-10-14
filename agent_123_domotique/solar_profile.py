@@ -7,9 +7,12 @@ PROFILE_SHA = 'eeb4983bd4d5b3dfdb22acabfec4efe263e1fe66c70088bd44d1bcd222e9e26b'
 LP1_PROFILE = 'deye_lp1_readonly.yaml'
 LP1_PROFILE_SHA = '19579d03cc63815d3a91cbba513b8c792582a17e3ee344ee618a321595406bad'
 
+MICRO_PROFILE = 'deye_micro_readonly.yaml'
+MICRO_PROFILE_SHA = '54cd372ee2d7f9f89c5869934aec702ab87bc50181277cf581093391ee75236c'
+
 def ensure_profile(root, name):
     """Install only a pinned measurement profile in our managed connector."""
-    expected = {PROFILE: PROFILE_SHA, LP1_PROFILE: LP1_PROFILE_SHA}.get(name)
+    expected = {PROFILE: PROFILE_SHA, LP1_PROFILE: LP1_PROFILE_SHA, MICRO_PROFILE: MICRO_PROFILE_SHA}.get(name)
     if not expected:
         raise RuntimeError('Profil solaire inconnu.')
     root = Path(root)
@@ -32,6 +35,7 @@ def adapt_connector(root):
     root = Path(root)
     ensure_profile(root, PROFILE)
     ensure_profile(root, LP1_PROFILE)
+    ensure_profile(root, MICRO_PROFILE)
     changes = {
         'config_flow.py': [('CONFIGURATION_SCHEMA = {', 'CONFIGURATION_SCHEMA = {\n    vol.Optional("logger_serial"): vol.All(vol.Coerce(int), vol.Range(min=1, max=4294967295)),')],
         'provider.py': [('    async def discover(self):\n', '    async def discover(self):\n        # 1.2.3 Home: explicit logger identity; no logger HTTP reconfiguration.\n        if serial := self.config._options.get("logger_serial"):\n            self.serial = int(serial)\n            return\n')],

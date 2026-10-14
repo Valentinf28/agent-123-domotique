@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1-dev22"
+AGENT_VERSION = "0.6.1-dev23"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1834,7 +1834,7 @@ def close_ha_tunnel(upstream) -> None:
 
 def queued_command_result(supervisor_token: str, command: dict[str, Any]) -> dict[str, Any]:
     """Reset commands are direct-session only and never durable-heartbeat jobs."""
-    if command.get("action") == "installation.reset":
+    if command.get("action") in ("installation.reset", "commissioning.activate_ddzy422"):
         return {"ok": False, "error": "Cette opération nécessite une session directe."}
     return relay_command(supervisor_token, command)
 
@@ -1871,6 +1871,49 @@ def relay_command(
             result = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
         elif action == "ha.config":
             result = request_json(f"{SUPERVISOR_API}/config", token=supervisor_token)
+        elif action == "commissioning.install_ddzy422":
+            from ddzy422_setup import install
+            result = install()
+            # Existing files do not prove that HA has loaded this integration.
+            try:
+                manifest = home_assistant_ws_command(supervisor_token, {"type": "manifest/get", "integration": "labox_ddzy422"})
+                if manifest.get("domain") == "labox_ddzy422" and manifest.get("version") == "0.1.0":
+                    result["restartRequired"] = False
+            except Exception:
+                pass
+        elif action == "commissioning.verify_local_solar":
+            from local_solar_measurements import inspect, readiness
+            owner_scope = payload.get("ownerScope")
+            if not isinstance(owner_scope, str) or len(owner_scope) != 64 or any(c not in "0123456789abcdef" for c in owner_scope):
+                raise ValueError("L’accès propriétaire doit être vérifié.")
+            def call_verify_local_solar(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            if payload.get("operation") == "status":
+                result = readiness(call_verify_local_solar, lambda domain: home_assistant_ws_command(supervisor_token, {"type":"manifest/get", "integration":domain}))
+            elif payload.get("operation") == "verify":
+                registry = home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"})
+                result = inspect(payload.get("entryId"), payload.get("model"), call_verify_local_solar, registry.get("result"))
+            else:
+                raise ValueError("Cette vérification solaire est invalide.")
+        elif action == "commissioning.activate_ddzy422":
+            from ddzy422_activation import activate
+            try:
+                manifest = home_assistant_ws_command(supervisor_token, {"type": "manifest/get", "integration": "labox_ddzy422"})
+            except Exception:
+                manifest = None
+            def call_ddzy_activation(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            result = activate(payload, call_ddzy_activation, loaded_manifest=manifest,
+                authorize=lambda: home_assistant_ws_command(supervisor_token, {"type": "auth/current_user"}))
+        elif action in ("commissioning.configure_ddzy422", "commissioning.configure_deye_micro"):
+            if action == "commissioning.configure_ddzy422":
+                from ddzy422_setup import configure
+            else:
+                from micro_setup import configure
+            network = home_assistant_ws_command(supervisor_token, {"type": "network"})
+            def call_local_solar(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            result = configure(payload, network.get("adapters", []), call_local_solar)
         elif action == "commissioning.configure_location":
             from site_location import configure as configure_location
             result = configure_location(payload, lambda command: home_assistant_ws_command(supervisor_token, command))
@@ -3085,7 +3128,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             command_results = state.get("command_results", [])
             if command_results:
                 summary["commandResults"] = command_results

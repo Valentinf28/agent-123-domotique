@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import urllib.error
 from network_discovery import local_interfaces
-from solar_profile import PROFILE, LP1_PROFILE, ensure_profile
+from solar_profile import PROFILE, LP1_PROFILE, MICRO_PROFILE, ensure_profile
 
 
 def settings(payload, adapters):
@@ -26,12 +26,12 @@ def settings(payload, adapters):
     serial = payload.get('loggerSerial')
     if type(serial) is not int or not 0 < serial <= 0xffffffff:
         raise ValueError('Numéro du boîtier solaire invalide.')
-    if payload.get('model') not in ('deye_sg01hp3','deye_lp1'):
+    if payload.get('model') not in ('deye_sg01hp3','deye_lp1','deye_micro'):
         raise ValueError('Ce modèle nécessite un autre profil de connexion.')
     return {'name': f'1.2.3 Home Deye {serial}', 'host': str(host), 'port': 8899,
             'transport': 'tcp', 'logger_serial': serial,
-            'lookup_file': f'custom/{LP1_PROFILE if payload["model"] == "deye_lp1" else PROFILE}',
-            'additional_options': {'mod':0,'phase':1,'mppt':2} if payload['model']=='deye_lp1' else {'mod':1}}
+            'lookup_file': 'custom/' + {'deye_lp1':LP1_PROFILE,'deye_sg01hp3':PROFILE,'deye_micro':MICRO_PROFILE}[payload['model']],
+            'additional_options': {'mod':0,'phase':1,'mppt':2} if payload['model']=='deye_lp1' else {'mod':1 if payload['model']=='deye_sg01hp3' else 0}}
 
 
 def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), data=Path('/data')):
@@ -70,6 +70,15 @@ def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), 
             raise RuntimeError('Une connexion solaire est en cours d’enregistrement. Réessayez dans quelques instants.')
         journal = data / f'solar-{values["logger_serial"]}.json'
         state = json.loads(journal.read_text()) if journal.exists() else {}
+        # Explicit reconfiguration after our verified reset is distinct from a
+        # lost creation response. Only the exact removed HA entry retires a flow.
+        reset_path = data / 'installation-reset.json'
+        reset_state = json.loads(reset_path.read_text()) if reset_path.exists() else {}
+        if (state.get('entryId') and reset_state.get('state') == 'completed'
+                and state['entryId'] in reset_state.get('removedEntryIds', [])
+                and not any(e.get('entry_id') == state['entryId'] for e in live)):
+            state = {}
+
         if state and state.get('settings') != values:
             raise RuntimeError('Une autre configuration de ce boîtier est déjà en cours. Vérification nécessaire.')
         def save(value):

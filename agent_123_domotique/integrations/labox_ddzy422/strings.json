@@ -1,0 +1,24 @@
+{
+  "title": "La Box — compteur DDZY422-D2 local",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connecter le compteur local",
+        "description": "Lecture seule du compteur monophasé. Le numéro et l’adresse MAC doivent correspondre au compteur.",
+        "data": {
+          "host": "Adresse IP locale",
+          "logger_serial": "Numéro d’enregistreur",
+          "mac": "Adresse MAC"
+        }
+      }
+    },
+    "error": {
+      "invalid_settings": "Vérifiez les informations et le réseau local du compteur.",
+      "cannot_connect": "Le compteur ne répond pas à la lecture locale."
+    },
+    "abort": {
+      "already_configured": "Ce compteur est déjà configuré.",
+      "identity_mismatch": "Ce numéro est associé à une autre adresse MAC."
+    }
+  }
+}

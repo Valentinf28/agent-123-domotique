@@ -1,0 +1,15 @@
+{
+  "domain": "labox_ddzy422",
+  "version": "0.1.0",
+  "files": {
+    "PROTOCOL.md": "ee5d382782f8302f15f9b66767de8ae23547ac07168a6788e97e15cc6ba1761b",
+    "__init__.py": "0a02fd683f48a00f9601711b68dd204f67278227b6f60bb49f78e6f9b67c5f88",
+    "config_flow.py": "96dbd9efad61d6e3adb0866c33a5c55b82129ffdac81e1fc48c8406728550374",
+    "const.py": "834e5288ddfe524b933544a396a2aa213fad2be29e2aed5783d65f6fe1813051",
+    "coordinator.py": "87923acbf77da27819b20479aee3caf1cf67f13893f3fabc684eee9767efd93d",
+    "manifest.json": "a5fd485a2e3c448f680725cea5606574825a53459d1197b652f76410e01ad519",
+    "sensor.py": "68f2e1cfac7d5c46416cdd6f2c184521fa75ce1192a0d58abfdf68b65a5214a0",
+    "strings.json": "43310d1639fa1e86744d4bb5a39fbff8818cc1200c2dfb1801eb32a74fde5e9e",
+    "transport.py": "69591a40a57c9d3a88fe1708af96472e63742edf749c6bdfcf3baa2efac9104b"
+  }
+}

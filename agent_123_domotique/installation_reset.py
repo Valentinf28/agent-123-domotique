@@ -17,7 +17,7 @@ import urllib.parse
 TTL = 15 * 60
 # Only equipment integrations explicitly supported by the product are reset.
 # Infrastructure, backup destinations and unknown integrations are preserved.
-EQUIPMENT_DOMAINS = frozenset('solarman deye shelly tuya overkiz somfy midea_ac midea lan_midea lektrico ocpp easee wallbox goecharger go_e_charger open_evse openevse zaptec tesla tesla_custom tesla_fleet nuki mqtt esphome zha zwave_js hue matter homekit_controller homekit_device switchbot tado netatmo daikin melcloud panasonic_cc lg_thinq smartthings broadlink modbus goodwe growatt_server huawei_solar fronius sma solaredge enphase_envoy hoymiles open_dtu apsystems aioshelly ms_pa mspa'.split())
+EQUIPMENT_DOMAINS = frozenset('labox_ddzy422 solarman deye shelly tuya overkiz somfy midea_ac midea lan_midea lektrico ocpp easee wallbox goecharger go_e_charger open_evse openevse zaptec tesla tesla_custom tesla_fleet nuki mqtt esphome zha zwave_js hue matter homekit_controller homekit_device switchbot tado netatmo daikin melcloud panasonic_cc lg_thinq smartthings broadlink modbus goodwe growatt_server huawei_solar fronius sma solaredge enphase_envoy hoymiles open_dtu apsystems aioshelly ms_pa mspa'.split())
 # mqtt and radio coordinators can carry many devices; the exact entry is listed
 # in the preview, while their add-ons and network stay untouched.
 _WORKERS = {}
