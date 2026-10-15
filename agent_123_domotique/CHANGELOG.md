@@ -1,3 +1,7 @@
+## 0.6.1-dev29
+
+- Autorise un code d’installation vide pour le mode de première activation par QR, en conservant la validation des codes classiques.
+
 ## 0.6.1-dev28
 
 - Inclut les deux modules de première activation dans l’image installable et aligne la version annoncée sur le paquet.

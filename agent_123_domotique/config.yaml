@@ -1,6 +1,6 @@
 name: "Agent 1.2.3 Domotique"
 description: "Prépare, diagnostique et rattache cette maison au portail technicien."
-version: "0.6.1-dev28"
+version: "0.6.1-dev29"
 slug: "agent_123_domotique"
 url: "https://123panneaux-solaires.fr"
 init: false
@@ -35,7 +35,7 @@ schema:
   portal_url: url
   factory_id: str
   factory_token: password
-  enrollment_code: "match(^[A-Z2-9]{8}$)"
+  enrollment_code: "match(^([A-Z2-9]{8})?$)"
   restore_identity: password
   heartbeat_seconds: "int(5,300)"
   relay_url: str

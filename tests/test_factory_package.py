@@ -19,6 +19,13 @@ class FactoryPackageTests(unittest.TestCase):
                 'import sys;sys.path.insert(0,sys.argv[1]);import factory_activation,factory_stage', directory],
                 check=True, capture_output=True)
 
+    def test_factory_options_allow_empty_legacy_enrollment_code(self):
+        schema = re.search(r'enrollment_code: "match\(([^\n]+)\)"', (ROOT / 'config.yaml').read_text()).group(1)
+        self.assertIsNotNone(re.fullmatch(schema, ''))
+        self.assertIsNotNone(re.fullmatch(schema, 'ABCD2345'))
+        for invalid in ('123', 'lowercas', ' ABCD2345', 'ABCDEFGHI'):
+            self.assertIsNone(re.fullmatch(schema, invalid))
+
     def test_runtime_version_matches_installable_version(self):
         assignments = [node for node in ast.parse((ROOT / 'agent.py').read_text()).body
             if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'AGENT_VERSION' for t in node.targets)]
