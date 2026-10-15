@@ -14,7 +14,7 @@ class AgentTuyaTransportTests(unittest.TestCase):
   self.assertFalse(result['ok']);live.assert_not_called();self.assertNotIn('private',str(result))
  def test_live_flow_uses_only_native_ha_endpoint_and_registry(self):
   module=types.ModuleType('tuya_setup')
-  def configure(payload,call,registry):
+  def configure(payload,call,registry,homes_reader):
    call('/config/config_entries/flow',method='POST',payload={'handler':'tuya'});self.assertEqual(registry({'type':'config/entity_registry/list'}),[]);return {'connector':'tuya','status':'user_code','devicesVerified':False}
   module.configure=configure
   with patch.dict(sys.modules,{'tuya_setup':module}),patch.object(agent,'request_json') as http,patch.object(agent,'home_assistant_ws_command') as ws:

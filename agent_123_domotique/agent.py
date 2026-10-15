@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1"
+AGENT_VERSION = "0.6.2"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1907,13 +1907,14 @@ def relay_command(
                 runtime_version=AGENT_VERSION, authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"})).command(payload)
         elif action == "commissioning.tuya":
             from tuya_setup import configure as configure_tuya
+            from tuya_homes import read_homes
             def call_tuya(path, **kwargs):
                 return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
             def tuya_registry(command):
                 result = home_assistant_ws_command(supervisor_token, command)
                 return result.get("result") if isinstance(result, dict) and "result" in result else result
             try:
-                result = configure_tuya(payload, call_tuya, registry=tuya_registry)
+                result = configure_tuya(payload, call_tuya, registry=tuya_registry, homes_reader=read_homes)
             except Exception:
                 raise RuntimeError("La connexion Tuya n’a pas abouti. Reprenez la même étape ou demandez de l’aide.") from None
         elif action == "ha.states":

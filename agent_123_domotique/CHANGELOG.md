@@ -1,3 +1,8 @@
+## 0.6.2
+
+- Choix de la maison Smart Life / Tuya avant l’ajout des appareils.
+- Lecture seule des appartenances depuis la box ; aucune nouvelle authentification ni modification des jetons natifs.
+
 ## 0.6.1
 
 - Restore guided Tuya commissioning and include its connector in the image.

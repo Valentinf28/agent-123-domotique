@@ -28,7 +28,7 @@ def _entries(call):
             and isinstance(row.get('entry_id'), str) and SAFE_ID.fullmatch(row['entry_id'])]
 
 
-def _devices(entries, call, registry):
+def _devices(entries, call, registry, membership=None):
     if registry is None:
         return []
     ids = {entry['entryId'] for entry in entries if not entry['disabled']}
@@ -63,7 +63,12 @@ def _devices(entries, call, registry):
         group = groups.setdefault(device_id, {'id':device_id,'name':name,
             'brand':str(raw_device.get('manufacturer') or 'Tuya')[:80],
             'model':str(raw_device.get('model') or 'Appareil Smart Life')[:120],
-            'room':area_map.get(raw_device.get('area_id'), ''), 'entities':[]})
+            'room':area_map.get(raw_device.get('area_id'), ''), 'homeIds':[], 'entities':[]})
+        for identifier in raw_device.get('identifiers', []):
+            if isinstance(identifier, (list, tuple)) and len(identifier) == 2 and identifier[0] == 'tuya':
+                for home_id in (membership or {}).get((entity['config_entry_id'], identifier[1]), []):
+                    if home_id not in group['homeIds']:
+                        group['homeIds'].append(home_id)
         state = str(raw_state.get('state', 'unavailable'))[:80]
         group['entities'].append({'id':entity_id,'name':str(attributes.get('friendly_name') or entity_id)[:120],
             'domain':domain,'state':state,'available':state.lower() not in ('unknown','unavailable',''),
@@ -73,9 +78,18 @@ def _devices(entries, call, registry):
     return list(groups.values())[:100]
 
 
-def _view(entries, call=None, registry=None):
+def _view(entries, call=None, registry=None, homes_reader=None):
+    homes, membership, status = [], {}, 'unavailable'
+    if entries and homes_reader is not None:
+        try:
+            homes, membership = homes_reader(entries)
+            status = 'ready'
+        except Exception:
+            # No SDK/credential errors or exception strings leave the box.
+            pass
     return {'connector': 'tuya', 'status': 'existing' if entries else 'not_configured',
-            'entries': entries, 'devicesVerified': False, 'devices':_devices(entries, call, registry) if entries else []}
+            'entries': entries, 'devicesVerified': False, 'homesStatus':status, 'homes':homes,
+            'devices':_devices(entries, call, registry, membership) if entries else []}
 
 
 def _form(flow):
@@ -100,7 +114,7 @@ def _form(flow):
     return result
 
 
-def configure(payload, call, *, data=Path('/data'), now=None, registry=None):
+def configure(payload, call, *, data=Path('/data'), now=None, registry=None, homes_reader=None):
     """Allowed operations: status/start/code/confirm/cancel/reload.
 
     The portal supplies ownerScope, never the browser. Session nonce stays only
@@ -129,7 +143,7 @@ def configure(payload, call, *, data=Path('/data'), now=None, registry=None):
             temporary.replace(journal)
         entries = _entries(call)
         if operation == 'status':
-            return _view(entries, call, registry)
+            return _view(entries, call, registry, homes_reader)
         if operation == 'reload':
             entry_id = payload.get('entryId')
             selected = next((entry for entry in entries if entry['entryId'] == entry_id), None)
@@ -137,7 +151,7 @@ def configure(payload, call, *, data=Path('/data'), now=None, registry=None):
                 raise ValueError('Choisissez une connexion Tuya active de cette box.')
             # Native integration reload imports new devices; no service action.
             call(f'/config/config_entries/entry/{entry_id}/reload', method='POST', payload={})
-            return _view(_entries(call), call, registry)
+            return _view(_entries(call), call, registry, homes_reader)
         # Expired guided logins may be abandoned by a refreshed browser or a
         # former owner. Only start can retire an expired known Tuya flow; never
         # resumes or confirms it. A lost *start* had not received any User Code.
@@ -173,7 +187,7 @@ def configure(payload, call, *, data=Path('/data'), now=None, registry=None):
         if state and now >= state.get('expiresAt', 0):
             raise RuntimeError('Le délai de cette connexion est écoulé. Annulez cette session puis recommencez.')
         if operation == 'start' and entries:
-            return _view(entries, call, registry)
+            return _view(entries, call, registry, homes_reader)
         if operation == 'start' and not state:
             # Persist before HA call. A lost response must not start another flow.
             state = {'ownerScope':owner, 'session':session, 'expiresAt':now+TTL, 'starting':True}
@@ -210,5 +224,5 @@ def configure(payload, call, *, data=Path('/data'), now=None, registry=None):
             if not entry_id or not any(row['entryId'] == entry_id for row in actual):
                 raise RuntimeError('La connexion Tuya créée n’a pas encore été confirmée par la box.')
             save({})
-            return {'connector':'tuya','status':'configured','entries':actual,'devicesVerified':False,'devices':_devices(actual,call,registry)}
+            return {**_view(actual,call,registry,homes_reader), 'status':'configured'}
         return _form(result)
