@@ -1,3 +1,7 @@
+# 0.6.1-dev25 — activation client sans ordinateur
+
+Activation sortante des unités préparées en atelier par code privé, association par le propriétaire depuis le portail et reprise durable sans remplacement d’une identité existante. Voir FACTORY-ACTIVATION.md. Qualification sur box neuve requise ; aucune mise à jour automatique des box existantes.
+
 ## 0.6.1-dev24 — candidat non publié
 
 - Mise à jour de l’agent depuis le portail, réservée aux versions stables approuvées : consentement propriétaire, opération et commit attendu liés à un aperçu confirmé.

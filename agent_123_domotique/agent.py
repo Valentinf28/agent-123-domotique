@@ -588,9 +588,17 @@ def read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
 
 def write_state(state: dict[str, Any]) -> None:
     temporary = STATE_PATH.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state), encoding="utf-8")
-    os.chmod(temporary, 0o600)
+    with temporary.open("w", encoding="utf-8") as file:
+        os.chmod(temporary, 0o600)
+        json.dump(state, file)
+        file.flush()
+        os.fsync(file.fileno())
     temporary.replace(STATE_PATH)
+    descriptor = os.open(STATE_PATH.parent, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def home_assistant_ws_command(
@@ -3057,8 +3065,10 @@ def main() -> None:
     supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not supervisor_token:
         raise SystemExit("Accès interne à Home Assistant indisponible")
+    from factory_activation import configured as factory_configured, poll as factory_poll
     state = restore_identity(portal_url, str(options.get("restore_identity", "")))
-    if not enrollment_code and not state.get("token") and not (relay_url and relay_house_id and relay_token):
+    factory_ready = factory_configured(options) if not state.get("token") else False
+    if not factory_ready and not enrollment_code and not state.get("token") and not (relay_url and relay_house_id and relay_token):
         raise SystemExit("Configuration incomplète : code d'installation ou liaison VPS requis")
 
     if portal_url:
@@ -3119,7 +3129,7 @@ def main() -> None:
         ).start()
     else:
         log("Liaison VPS non configurée")
-    if not enrollment_code and not state.get("token"):
+    if not factory_ready and not enrollment_code and not state.get("token"):
         log("Portail technicien non enrôlé ; liaison VPS uniquement")
         while True:
             time.sleep(300)
@@ -3127,7 +3137,13 @@ def main() -> None:
         cycle_started_at = time.monotonic()
         try:
             if not state.get("token"):
-                state = enroll(portal_url, enrollment_code)
+                if factory_ready:
+                    state = factory_poll(options, lambda: read_json(STATE_PATH, {}), write_state, request_json)
+                    if not state.get("token"):
+                        time.sleep(10)
+                        continue
+                else:
+                    state = enroll(portal_url, enrollment_code)
             try:
                 publish_local_configuration(supervisor_token, state.get("agent_id"))
             except Exception:
