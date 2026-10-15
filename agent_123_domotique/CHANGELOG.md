@@ -1,3 +1,7 @@
+# 0.6.1-dev27 — reprise atelier protégée
+
+Empêche les tâches de fond de réécrire l’ancienne identité après une remise en première activation. Le blocage de configuration est levé uniquement quand la nouvelle unité est associée.
+
 # 0.6.1-dev26 — préparation de recette première activation
 
 Après remise à zéro avec sauvegarde vérifiée : préparation séparée des options atelier, retrait confirmé de l’ancienne identité locale et redémarrage de l’agent en attente d’activation. Commandes directes liées au propriétaire et à l’opération. Aucune remise à zéro du système Home Assistant ni revendication de cession certifiée.

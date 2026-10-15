@@ -47,7 +47,9 @@ def command(payload,reset,supervisor,call,*,data=Path('/data'),restart=True,now=
             if not isinstance(options,dict):raise RuntimeError('Les options de cette box sont indisponibles.')
             options.update(portal_url=PORTAL,factory_id=payload['factoryId'],factory_token=payload['factoryToken'],enrollment_code='',restore_identity='',relay_house_id='',relay_token='',pool_camera_enabled=False,pool_camera_url='http://camera-traitement-piscine.local:8081/')
             state={key:payload[key] for key in ('operationId','ownerScope','factoryId','factoryToken','resetOperationId')}
-            state.update(state='preparing',backupSlug=previous['backupSlug'],options=options,webdavEntries=webdav,expiresAt=now+900)
+            old_state=json.loads((data/'agent-state.json').read_text())
+            if not isinstance(old_state.get('token'),str):raise RuntimeError('L’identité actuelle de la box doit être vérifiée.')
+            state.update(state='preparing',previousTokenHash=hashlib.sha256(old_state['token'].encode()).hexdigest(),backupSlug=previous['backupSlug'],options=options,webdavEntries=webdav,expiresAt=now+900)
             save(path,state)
             supervisor('/addons/self/options',method='POST',payload={'options':options})
             observed=supervisor('/addons/self/info').get('options',{})
@@ -87,3 +89,13 @@ def command(payload,reset,supervisor,call,*,data=Path('/data'),restart=True,now=
                 except Exception:pass  # A lost restart acknowledgement never submits a second request.
             threading.Thread(target=reboot,daemon=True,name='factory-handoff').start()
         return public()
+
+
+def retired_identity(state,data=Path('/data')):
+    journal=Path(data)/'factory-stage.json'
+    if not journal.exists():return False
+    try:
+        staged=json.loads(journal.read_text())
+        if staged.get('state') not in ('committing','committed'):return False
+        return bool(state.get('pending_enrollment') or (isinstance(state.get('token'),str) and hashlib.sha256(state['token'].encode()).hexdigest()==staged.get('previousTokenHash')))
+    except Exception:return True

@@ -300,7 +300,14 @@ def blocks_mutations(data=Path('/data')):
     factory = Path(data) / 'factory-stage.json'
     if factory.exists():
         try:
-            if json.loads(factory.read_text()).get('state') in ('preparing','prepared','committing'): return True
+            staged=json.loads(factory.read_text())
+            if staged.get('state') in ('preparing','prepared','committing'): return True
+            if staged.get('state')=='committed':
+                identity=Path(data)/'agent-state.json'
+                if not identity.exists():return True
+                current=json.loads(identity.read_text())
+                from factory_stage import retired_identity
+                if not current.get('token') or retired_identity(current,data):return True
         except Exception: return True
     path = Path(data) / 'installation-reset.json'
     from installation_update import busy

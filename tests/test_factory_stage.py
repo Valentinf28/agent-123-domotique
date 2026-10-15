@@ -10,7 +10,7 @@ class Reset:
  def snapshot(self):return {'entries':self.entries,'automations':[],'blockedReasons':[],'preservedEntries':[{'domain':'webdav','entryId':'old-backup'}]}
  def verify_archive(self,slug):return {'verified':self.backup}
 class Tests(unittest.TestCase):
- def setUp(self):self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.data=Path(self.tmp.name);self.options={'enrollment_code':'OLD','restore_identity':'OLD','relay_house_id':'old','relay_token':'old','pool_camera_enabled':True};self.calls=[];self.reset=Reset();self.body={'operation':'factory_prepare','operationId':U,'resetOperationId':R,'ownerScope':O,'factoryId':'factory_'+'b'*32,'factoryToken':'c'*64,'confirmed':True}
+ def setUp(self):self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.data=Path(self.tmp.name);(self.data/'agent-state.json').write_text('{"token":"old"}');self.options={'enrollment_code':'OLD','restore_identity':'OLD','relay_house_id':'old','relay_token':'old','pool_camera_enabled':True};self.calls=[];self.reset=Reset();self.body={'operation':'factory_prepare','operationId':U,'resetOperationId':R,'ownerScope':O,'factoryId':'factory_'+'b'*32,'factoryToken':'c'*64,'confirmed':True}
  def supervisor(self,path,**kwargs):
   self.calls.append((path,kwargs));
   if path.endswith('/options'):self.options=kwargs['payload']['options'];return {}
@@ -36,6 +36,10 @@ class Tests(unittest.TestCase):
   self.run_stage(self.body)
   for patch in [{'ownerScope':'f'*64},{'confirmed':False},{'operationId':R}]:
    with self.assertRaises((RuntimeError,ValueError)):self.run_stage({'operation':'factory_commit','operationId':U,'ownerScope':O,'confirmed':True,**patch})
+ def test_old_background_identity_cannot_return_after_commit(self):
+  from factory_stage import retired_identity
+  self.run_stage(self.body);self.run_stage({'operation':'factory_commit','operationId':U,'ownerScope':O,'confirmed':True})
+  self.assertTrue(retired_identity({'token':'old'},self.data));self.assertFalse(retired_identity({'token':'new'},self.data));self.assertFalse(retired_identity({'pending_factory_activation':{'token':'new'}},self.data))
  def test_lost_options_response_reconciles_same_preparation(self):
   def lost(path,**kw):
    value=self.supervisor(path,**kw)

@@ -587,6 +587,9 @@ def read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
 
 
 def write_state(state: dict[str, Any]) -> None:
+    from factory_stage import retired_identity
+    if retired_identity(state, STATE_PATH.parent):
+        raise RuntimeError("L’ancienne identité de cette box a été retirée.")
     temporary = STATE_PATH.with_suffix(".tmp")
     with temporary.open("w", encoding="utf-8") as file:
         os.chmod(temporary, 0o600)
@@ -722,7 +725,7 @@ def request_json(
     # A reset owns HA writes across relay commands and background maintenance.
     # Its worker alone may perform the backed-up, journaled removal sequence.
     if (method.upper() != "GET" and url.startswith(SUPERVISOR_API)
-            and not (method.upper() == "POST" and url.startswith(SUPERVISOR_API + "/states/"))
+            and not (method.upper() == "POST" and url.startswith(SUPERVISOR_API + "/states/") and not url.startswith(SUPERVISOR_API + "/states/sensor.home_local_configuration"))
             and threading.current_thread().name not in ("installation-reset", "installation-update")):
         from installation_reset import blocks_mutations
         if blocks_mutations():
