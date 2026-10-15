@@ -1,3 +1,7 @@
+## 0.6.1-dev28
+
+- Inclut les deux modules de première activation dans l’image installable et aligne la version annoncée sur le paquet.
+
 # 0.6.1-dev27 — reprise atelier protégée
 
 Empêche les tâches de fond de réécrire l’ancienne identité après une remise en première activation. Le blocage de configuration est levé uniquement quand la nouvelle unité est associée.
