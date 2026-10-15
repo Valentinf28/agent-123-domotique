@@ -1,3 +1,9 @@
+## 0.6.3
+
+- Ajout local des Shelly Wi-Fi/Ethernet et capteurs Shelly BLU via les découvertes natives de la box.
+- Confirmation des identités, authentification locale et clés BLE transmises uniquement en direct.
+- Exposition des sorties, thermostats, états d’ouverture et mesures réelles de puissance/énergie.
+
 ## 0.6.2
 
 - Choix de la maison Smart Life / Tuya avant l’ajout des appareils.
