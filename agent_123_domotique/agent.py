@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.3"
+AGENT_VERSION = "0.6.4"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1848,7 +1848,7 @@ def close_ha_tunnel(upstream) -> None:
 
 def queued_command_result(supervisor_token: str, command: dict[str, Any]) -> dict[str, Any]:
     """Reset commands are direct-session only and never durable-heartbeat jobs."""
-    if command.get("action") in ("installation.reset", "installation.update", "commissioning.activate_ddzy422", "commissioning.tuya", "commissioning.shelly"):
+    if command.get("action") in ("installation.reset", "installation.update", "commissioning.activate_ddzy422", "commissioning.tuya", "commissioning.shelly", "commissioning.equipment"):
         return {"ok": False, "error": "Cette opération nécessite une session directe."}
     return relay_command(supervisor_token, command)
 
@@ -1905,6 +1905,19 @@ def relay_command(
             result = Update(call_update, supervisor_update, lambda slug: verify_supervisor_archive(slug, supervisor_token),
                 registry=lambda: home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"}).get("result"),
                 runtime_version=AGENT_VERSION, authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"})).command(payload)
+        elif action == "commissioning.equipment":
+            from equipment_setup import configure as configure_equipment
+            def call_equipment(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            def equipment_registry(command):
+                response = home_assistant_ws_command(supervisor_token, command)
+                if not isinstance(response, dict) or response.get("success") is False:
+                    raise RuntimeError("La connexion native n’a pas répondu.")
+                return response.get("result") if "result" in response else response
+            try:
+                result = configure_equipment(payload, call_equipment, registry=equipment_registry)
+            except Exception:
+                raise RuntimeError("La connexion n’a pas abouti. Actualisez avant de reprendre.") from None
         elif action == "commissioning.shelly":
             from shelly_setup import configure as configure_shelly
             def call_shelly(path, **kwargs):
@@ -3197,7 +3210,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             from installation_update import Update, heartbeat_status
             update_status = heartbeat_status(AGENT_VERSION)
             if update_status:

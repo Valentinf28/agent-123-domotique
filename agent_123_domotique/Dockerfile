@@ -11,6 +11,7 @@ ENV PATH="/opt/tuya-sdk/bin:$PATH"
 
 COPY tuya_homes.py /opt/agent/tuya_homes.py
 COPY shelly_setup.py /opt/agent/shelly_setup.py
+COPY equipment_setup.py /opt/agent/equipment_setup.py
 COPY tuya_setup.py /opt/agent/tuya_setup.py
 COPY pool_camera.py /opt/agent/pool_camera.py
 COPY network_discovery.py /opt/agent/network_discovery.py

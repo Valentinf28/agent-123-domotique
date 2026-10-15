@@ -1,3 +1,10 @@
+## 0.6.4
+
+- Parcours natifs locaux Hue, WiZ, TP-Link, SwitchBot, Reolink et Enphase.
+- Association Zigbee limitée à 60 s ; partage Matter d’appareils déjà en réseau.
+- Lecture des appareils Netatmo, Tado et Home Connect déjà connectés. Aucune nouvelle autorisation OAuth générique.
+- Sessions liées au propriétaire, aucun identifiant enregistré par le parcours, aucun actionnement pendant l’ajout.
+
 ## 0.6.3
 
 - Ajout local des Shelly Wi-Fi/Ethernet et capteurs Shelly BLU via les découvertes natives de la box.
