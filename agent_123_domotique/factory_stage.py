@@ -99,3 +99,17 @@ def retired_identity(state,data=Path('/data')):
         if staged.get('state') not in ('committing','committed'):return False
         return bool(state.get('pending_enrollment') or (isinstance(state.get('token'),str) and hashlib.sha256(state['token'].encode()).hexdigest()==staged.get('previousTokenHash')))
     except Exception:return True
+
+
+def permits_cleanup_request(path, method, data=Path('/data')):
+    """Allow only the exact former backup entry and display state owned by this handoff."""
+    try:
+        state=json.loads((Path(data)/'factory-stage.json').read_text())
+        if state.get('state')=='committing' and method.upper()=='DELETE':
+            return path=='/states/sensor.home_local_configuration' or any(
+                path=='/config/config_entries/entry/'+identifier
+                for identifier in state.get('webdavEntries',[]) if isinstance(identifier,str))
+        return (state.get('state')=='committed' and state.get('haRestartRequired') is True
+                and method.upper()=='POST' and path=='/services/homeassistant/restart')
+    except Exception:
+        return False

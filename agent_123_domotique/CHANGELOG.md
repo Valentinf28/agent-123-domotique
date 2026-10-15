@@ -1,3 +1,7 @@
+## 0.6.1-dev30
+
+- Autorise exclusivement le nettoyage interne du rattachement de sauvegarde enregistré dans la préparation ; les autres commandes restent suspendues pendant la remise à zéro.
+
 ## 0.6.1-dev29
 
 - Autorise un code d’installation vide pour le mode de première activation par QR, en conservant la validation des codes classiques.

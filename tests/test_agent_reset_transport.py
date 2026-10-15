@@ -29,6 +29,17 @@ class ResetTransportTests(unittest.TestCase):
   with patch.object(reset,'blocks_mutations',return_value=True),patch.object(a.urllib.request,'urlopen') as request:
    with self.assertRaises(RuntimeError):a.request_json(a.SUPERVISOR_API+'/services/automation/reload',method='POST',payload={})
   request.assert_not_called()
+ def test_only_factory_callback_can_enter_owned_cleanup(self):
+  import factory_stage
+  with patch.object(reset,'blocks_mutations',return_value=True),patch.object(factory_stage,'permits_cleanup_request',return_value=True),patch.object(a.urllib.request,'urlopen') as request:
+   with self.assertRaises(RuntimeError):a.request_json(a.SUPERVISOR_API+'/config/config_entries/entry/old',method='DELETE')
+   request.assert_not_called()
+   request.return_value.__enter__.return_value.read.return_value=b'{}'
+   a.request_json(a.SUPERVISOR_API+'/config/config_entries/entry/old',method='DELETE',_factory_cleanup=True)
+   request.assert_called_once()
+  with patch.object(reset,'blocks_mutations',return_value=True),patch.object(factory_stage,'permits_cleanup_request',return_value=False),patch.object(a.urllib.request,'urlopen') as request:
+   with self.assertRaises(RuntimeError):a.request_json(a.SUPERVISOR_API+'/services/switch/turn_on',method='POST',_factory_cleanup=True)
+   request.assert_not_called()
  def test_mutating_native_ws_never_opens_during_reset(self):
   with patch.object(reset,'blocks_mutations',return_value=True),patch.object(a.websocket,'create_connection',create=True) as request:
    with self.assertRaises(RuntimeError):a.home_assistant_ws_command('token',{'type':'config/config_entries/update'})

@@ -48,3 +48,18 @@ class Tests(unittest.TestCase):
   with self.assertRaises(TimeoutError):command(self.body,self.reset,lost,self.call,data=self.data,restart=False,now=100)
   self.assertEqual(self.run_stage(self.body)['state'],'prepared')
 if __name__=='__main__':unittest.main()
+
+class CleanupPermissions(unittest.TestCase):
+ def test_cleanup_is_limited_to_recorded_resources_and_phase(self):
+  from factory_stage import permits_cleanup_request
+  with tempfile.TemporaryDirectory() as directory:
+   data=Path(directory);journal=data/'factory-stage.json'
+   self.assertFalse(permits_cleanup_request('/config/config_entries/entry/old','DELETE',data))
+   journal.write_text(json.dumps({'state':'committing','webdavEntries':['old']}))
+   self.assertTrue(permits_cleanup_request('/config/config_entries/entry/old','DELETE',data))
+   self.assertTrue(permits_cleanup_request('/states/sensor.home_local_configuration','DELETE',data))
+   for path,method in [('/config/config_entries/entry/other','DELETE'),('/services/switch/turn_on','POST'),('/services/homeassistant/restart','POST'),('/config/config_entries/entry/old','POST')]:
+    self.assertFalse(permits_cleanup_request(path,method,data))
+   journal.write_text(json.dumps({'state':'committed','haRestartRequired':True}))
+   self.assertTrue(permits_cleanup_request('/services/homeassistant/restart','POST',data))
+   self.assertFalse(permits_cleanup_request('/config/config_entries/entry/old','DELETE',data))

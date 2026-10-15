@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.1-dev29"
+AGENT_VERSION = "0.6.1-dev30"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -721,6 +721,7 @@ def request_json(
     token: str | None = None,
     payload: dict[str, Any] | None = None,
     timeout: int = 15,
+    _factory_cleanup: bool = False,
 ) -> dict[str, Any] | list[Any]:
     # A reset owns HA writes across relay commands and background maintenance.
     # Its worker alone may perform the backed-up, journaled removal sequence.
@@ -729,7 +730,9 @@ def request_json(
             and threading.current_thread().name not in ("installation-reset", "installation-update")):
         from installation_reset import blocks_mutations
         if blocks_mutations():
-            raise RuntimeError("La remise à zéro suspend temporairement les modifications.")
+            from factory_stage import permits_cleanup_request
+            if not (_factory_cleanup and permits_cleanup_request(url[len(SUPERVISOR_API):], method)):
+                raise RuntimeError("La remise à zéro suspend temporairement les modifications.")
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
@@ -1881,7 +1884,9 @@ def relay_command(
                     if not isinstance(response, dict) or response.get("result") != "ok":
                         raise RuntimeError("Préparation atelier non confirmée.")
                     return response.get("data") or {}
-                result = factory_stage_command(payload, reset, supervisor_factory, call_reset)
+                def call_factory(path, **kwargs):
+                    return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, _factory_cleanup=True, **kwargs)
+                result = factory_stage_command(payload, reset, supervisor_factory, call_factory)
             else:
                 result = reset.command(payload)
             if result.get("state") in ("backing_up", "removing", "partial", "backup_uncertain"):
