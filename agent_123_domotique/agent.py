@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.4"
+AGENT_VERSION = "0.6.5"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -610,7 +610,9 @@ def home_assistant_ws_command(
     timeout: int = 20,
 ) -> dict[str, Any]:
     from installation_reset import blocks_mutations
-    if blocks_mutations() and command.get("type") not in (
+    own_catalog_refresh = (threading.current_thread().name == "installation-update"
+        and command == {"type":"supervisor/api", "endpoint":"/store/reload", "method":"post", "timeout":60})
+    if blocks_mutations() and not own_catalog_refresh and command.get("type") not in (
         "config/entity_registry/list", "config/device_registry/list", "config/area_registry/list",
         "energy/solar_forecast", "network", "manifest/get", "auth/current_user"):
         raise RuntimeError("La remise à zéro suspend temporairement les modifications.")
@@ -1904,7 +1906,7 @@ def relay_command(
                 return response["data"]
             result = Update(call_update, supervisor_update, lambda slug: verify_supervisor_archive(slug, supervisor_token),
                 registry=lambda: home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"}).get("result"),
-                runtime_version=AGENT_VERSION, authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"})).command(payload)
+                runtime_version=AGENT_VERSION, refresh_catalog=lambda: home_assistant_ws_command(supervisor_token, {"type":"supervisor/api", "endpoint":"/store/reload", "method":"post", "timeout":60}, timeout=65), authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"})).command(payload)
         elif action == "commissioning.equipment":
             from equipment_setup import configure as configure_equipment
             def call_equipment(path, **kwargs):
@@ -3210,7 +3212,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             from installation_update import Update, heartbeat_status
             update_status = heartbeat_status(AGENT_VERSION)
             if update_status:

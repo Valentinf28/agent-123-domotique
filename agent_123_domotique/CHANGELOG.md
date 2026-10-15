@@ -1,3 +1,9 @@
+## 0.6.5
+
+- Préparation des mises à jour à distance : actualisation du catalogue natif et de l’entité de mise à jour avant validation de la version.
+- Préparation suivie en arrière-plan, sans installation pendant la recherche ; sauvegarde et accord exact restent obligatoires.
+- Une préparation interrompue reste arrêtée, sans nouvel envoi automatique de l’installation.
+
 ## 0.6.4
 
 - Parcours natifs locaux Hue, WiZ, TP-Link, SwitchBot, Reolink et Enphase.
