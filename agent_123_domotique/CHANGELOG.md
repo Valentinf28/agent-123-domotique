@@ -1,3 +1,8 @@
+## 0.6.1
+
+- Restore guided Tuya commissioning and include its connector in the image.
+- Unwrap HA registry responses; preserve entries; keep login data off durable queues and logs.
+
 ## 0.6.1-dev30
 
 - Autorise exclusivement le nettoyage interne du rattachement de sauvegarde enregistré dans la préparation ; les autres commandes restent suspendues pendant la remise à zéro.

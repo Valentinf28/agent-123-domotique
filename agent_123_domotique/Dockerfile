@@ -6,6 +6,7 @@ COPY local_identity.py /opt/agent/local_identity.py
 COPY factory_activation.py /opt/agent/factory_activation.py
 COPY factory_stage.py /opt/agent/factory_stage.py
 COPY agent.py /opt/agent/agent.py
+COPY tuya_setup.py /opt/agent/tuya_setup.py
 COPY pool_camera.py /opt/agent/pool_camera.py
 COPY network_discovery.py /opt/agent/network_discovery.py
 COPY connector_install.py /opt/agent/connector_install.py
