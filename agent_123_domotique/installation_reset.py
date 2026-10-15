@@ -297,6 +297,11 @@ class Reset:
 
 def blocks_mutations(data=Path('/data')):
     """Fail closed for corrupt journals, permit read-only diagnostics."""
+    factory = Path(data) / 'factory-stage.json'
+    if factory.exists():
+        try:
+            if json.loads(factory.read_text()).get('state') in ('preparing','prepared','committing'): return True
+        except Exception: return True
     path = Path(data) / 'installation-reset.json'
     from installation_update import busy
     if busy(data):return True

@@ -1869,8 +1869,18 @@ def relay_command(
                 if not isinstance(response, dict) or response.get("result") != "ok" or not isinstance(response.get("data"), dict):
                     raise RuntimeError("La sauvegarde de cette box est indisponible.")
                 return response["data"]
-            result = Reset(call_reset, supervisor_reset, lambda slug: verify_supervisor_archive(slug, supervisor_token),
-                           authorize=lambda: home_assistant_ws_command(supervisor_token, {"type": "auth/current_user"})).command(payload)
+            reset = Reset(call_reset, supervisor_reset, lambda slug: verify_supervisor_archive(slug, supervisor_token),
+                           authorize=lambda: home_assistant_ws_command(supervisor_token, {"type": "auth/current_user"}))
+            if payload.get("operation") in ("factory_prepare", "factory_commit", "factory_status"):
+                from factory_stage import command as factory_stage_command
+                def supervisor_factory(path, **kwargs):
+                    response = request_json("http://supervisor" + path, token=supervisor_token, **kwargs)
+                    if not isinstance(response, dict) or response.get("result") != "ok":
+                        raise RuntimeError("Préparation atelier non confirmée.")
+                    return response.get("data") or {}
+                result = factory_stage_command(payload, reset, supervisor_factory, call_reset)
+            else:
+                result = reset.command(payload)
             if result.get("state") in ("backing_up", "removing", "partial", "backup_uncertain"):
                 for tunnel_id in list(HA_TUNNELS):
                     upstream = HA_TUNNELS.pop(tunnel_id, None)

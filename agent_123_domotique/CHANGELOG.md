@@ -1,3 +1,7 @@
+# 0.6.1-dev26 — préparation de recette première activation
+
+Après remise à zéro avec sauvegarde vérifiée : préparation séparée des options atelier, retrait confirmé de l’ancienne identité locale et redémarrage de l’agent en attente d’activation. Commandes directes liées au propriétaire et à l’opération. Aucune remise à zéro du système Home Assistant ni revendication de cession certifiée.
+
 # 0.6.1-dev25 — activation client sans ordinateur
 
 Activation sortante des unités préparées en atelier par code privé, association par le propriétaire depuis le portail et reprise durable sans remplacement d’une identité existante. Voir FACTORY-ACTIVATION.md. Qualification sur box neuve requise ; aucune mise à jour automatique des box existantes.
