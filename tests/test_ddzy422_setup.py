@@ -18,6 +18,24 @@ class SetupTests(unittest.TestCase):
   self.assertTrue(self.install()['restartRequired']);self.assertEqual(self.install()['status'],'existing_preserved')
   self.assertEqual(json.loads((self.config/'custom_components/labox_ddzy422/manifest.json').read_text())['requirements'],[])
   self.assertEqual(json.loads(self.storage.read_text()),{'data':{'entries':[]}})
+ def test_known_legacy_bundle_upgrade_preserves_storage_and_retains_previous_files(self):
+  from unittest.mock import patch
+  import hashlib
+  self.install();target=self.config/'custom_components/labox_ddzy422'
+  (target/'const.py').write_text((target/'const.py').read_text().replace('POLL_SECONDS = 5','POLL_SECONDS = 30'))
+  (target/'manifest.json').write_text((target/'manifest.json').read_text().replace('0.1.1','0.1.0'))
+  before=self.storage.read_bytes();legacy=setup.LEGACY_INDEX.read_bytes()
+  self.assertEqual(hashlib.sha256(legacy).hexdigest(),setup.LEGACY_INDEX_SHA256)
+  result=self.install();self.assertEqual(result['version'],'0.1.1');self.assertIn('POLL_SECONDS = 5',(target/'const.py').read_text())
+  previous=target.parent/'.123home-ddzy422-previous-010';self.assertIn('POLL_SECONDS = 30',(previous/'const.py').read_text());self.assertEqual(self.storage.read_bytes(),before)
+  self.assertEqual(self.install()['status'],'existing_preserved')
+ def test_legacy_with_foreign_file_is_not_replaced(self):
+  self.install();target=self.config/'custom_components/labox_ddzy422'
+  (target/'const.py').write_text((target/'const.py').read_text().replace('POLL_SECONDS = 5','POLL_SECONDS = 30'))
+  (target/'manifest.json').write_text((target/'manifest.json').read_text().replace('0.1.1','0.1.0'))
+  (target/'foreign.py').write_text('preserve')
+  with self.assertRaisesRegex(RuntimeError,'conservée'):self.install()
+  self.assertIn('POLL_SECONDS = 30',(target/'const.py').read_text())
  def test_foreign_component_and_symlink_are_preserved(self):
   self.install();target=self.config/'custom_components/labox_ddzy422/sensor.py';target.write_text('foreign')
   with self.assertRaisesRegex(RuntimeError,'conservée'):self.install()

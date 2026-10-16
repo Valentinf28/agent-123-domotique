@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.12"
+AGENT_VERSION = "0.6.13"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1949,12 +1949,12 @@ def relay_command(
         elif action == "ha.config":
             result = request_json(f"{SUPERVISOR_API}/config", token=supervisor_token)
         elif action == "commissioning.install_ddzy422":
-            from ddzy422_setup import install
+            from ddzy422_setup import install, verify_bundle
             result = install()
             # Existing files do not prove that HA has loaded this integration.
             try:
                 manifest = home_assistant_ws_command(supervisor_token, {"type": "manifest/get", "integration": "labox_ddzy422"})
-                if manifest.get("domain") == "labox_ddzy422" and manifest.get("version") == "0.1.0":
+                if manifest.get("domain") == "labox_ddzy422" and manifest.get("version") == verify_bundle()["version"]:
                     result["restartRequired"] = False
             except Exception:
                 pass
@@ -3148,6 +3148,11 @@ def main() -> None:
                 log("Identification locale en attente ; nouvel essai dans une minute")
                 time.sleep(60)
     threading.Thread(target=local_identity_forever, daemon=True).start()
+
+    from solar_state_wakeup import watch_forever as watch_solar_states
+    threading.Thread(target=watch_solar_states, args=(supervisor_token, HEARTBEAT_WAKE_EVENT,
+        lambda: home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"}),
+        lambda *args, **kwargs: websocket.create_connection(*args, **kwargs)), daemon=True).start()
 
     pool_camera_enabled = option_enabled(options.get("pool_camera_enabled", False))
     log(

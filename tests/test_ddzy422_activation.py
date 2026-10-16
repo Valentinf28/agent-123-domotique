@@ -8,7 +8,7 @@ from ddzy422_setup import install, DOMAIN
 from ddzy422_activation import activate
 
 OWNER='1'*64
-READY={'domain':DOMAIN,'version':'0.1.0','is_built_in':False}
+READY={'domain':DOMAIN,'version':'0.1.1','is_built_in':False}
 class ActivationTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);root=Path(self.tmp.name);self.config=root/'config';self.config.mkdir();self.data=root/'data';install(self.config)

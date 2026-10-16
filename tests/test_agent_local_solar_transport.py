@@ -13,12 +13,12 @@ class TransportTests(unittest.TestCase):
   self.assertFalse(result['ok']);dispatch.assert_not_called()
  def test_native_activation_dispatch_passes_readiness_and_explicit_payload(self):
   connector=types.ModuleType('ddzy422_activation');connector.activate=Mock(return_value={'status':'activation_pending'})
-  payload={'operation':'activate','confirmed':True,'ownerScope':'a'*64};manifest={'domain':'labox_ddzy422','version':'0.1.0','is_built_in':False}
+  payload={'operation':'activate','confirmed':True,'ownerScope':'a'*64};manifest={'domain':'labox_ddzy422','version':'0.1.1','is_built_in':False}
   with patch.dict(sys.modules,{'ddzy422_activation':connector}),patch.object(agent,'home_assistant_ws_command',return_value=manifest):
    result=agent.relay_command('token',{'action':'commissioning.activate_ddzy422','payload':payload})
   self.assertTrue(result['ok']);self.assertEqual(connector.activate.call_args.args[0],payload);self.assertEqual(connector.activate.call_args.kwargs['loaded_manifest'],manifest)
  def test_install_dispatch_does_not_restart_ha(self):
-  connector=types.ModuleType('ddzy422_setup');connector.install=Mock(return_value={'restartRequired':True})
+  connector=types.ModuleType('ddzy422_setup');connector.install=Mock(return_value={'restartRequired':True});connector.verify_bundle=Mock(return_value={'version':'0.1.1'})
   with patch.dict(sys.modules,{'ddzy422_setup':connector}),patch.object(agent,'request_json') as ha:
    result=agent.relay_command('token',{'action':'commissioning.install_ddzy422'})
   self.assertTrue(result['ok']);self.assertTrue(result['result']['restartRequired']);ha.assert_not_called()

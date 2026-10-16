@@ -31,6 +31,14 @@ def install_solarman(config=CONFIG, bundle=BUNDLE):
         fcntl.flock(handle, fcntl.LOCK_EX)
         destination = components / "solarman"
         if destination.exists() or destination.is_symlink():
+            # Only our managed connector receives the known, pinned profile migration.
+            marker = destination / "123home-bundle.json"
+            if not destination.is_symlink() and marker.is_file() and not marker.is_symlink():
+                value = json.loads(marker.read_text())
+                manifest = json.loads((destination / "manifest.json").read_text())
+                if value == {"revision": 1, "profile": "deye_sg01hp3_readonly.yaml"} and manifest.get("domain") == "solarman" and manifest.get("version") == VERSION:
+                    from solar_profile import ensure_profile, MICRO_PROFILE
+                    ensure_profile(destination, MICRO_PROFILE)
             return {"connector": "solarman", "status": "existing_preserved", "configured": False}
         if hashlib.sha256(bundle.read_bytes()).hexdigest() != DIGEST:
             raise RuntimeError("Le connecteur solaire fourni est incomplet ou altéré.")

@@ -50,7 +50,7 @@ class EvidenceTests(unittest.TestCase):
   self.assertTrue(result['readingsAvailable']);self.assertAlmostEqual(result['measurements']['production']['value'],593.7)
   self.assertEqual(result['entities'],{'production':'sensor.micro_ac'});self.assertNotIn('sensor.micro_dc',call.call_args.kwargs['payload']['template'])
  def test_readiness_is_readonly_and_requires_native_correct_versions(self):
-  call=Mock(return_value=['solarman',DOMAIN]);manifest=lambda domain:{'domain':domain,'is_built_in':False,'version':'25.08.16' if domain=='solarman' else '0.1.0'}
+  call=Mock(return_value=['solarman',DOMAIN]);manifest=lambda domain:{'domain':domain,'is_built_in':False,'version':'25.08.16' if domain=='solarman' else '0.1.1'}
   self.assertEqual(readiness(call,manifest),{'solarmanReady':True,'ddzyReady':True});self.assertEqual(call.call_count,1)
   self.assertEqual(readiness(call,lambda domain:{'domain':domain,'is_built_in':True,'version':'wrong'}),{'solarmanReady':False,'ddzyReady':False})
 

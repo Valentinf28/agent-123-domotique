@@ -13,7 +13,9 @@ from network_discovery import local_interfaces
 DOMAIN = 'labox_ddzy422'
 BUNDLE = Path(__file__).parent / 'integrations' / DOMAIN
 BUNDLE_INDEX = Path(__file__).parent / 'integrations' / 'ddzy422-bundle.json'
-BUNDLE_SHA256 = '034e0d3d2120dcd2b1be83a895da6678598ea9859e2e3bcbf99ea04185f394bd'
+BUNDLE_SHA256 = 'df4d7820c57a1fc10dd4dff4ec8edc170432822dd0bb419aaa727a6ebb18d05d'
+LEGACY_INDEX = Path(__file__).parent / 'integrations' / 'ddzy422-legacy-010.json'
+LEGACY_INDEX_SHA256 = '034e0d3d2120dcd2b1be83a895da6678598ea9859e2e3bcbf99ea04185f394bd'
 FILES = frozenset(('__init__.py','config_flow.py','const.py','coordinator.py','manifest.json','sensor.py','strings.json','transport.py','PROTOCOL.md'))
 
 def verify_bundle(bundle=BUNDLE, index=BUNDLE_INDEX):
@@ -43,17 +45,34 @@ def install(config=Path('/homeassistant_config'), bundle=BUNDLE, index=BUNDLE_IN
         manifest=verify_bundle(bundle,index)
         target=components/DOMAIN
         if target.is_symlink():raise RuntimeError('Une installation différente du connecteur est conservée.')
+        upgrading = False
         if target.exists():
-            for name,checksum in manifest['files'].items():
-                path=target/name
-                if path.is_symlink() or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=checksum:
-                    raise RuntimeError('Une installation différente du connecteur est conservée.')
-            return {'connector':DOMAIN,'status':'existing_preserved','restartRequired':True,'configured':False}
+            def matches(files):
+                return all(not (target/name).is_symlink() and (target/name).is_file()
+                           and hashlib.sha256((target/name).read_bytes()).hexdigest()==checksum
+                           for name,checksum in files.items())
+            if matches(manifest['files']):
+                return {'connector':DOMAIN,'status':'existing_preserved','restartRequired':True,'configured':False}
+            if LEGACY_INDEX.is_symlink() or hashlib.sha256(LEGACY_INDEX.read_bytes()).hexdigest()!=LEGACY_INDEX_SHA256:
+                raise RuntimeError('L’inventaire précédent du connecteur est altéré.')
+            legacy=json.loads(LEGACY_INDEX.read_text())
+            if set(legacy['files'])!=FILES or not matches(legacy['files']) or any(p.name not in FILES|{'__pycache__'} for p in target.iterdir()):
+                raise RuntimeError('Une installation différente du connecteur est conservée.')
+            upgrading = True
         staging=Path(tempfile.mkdtemp(prefix='.123home-ddzy422-',dir=components))
         try:
             for name in FILES:
                 shutil.copyfile(bundle/name,staging/name);(staging/name).chmod(0o644)
-            staging.chmod(0o755);staging.rename(target)
+            staging.chmod(0o755)
+            if upgrading:
+                previous=components/'.123home-ddzy422-previous-010'
+                if previous.exists():
+                    raise RuntimeError('La précédente migration du compteur doit être vérifiée.')
+                target.rename(previous)
+                try:staging.rename(target)
+                except BaseException:
+                    previous.rename(target);raise
+            else:staging.rename(target)
         finally:
             if staging.exists():shutil.rmtree(staging)
         return {'connector':DOMAIN,'status':'installed','version':manifest['version'],'restartRequired':True,'configured':False}

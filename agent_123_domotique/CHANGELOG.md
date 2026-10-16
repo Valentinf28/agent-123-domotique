@@ -1,3 +1,9 @@
+## 0.6.13
+
+- Lectures locales Deye micro-onduleurs et compteur DDZY422 toutes les 5 secondes.
+- Migration limitée aux profils et connecteurs gérés dont les empreintes sont reconnues.
+- Réveil de la synchronisation sur changement des mesures solaires.
+
 ## 0.6.12
 
 - Réveille immédiatement la synchronisation lors d’une commande du portail, par la liaison sortante existante.

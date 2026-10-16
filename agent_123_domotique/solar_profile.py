@@ -8,7 +8,8 @@ LP1_PROFILE = 'deye_lp1_readonly.yaml'
 LP1_PROFILE_SHA = '19579d03cc63815d3a91cbba513b8c792582a17e3ee344ee618a321595406bad'
 
 MICRO_PROFILE = 'deye_micro_readonly.yaml'
-MICRO_PROFILE_SHA = '54cd372ee2d7f9f89c5869934aec702ab87bc50181277cf581093391ee75236c'
+MICRO_PROFILE_SHA = '1829bb97fe167474a75ace476c49487fcf3d9558d5bdd9246a2ca9395661e6fb'
+LEGACY_MICRO_PROFILE_SHA = '54cd372ee2d7f9f89c5869934aec702ab87bc50181277cf581093391ee75236c'
 
 def ensure_profile(root, name):
     """Install only a pinned measurement profile in our managed connector."""
@@ -25,8 +26,19 @@ def ensure_profile(root, name):
         raise RuntimeError('Profil de mesure solaire altéré.')
     target.mkdir(exist_ok=True)
     destination = target/name
-    if destination.is_symlink() or destination.exists() and destination.read_bytes() != data:
+    if destination.is_symlink():
         raise RuntimeError('Un profil solaire différent existe déjà ; il a été conservé.')
+    if destination.exists() and destination.read_bytes() != data:
+        if name != MICRO_PROFILE or hashlib.sha256(destination.read_bytes()).hexdigest() != LEGACY_MICRO_PROFILE_SHA:
+            raise RuntimeError('Un profil solaire différent existe déjà ; il a été conservé.')
+        import os, tempfile
+        fd, temporary = tempfile.mkstemp(prefix='.123home-micro-profile-', dir=target)
+        try:
+            with os.fdopen(fd, 'wb') as output:
+                output.write(data); output.flush(); os.fsync(output.fileno())
+            os.chmod(temporary, 0o644); os.replace(temporary, destination)
+        finally:
+            if os.path.exists(temporary): os.unlink(temporary)
     if not destination.exists():
         with destination.open('xb') as output:
             output.write(data)

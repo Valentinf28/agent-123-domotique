@@ -12,10 +12,22 @@ from solar_setup import settings
 ADAPTERS=[{'enabled':True,'ipv4':[{'address':'192.168.6.180','network_prefix':24}]}]
 PAYLOAD={'host':'192.168.6.159','loggerSerial':3840836493,'mac':'40:2a:8f:0f:62:34'}
 class MicroTests(unittest.TestCase):
+ def test_managed_legacy_profile_migrates_atomically_but_foreign_profile_is_preserved(self):
+  from solar_profile import ensure_profile,LEGACY_MICRO_PROFILE_SHA
+  root=Path(tempfile.mkdtemp());self.addCleanup(__import__('shutil').rmtree,root)
+  target=root/'inverter_definitions/custom';target.mkdir(parents=True)
+  current=Path(__file__).parents[1]/'agent_123_domotique/profiles'/MICRO_PROFILE
+  previous=current.read_text().replace('update_interval: 5','update_interval: 30')
+  self.assertEqual(hashlib.sha256(previous.encode()).hexdigest(),LEGACY_MICRO_PROFILE_SHA)
+  (target/MICRO_PROFILE).write_text(previous);ensure_profile(root,MICRO_PROFILE)
+  self.assertEqual((target/MICRO_PROFILE).read_bytes(),current.read_bytes());ensure_profile(root,MICRO_PROFILE)
+  (target/MICRO_PROFILE).write_text('foreign profile')
+  with self.assertRaisesRegex(RuntimeError,'conservé'):ensure_profile(root,MICRO_PROFILE)
+  self.assertEqual((target/MICRO_PROFILE).read_text(),'foreign profile')
  def test_ac_profile_is_pinned_readonly_and_never_ddzy_v5(self):
   path=Path(__file__).parents[1]/'agent_123_domotique/profiles'/MICRO_PROFILE
   self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),MICRO_PROFILE_SHA)
-  profile=yaml.safe_load(path.read_text());self.assertGreaterEqual(profile['default']['update_interval'],30)
+  profile=yaml.safe_load(path.read_text());self.assertEqual(profile['default']['update_interval'],5)
   items={i['name']:i for group in profile['parameters'] for i in group['items']}
   self.assertEqual(items['Power']['registers'],[86,87]);self.assertEqual(items['Power']['scale'],.1)
   self.assertEqual(items['Total Production']['registers'],[63,64]);self.assertEqual(items['Total Production']['state_class'],'total_increasing')

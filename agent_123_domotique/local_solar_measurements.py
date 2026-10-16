@@ -20,7 +20,7 @@ def readiness(call,manifest):
         try:value=manifest(domain)
         except Exception:return False
         return domain in handlers and isinstance(value,dict) and value.get('domain')==domain and value.get('version')==version and value.get('is_built_in') is False
-    return {'solarmanReady':ready('solarman',SOLARMAN_VERSION),'ddzyReady':ready(DOMAIN,'0.1.0')}
+    return {'solarmanReady':ready('solarman',SOLARMAN_VERSION),'ddzyReady':ready(DOMAIN,verify_bundle()['version'])}
 
 def inspect(entry_id,model,call,registry,*,config=Path('/homeassistant_config'),now=None):
     if model not in MODELS or not isinstance(entry_id,str) or not re.fullmatch('[A-Za-z0-9_-]{1,100}',entry_id):

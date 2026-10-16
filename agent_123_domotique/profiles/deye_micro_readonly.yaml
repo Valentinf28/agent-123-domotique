@@ -4,7 +4,7 @@ info:
   manufacturer: Deye
   model: M100G4 / M200G4
 default:
-  update_interval: 30
+  update_interval: 5
   digits: 3
 parameters:
 - group: Identity

@@ -20,6 +20,7 @@ COPY connector_install.py /opt/agent/connector_install.py
 COPY vendor /opt/agent/vendor
 COPY profiles /opt/agent/profiles
 COPY solar_profile.py /opt/agent/solar_profile.py
+COPY solar_state_wakeup.py /opt/agent/solar_state_wakeup.py
 COPY solar_measurements.py /opt/agent/solar_measurements.py
 COPY backup_setup.py /opt/agent/backup_setup.py
 COPY installation_reset.py /opt/agent/installation_reset.py

@@ -40,7 +40,7 @@ async def recipe():
                 'unit_system':'metric','time_zone':'UTC','country':'FR'},'sensor':{},'network':{}},hass)
             assert result is hass,'Core bootstrap failed'
             integration=await loader.async_get_integration(hass,DOMAIN)
-            assert integration.domain==DOMAIN and integration.manifest['version']=='0.1.0'
+            assert integration.domain==DOMAIN and integration.manifest['version']=='0.1.1'
             component=await integration.async_get_component()
             sensor=await integration.async_get_platform('sensor')
             coordinator_module=importlib.import_module(f'custom_components.{DOMAIN}.coordinator')
