@@ -5,7 +5,7 @@ import re
 import socket
 import threading
 import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -31,7 +31,7 @@ def load_key(path):
 def valid_origin(origin, addresses):
     try:
         parsed = urlsplit(origin)
-        if parsed.scheme != 'http' or parsed.port not in (None, 80, 8123) or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
+        if parsed.scheme != 'http' or parsed.port not in (None, 80, 8123, PORT) or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
             return False
         if parsed.hostname in addresses:
             return True
@@ -47,14 +47,17 @@ def proof(key, nonce, origin, addresses):
     message = f'123home-local-v1\n{nonce}\n{origin}'
     return {'signature': key.sign(message.encode('ascii')).hex()}
 
-def serve(call, path='/data/local-identity.key'):
+def serve(call, path='/data/local-identity.key', *, registry=None, agent_id=lambda:None):
+    from local_mobile import LocalMobile
+    local = LocalMobile(call, registry, agent_id)
+    permits = threading.BoundedSemaphore(8)
     key = load_key(path)
     public = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
     def publish():
         while True:
             try:
                 call('/states/' + ENTITY, method='POST', payload={
-                    'state': 'ready', 'attributes': {'public_key': public, 'protocol': 1}})
+                    'state': 'ready', 'attributes': {'public_key': public, 'protocol': 2, 'urls': ['http://' + str(i.ip) + ':' + str(PORT) for i in local_interfaces(current_adapters([]))]}})
             except Exception:
                 pass
             time.sleep(60)
@@ -83,6 +86,25 @@ def serve(call, path='/data/local-identity.key'):
                 self.wfile.write(data)
             except (ValueError, OSError):
                 self.send_error(400)
-    server = HTTPServer(('0.0.0.0', PORT), Handler)
+        def do_POST(self):
+            if not permits.acquire(blocking=False):
+                self.send_error(429); return
+            try:
+                if self.path != '/local/v1/request' or self.headers.get('Content-Type') != 'application/json' or self.headers.get('Transfer-Encoding'):
+                    raise ValueError()
+                size = int(self.headers.get('Content-Length', '0'))
+                if not 1 <= size <= 1500000: raise ValueError()
+                result = local.handle(json.loads(self.rfile.read(size)))
+                data = json.dumps(result).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers(); self.wfile.write(data)
+            except Exception:
+                self.send_error(403, 'Local request refused')
+            finally:
+                permits.release()
+    server = ThreadingHTTPServer(('0.0.0.0', PORT), Handler)
     threading.Thread(target=publish, daemon=True).start()
     server.serve_forever()

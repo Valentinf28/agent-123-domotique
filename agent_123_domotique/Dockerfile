@@ -2,11 +2,12 @@ FROM ghcr.io/home-assistant/base:latest
 
 RUN apk add --no-cache python3 py3-websocket-client py3-pillow tzdata iproute2 py3-cryptography py3-virtualenv
 
+COPY local_mobile.py /opt/agent/local_mobile.py
 COPY local_identity.py /opt/agent/local_identity.py
 COPY factory_activation.py /opt/agent/factory_activation.py
 COPY factory_stage.py /opt/agent/factory_stage.py
 COPY agent.py /opt/agent/agent.py
-RUN virtualenv --system-site-packages /opt/tuya-sdk && /opt/tuya-sdk/bin/pip install --no-cache-dir tuya-device-sharing-sdk==0.2.15
+RUN virtualenv --system-site-packages /opt/tuya-sdk && /opt/tuya-sdk/bin/pip install --no-cache-dir tuya-device-sharing-sdk==0.2.15 PyNaCl==1.6.2
 ENV PATH="/opt/tuya-sdk/bin:$PATH"
 
 COPY tuya_homes.py /opt/agent/tuya_homes.py

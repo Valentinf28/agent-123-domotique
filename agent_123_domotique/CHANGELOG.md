@@ -1,3 +1,9 @@
+## 0.6.7
+
+- Accès local chiffré automatique pour les téléphones associés, indépendant du forfait distant.
+- Autorisations propres à chaque téléphone, propriétaire et box ; commandes limitées aux appareils affectés.
+- Vérification d’identité, retrait des téléphones synchronisé et protection contre le rejeu des commandes.
+
 ## 0.6.6
 
 - Corrige la lecture des maisons Smart Life / Tuya avec le SDK natif : délai HTTP borné sans argument en double.

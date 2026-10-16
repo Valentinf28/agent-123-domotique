@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.6"
+AGENT_VERSION = "0.6.7"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1103,6 +1103,8 @@ def home_assistant_summary(
             for key in SAFE_ATTRIBUTE_KEYS
             if key in attributes
         }
+        if entity_id == "sensor.1_2_3_home_local_identity":
+            safe_attributes.update({key: attributes[key] for key in ("public_key", "protocol", "urls") if key in attributes})
         safe_attributes.update(registry_metadata.get(entity_id, {}))
         inventory.append({
             "entityId": entity_id,
@@ -3136,7 +3138,10 @@ def main() -> None:
             return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
         while True:
             try:
-                serve(call)
+                def registry(command):
+                    result = home_assistant_ws_command(supervisor_token, command)
+                    return result.get('result') if isinstance(result, dict) and 'result' in result else result
+                serve(call, registry=registry, agent_id=lambda: read_json(STATE_PATH, {}).get('agent_id'))
             except Exception:
                 log("Identification locale en attente ; nouvel essai dans une minute")
                 time.sleep(60)
@@ -3212,7 +3217,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["local.mobile.encrypted", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             from installation_update import Update, heartbeat_status
             update_status = heartbeat_status(AGENT_VERSION)
             if update_status:
@@ -3236,6 +3241,15 @@ def main() -> None:
                 state.pop("command_results", None)
                 write_state(state)
 
+            if 'localMobile' in heartbeat_result:
+                try:
+                    from local_mobile import store_grants, FILE
+                    if heartbeat_result['localMobile'] is None:
+                        FILE.unlink(missing_ok=True)
+                    else:
+                        store_grants(heartbeat_result['localMobile'], state.get('agent_id'))
+                except Exception:
+                    log('Synchronisation de l’accès local en attente')
             local_configuration = heartbeat_result.get("localConfiguration")
             if local_configuration is not None:
                 try:
