@@ -1,3 +1,9 @@
+## 0.6.10
+
+- Préparation des mises à jour par l’action native Home Assistant de l’agent ; suppression de l’appel Supervisor interdit aux extensions.
+- Actualisation du catalogue avec délai adapté, sans ajout de droits d’administration ni désactivation de protections.
+- Échec de préparation distinguant vérification initiale, actualisation et version cible indisponible.
+
 ## 0.6.9
 
 - Retour immédiat des résultats et d’un état relu après les commandes du portail, sans attendre le cycle périodique suivant.

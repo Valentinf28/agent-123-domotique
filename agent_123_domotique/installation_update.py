@@ -35,6 +35,19 @@ def busy(data=Path('/data')):
     try:return json.loads(path.read_text()).get('state') in ACTIVE
     except Exception:return True
 
+def native_catalog_refresh(call, entity_id):
+    """Refresh this native update entity via Core's supported service.
+
+    The add-on WebSocket proxy deliberately refuses supervisor/* commands.
+    HA's non-scheduled update-entity refresh reloads the store coordinator.
+    No manager role, Supervisor bypass or direct host access is needed.
+    """
+    if not isinstance(entity_id, str) or not re.fullmatch(r'update\.[a-z0-9_]+', entity_id):
+        raise ValueError('Entité de mise à jour invalide.')
+    return call('/services/homeassistant/update_entity', method='POST',
+                payload={'entity_id': entity_id}, timeout=65)
+
+
 class Update(Reset):
     backup_name='La Box avant mise à jour '
     def __init__(self,call,supervisor,verify_archive,*,registry,runtime_version,refresh_catalog=None,**kwargs):
@@ -46,7 +59,7 @@ class Update(Reset):
     def public(self,state):
         if not state:return {'state':'idle','observedVersion':self.runtime_version}
         keys=('operationId','consentId','targetVersion','releaseCommit','previewHash','expiresAt','state',
-              'backupVerified','backupSlug','installedVersion','observedVersion','entityId','error','installSubmitted','installRefusedVerified','nativeInstalledVersion')
+              'backupVerified','backupSlug','installedVersion','observedVersion','entityId','error','installSubmitted','installRefusedVerified','nativeInstalledVersion','errorCode')
         return {k:state[k] for k in keys if k in state}
 
     def require_exclusive(self):
@@ -135,6 +148,7 @@ class Update(Reset):
 
     def prepare_catalog(self,operation_id):
         """Refresh metadata only. Never backs up or installs without execute."""
+        phase='preflight'
         try:
             fd=os.open(self.data/'installation-maintenance.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
             with os.fdopen(fd,'w') as lock:
@@ -145,9 +159,9 @@ class Update(Reset):
                 before=self.preflight()
                 if any(before[k]!=state[k] for k in ('entityId','slug','repository','installedVersion')):
                     raise RuntimeError('La cible de mise à jour a changé.')
-                self.refresh_catalog()
-                # HA caches its update entity independently of the store.
-                self.call('/services/homeassistant/update_entity',method='POST',payload={'entity_id':state['entityId']},timeout=10)
+                phase='refresh'
+                self.refresh_catalog(state['entityId'])
+                phase='target'
                 for attempt in range(6):
                     self.require_exclusive();self.require_admin()
                     try:
@@ -168,7 +182,7 @@ class Update(Reset):
             with _MUTEX:
                 state=self.load()
                 if state.get('operationId')==operation_id and state.get('state')=='refreshing_catalog':
-                    state.update(state='failed',error='Le catalogue ou les droits de mise à jour n’ont pas pu être vérifiés. Aucune installation n’a été lancée.')
+                    state.update(state='failed',errorCode='catalog_'+phase+'_failed',error={'preflight':'Les droits ou l’identité de cette box n’ont pas pu être vérifiés. Aucune installation n’a été lancée.','refresh':'Home Assistant n’a pas pu actualiser la mise à jour de cette box. Aucune installation n’a été lancée.','target':'La version proposée n’est pas disponible ou le catalogue a changé. Aucune installation n’a été lancée.'}[phase])
                     self.save(state)
         finally:
             with _MUTEX:_WORKERS.pop(str(self.path),None)
@@ -290,7 +304,7 @@ def heartbeat_status(runtime_version,data=Path('/data')):
     required=('operationId','ownerScope','consentId','targetVersion','releaseCommit','state','backupVerified','installedVersion')
     if any(key not in state for key in required):return None
     evidence={key:state[key] for key in required}
-    for key in ('backupSlug','previewHash','expiresAt','error','installSubmitted','submittedAt','installRefusedVerified','nativeInstalledVersion'):
+    for key in ('backupSlug','previewHash','expiresAt','error','installSubmitted','submittedAt','installRefusedVerified','nativeInstalledVersion','errorCode'):
         if key in state:evidence[key]=state[key]
     evidence['observedVersion']=runtime_version
     return evidence

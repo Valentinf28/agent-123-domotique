@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.9"
+AGENT_VERSION = "0.6.10"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -610,9 +610,7 @@ def home_assistant_ws_command(
     timeout: int = 20,
 ) -> dict[str, Any]:
     from installation_reset import blocks_mutations
-    own_catalog_refresh = (threading.current_thread().name == "installation-update"
-        and command == {"type":"supervisor/api", "endpoint":"/store/reload", "method":"post", "timeout":60})
-    if blocks_mutations() and not own_catalog_refresh and command.get("type") not in (
+    if blocks_mutations() and command.get("type") not in (
         "config/entity_registry/list", "config/device_registry/list", "config/area_registry/list",
         "energy/solar_forecast", "network", "manifest/get", "auth/current_user"):
         raise RuntimeError("La remise à zéro suspend temporairement les modifications.")
@@ -1898,7 +1896,7 @@ def relay_command(
                     upstream = HA_TUNNELS.pop(tunnel_id, None)
                     if upstream: close_ha_tunnel(upstream)
         elif action == "installation.update":
-            from installation_update import Update
+            from installation_update import Update, native_catalog_refresh
             def call_update(path, **kwargs):
                 return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
             def supervisor_update(path, **kwargs):
@@ -1908,7 +1906,7 @@ def relay_command(
                 return response["data"]
             result = Update(call_update, supervisor_update, lambda slug: verify_supervisor_archive(slug, supervisor_token),
                 registry=lambda: home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"}).get("result"),
-                runtime_version=AGENT_VERSION, refresh_catalog=lambda: home_assistant_ws_command(supervisor_token, {"type":"supervisor/api", "endpoint":"/store/reload", "method":"post", "timeout":60}, timeout=65), authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"})).command(payload)
+                runtime_version=AGENT_VERSION, refresh_catalog=lambda entity: native_catalog_refresh(call_update, entity), authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"})).command(payload)
         elif action == "commissioning.equipment":
             from equipment_setup import configure as configure_equipment
             def call_equipment(path, **kwargs):

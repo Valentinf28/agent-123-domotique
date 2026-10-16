@@ -14,7 +14,8 @@ class CatalogTests(unittest.TestCase):
  execute=baseline.UpdateTests.execute
  def start(self):
   self.refreshes=0
-  def refresh():self.refreshes+=1;self.latest='0.6.1'
+  def refresh(entity):
+   self.assertEqual(entity,'update.agent_labo');self.refreshes+=1;self.latest='0.6.1'
   self.engine.refresh_catalog=refresh
   original=self.engine.call
   def call(path,**kwargs):
@@ -28,6 +29,25 @@ class CatalogTests(unittest.TestCase):
  def finish(self):
   self.engine.prepare_catalog(self.operation)
   return self.engine.command({'operation':'status','ownerScope':self.base['ownerScope']})
+ def test_native_refresh_uses_supported_core_service_and_exact_agent_only(self):
+  from unittest.mock import Mock
+  call=Mock(return_value=[])
+  updates.native_catalog_refresh(call,'update.agent_labo')
+  call.assert_called_once_with('/services/homeassistant/update_entity',method='POST',payload={'entity_id':'update.agent_labo'},timeout=65)
+  for entity in ('switch.fixture','update.fixture/../other','http://supervisor/store/reload',None):
+   with self.assertRaises(ValueError):updates.native_catalog_refresh(call,entity)
+  self.assertEqual(call.call_count,1)
+ def test_real_native_refresher_prepares_stale_catalog_without_supervisor_proxy(self):
+  self.latest='0.6.0';self.engine.refresh_catalog=lambda entity:updates.native_catalog_refresh(self.engine.call,entity)
+  original=self.engine.call;calls=[]
+  def native(path,**kw):
+   calls.append(path)
+   if path=='/services/homeassistant/update_entity':self.latest='0.6.1';return []
+   return original(path,**kw)
+  self.engine.call=native
+  with patch('installation_update.threading.Thread'):self.engine.command(self.base|{'operation':'prepare'})
+  ready=self.finish();self.assertEqual(ready['state'],'prepared');self.assertEqual(calls.count('/services/homeassistant/update_entity'),1)
+  self.assertEqual(self.installs,[]);self.assertEqual(self.backups,[])
  def test_stale_catalog_is_refreshed_before_preview_without_install(self):
   self.latest='0.6.0';initial=self.start()
   self.assertEqual(initial['state'],'refreshing_catalog');self.assertNotIn('previewHash',initial);self.assertTrue(updates.busy(self.data))
@@ -38,21 +58,21 @@ class CatalogTests(unittest.TestCase):
  def test_refresh_timeout_or_permission_failure_never_backups_or_installs(self):
   for exc in (TimeoutError(),RuntimeError('denied')):
    self.start()
-   def fail():raise exc
+   def fail(entity):raise exc
    self.engine.refresh_catalog=fail
-   self.assertEqual(self.finish()['state'],'failed');self.assertEqual(self.installs,[]);self.assertEqual(self.backups,[])
+   failed=self.finish();self.assertEqual(failed['state'],'failed');self.assertEqual(failed['errorCode'],'catalog_refresh_failed');self.assertEqual(self.installs,[]);self.assertEqual(self.backups,[])
    self.engine.path.unlink()
  def test_restart_during_refresh_stops_without_replaying(self):
   self.start();updates._WORKERS.pop(str(self.engine.path),None);self.engine=self.new_engine()
   self.assertEqual(self.engine.command({'operation':'status','ownerScope':self.base['ownerScope']})['state'],'failed');self.assertEqual(self.refreshes,0);self.assertEqual(self.installs,[])
  def test_catalog_newer_than_approved_target_stops(self):
-  self.start();self.engine.refresh_catalog=lambda:setattr(self,'latest','0.6.2')
+  self.start();self.engine.refresh_catalog=lambda entity:setattr(self,'latest','0.6.2')
   self.assertEqual(self.finish()['state'],'failed');self.assertEqual(self.installs,[])
  def test_wrong_source_changed_during_refresh_stops(self):
-  self.start();self.engine.refresh_catalog=lambda:setattr(self,'repo','unknown')
+  self.start();self.engine.refresh_catalog=lambda entity:setattr(self,'repo','unknown')
   self.assertEqual(self.finish()['state'],'failed');self.assertEqual(self.installs,[])
  def test_automatic_updates_enabled_during_refresh_stop(self):
-  self.start();self.engine.refresh_catalog=lambda:setattr(self,'auto',True)
+  self.start();self.engine.refresh_catalog=lambda entity:setattr(self,'auto',True)
   self.assertEqual(self.finish()['state'],'failed');self.assertEqual(self.installs,[])
  def test_execute_cannot_skip_pending_catalog(self):
   self.start()
@@ -83,7 +103,7 @@ class CatalogTests(unittest.TestCase):
   self.engine.preflight=original;self.assertEqual(self.engine.command(self.base|{'operation':'prepare'})['state'],'prepared')
  def test_slow_catalog_returns_immediately_and_blocks_concurrent_reset(self):
   started=threading.Event();finish=threading.Event()
-  def refresh():started.set();finish.wait(2)
+  def refresh(entity):started.set();finish.wait(2)
   self.engine.refresh_catalog=refresh;original=self.engine.call
   self.engine.call=lambda path,**kw:[] if path=='/services/homeassistant/update_entity' else original(path,**kw)
   try:

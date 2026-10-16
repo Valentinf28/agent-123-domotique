@@ -19,15 +19,21 @@ class TransportTests(unittest.TestCase):
    for command in ({'type':'supervisor/api','endpoint':'/store','method':'get'},{'type':'supervisor/api','endpoint':'/addons/x/update','method':'post'}):
     with self.assertRaises(RuntimeError):agent.home_assistant_ws_command('token',command)
   connection.assert_not_called()
- def test_catalog_callback_is_fixed_and_uses_existing_admin_api(self):
+ def test_catalog_callback_uses_native_service_without_forbidden_supervisor_proxy(self):
   operation=Mock();operation.command.return_value={'state':'refreshing_catalog'}
-  with patch.object(updates,'Update',return_value=operation) as factory,patch.object(agent,'request_json'),patch.object(agent,'home_assistant_ws_command',return_value={} ) as call:
+  with patch.object(updates,'Update',return_value=operation) as factory,patch.object(agent,'request_json',return_value=[]) as request,patch.object(agent,'home_assistant_ws_command',return_value={} ) as call:
    agent.relay_command('token',{'action':'installation.update','payload':{'operation':'prepare','endpoint':'/addons/other/update'}})
-   factory.call_args.kwargs['refresh_catalog']()
-   call.assert_called_once_with('token',{'type':'supervisor/api','endpoint':'/store/reload','method':'post','timeout':60},timeout=65)
+   factory.call_args.kwargs['refresh_catalog']('update.agent_labo')
+   call.assert_not_called()
+   request.assert_called_once_with(agent.SUPERVISOR_API+'/services/homeassistant/update_entity',token='token',method='POST',payload={'entity_id':'update.agent_labo'},timeout=65)
  def test_catalog_endpoint_remains_forbidden_outside_maintenance_worker(self):
   import installation_reset
   with patch.object(installation_reset,'blocks_mutations',return_value=True),patch.object(agent.websocket,'create_connection',create=True) as connection:
+   with self.assertRaises(RuntimeError):agent.home_assistant_ws_command('token',{'type':'supervisor/api','endpoint':'/store/reload','method':'post','timeout':60})
+  connection.assert_not_called()
+ def test_supervisor_catalog_command_stays_blocked_even_in_update_worker(self):
+  import installation_reset
+  with patch.object(installation_reset,'blocks_mutations',return_value=True),patch.object(agent.threading,'current_thread',return_value=types.SimpleNamespace(name='installation-update')),patch.object(agent.websocket,'create_connection',create=True) as connection:
    with self.assertRaises(RuntimeError):agent.home_assistant_ws_command('token',{'type':'supervisor/api','endpoint':'/store/reload','method':'post','timeout':60})
   connection.assert_not_called()
  def test_dispatch_binds_real_agent_version_and_native_registry(self):
