@@ -1,3 +1,8 @@
+## 0.6.14
+
+- Conserve la copie précédente du compteur hors du dossier des intégrations chargées par Home Assistant.
+- Répare uniquement la copie 0.1.0 reconnue créée par la migration précédente.
+
 ## 0.6.13
 
 - Lectures locales Deye micro-onduleurs et compteur DDZY422 toutes les 5 secondes.

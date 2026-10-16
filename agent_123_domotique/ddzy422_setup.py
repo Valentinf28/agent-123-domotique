@@ -51,6 +51,21 @@ def install(config=Path('/homeassistant_config'), bundle=BUNDLE, index=BUNDLE_IN
                 return all(not (target/name).is_symlink() and (target/name).is_file()
                            and hashlib.sha256((target/name).read_bytes()).hexdigest()==checksum
                            for name,checksum in files.items())
+            # HA scans every directory inside custom_components, including hidden backups.
+            # Retire the exact known snapshot made by 0.6.13 outside that loader tree.
+            misplaced=components/'.123home-ddzy422-previous-010'
+            archive=config/'.123home-managed-backups'
+            if archive.is_symlink():raise RuntimeError('Le dossier de sauvegarde doit être vérifié.')
+            if misplaced.exists() or misplaced.is_symlink():
+                if misplaced.is_symlink() or LEGACY_INDEX.is_symlink() or hashlib.sha256(LEGACY_INDEX.read_bytes()).hexdigest()!=LEGACY_INDEX_SHA256:
+                    raise RuntimeError('La copie précédente du connecteur est conservée.')
+                previous_files=json.loads(LEGACY_INDEX.read_text())['files']
+                if any((misplaced/name).is_symlink() or not (misplaced/name).is_file() or hashlib.sha256((misplaced/name).read_bytes()).hexdigest()!=checksum for name,checksum in previous_files.items()) or any(p.name not in FILES|{'__pycache__'} for p in misplaced.iterdir()):
+                    raise RuntimeError('La copie précédente du connecteur est conservée.')
+                archive.mkdir(exist_ok=True,mode=0o700)
+                saved=archive/'labox_ddzy422-0.1.0'
+                if saved.exists() or saved.is_symlink():raise RuntimeError('La copie précédente existe déjà ; elle est conservée.')
+                misplaced.rename(saved)
             if matches(manifest['files']):
                 return {'connector':DOMAIN,'status':'existing_preserved','restartRequired':True,'configured':False}
             if LEGACY_INDEX.is_symlink() or hashlib.sha256(LEGACY_INDEX.read_bytes()).hexdigest()!=LEGACY_INDEX_SHA256:
@@ -65,7 +80,10 @@ def install(config=Path('/homeassistant_config'), bundle=BUNDLE, index=BUNDLE_IN
                 shutil.copyfile(bundle/name,staging/name);(staging/name).chmod(0o644)
             staging.chmod(0o755)
             if upgrading:
-                previous=components/'.123home-ddzy422-previous-010'
+                archive=config/'.123home-managed-backups'
+                if archive.is_symlink():raise RuntimeError('Le dossier de sauvegarde doit être vérifié.')
+                archive.mkdir(exist_ok=True,mode=0o700)
+                previous=archive/'labox_ddzy422-0.1.0'
                 if previous.exists():
                     raise RuntimeError('La précédente migration du compteur doit être vérifiée.')
                 target.rename(previous)

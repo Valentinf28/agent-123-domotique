@@ -27,8 +27,14 @@ class SetupTests(unittest.TestCase):
   before=self.storage.read_bytes();legacy=setup.LEGACY_INDEX.read_bytes()
   self.assertEqual(hashlib.sha256(legacy).hexdigest(),setup.LEGACY_INDEX_SHA256)
   result=self.install();self.assertEqual(result['version'],'0.1.1');self.assertIn('POLL_SECONDS = 5',(target/'const.py').read_text())
-  previous=target.parent/'.123home-ddzy422-previous-010';self.assertIn('POLL_SECONDS = 30',(previous/'const.py').read_text());self.assertEqual(self.storage.read_bytes(),before)
+  previous=self.config/'.123home-managed-backups/labox_ddzy422-0.1.0';self.assertIn('POLL_SECONDS = 30',(previous/'const.py').read_text());self.assertEqual(self.storage.read_bytes(),before)
   self.assertEqual(self.install()['status'],'existing_preserved')
+ def test_previously_misplaced_known_snapshot_is_retired_outside_ha_loader(self):
+  self.install();target=self.config/'custom_components/labox_ddzy422';misplaced=target.parent/'.123home-ddzy422-previous-010';shutil.copytree(target,misplaced)
+  (misplaced/'const.py').write_text((misplaced/'const.py').read_text().replace('POLL_SECONDS = 5','POLL_SECONDS = 30'))
+  (misplaced/'manifest.json').write_text((misplaced/'manifest.json').read_text().replace('0.1.1','0.1.0'))
+  self.assertEqual(self.install()['status'],'existing_preserved');self.assertFalse(misplaced.exists());self.assertTrue((self.config/'.123home-managed-backups/labox_ddzy422-0.1.0').is_dir())
+  self.assertEqual([p.name for p in target.parent.iterdir()],['labox_ddzy422'])
  def test_legacy_with_foreign_file_is_not_replaced(self):
   self.install();target=self.config/'custom_components/labox_ddzy422'
   (target/'const.py').write_text((target/'const.py').read_text().replace('POLL_SECONDS = 5','POLL_SECONDS = 30'))
