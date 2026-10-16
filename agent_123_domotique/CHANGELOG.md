@@ -1,3 +1,8 @@
+## 0.6.11
+
+- Attend la propagation des métadonnées natives jusqu’à 90 secondes en arrière-plan avant de refuser une version cible encore indisponible.
+- Recette ciblée de mise à jour distante après correction du chemin natif.
+
 ## 0.6.10
 
 - Préparation des mises à jour par l’action native Home Assistant de l’agent ; suppression de l’appel Supervisor interdit aux extensions.

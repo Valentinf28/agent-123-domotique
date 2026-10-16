@@ -55,6 +55,16 @@ class CatalogTests(unittest.TestCase):
   self.assertEqual(self.installs,[]);self.assertEqual(self.backups,[])
   self.assertEqual(self.engine.command(self.base|{'operation':'prepare'})['previewHash'],ready['previewHash']);self.assertEqual(self.refreshes,1)
   final=self.execute(ready);self.assertEqual(len(self.installs),1);self.assertEqual(len(self.backups),1);self.assertEqual(final['state'],'awaiting_restart')
+ def test_native_metadata_may_propagate_after_more_than_five_seconds(self):
+  self.start();self.latest='0.6.0';self.engine.refresh_catalog=lambda entity:None;delays=[]
+  def wait(seconds):
+   delays.append(seconds)
+   if len(delays)==5:self.latest='0.6.1'
+  self.engine.sleep=wait
+  ready=self.finish();self.assertEqual(ready['state'],'prepared');self.assertEqual(delays,[2]*5);self.assertEqual(self.installs,[])
+ def test_missing_target_expires_after_bounded_propagation_without_install(self):
+  self.start();self.latest='0.6.0';self.engine.refresh_catalog=lambda entity:None;delays=[];self.engine.sleep=delays.append
+  ready=self.finish();self.assertEqual(ready['state'],'failed');self.assertEqual(ready['errorCode'],'catalog_target_failed');self.assertEqual(delays,[2]*45);self.assertEqual(self.installs,[]);self.assertEqual(self.backups,[])
  def test_refresh_timeout_or_permission_failure_never_backups_or_installs(self):
   for exc in (TimeoutError(),RuntimeError('denied')):
    self.start()

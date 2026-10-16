@@ -162,14 +162,14 @@ class Update(Reset):
                 phase='refresh'
                 self.refresh_catalog(state['entityId'])
                 phase='target'
-                for attempt in range(6):
+                for attempt in range(46):
                     self.require_exclusive();self.require_admin()
                     try:
                         actual=self.preflight(state['targetVersion'])
                         break
                     except RuntimeError:
-                        if attempt==5:raise
-                        self.sleep(1)
+                        if attempt==45:raise
+                        self.sleep(2)
                 if any(actual[k]!=state[k] for k in ('entityId','slug','repository','installedVersion')):
                     raise RuntimeError('La cible de mise à jour a changé.')
                 with _MUTEX:
