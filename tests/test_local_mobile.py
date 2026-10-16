@@ -62,3 +62,10 @@ class LocalMobileTests(unittest.TestCase):
    value=copy.deepcopy(self.grant);mutate(value)
    with self.assertRaises(ValueError):store_grants(value,'box-a',self.path)
    self.assertEqual(self.path.read_bytes(),old)
+
+ def test_revocation_during_registry_read_blocks_command_delivery(self):
+  def registry(command):
+   self.grant['phones']=[];store_grants(self.grant,'box-a',self.path);return []
+  self.service.registry=registry
+  result=self.response(self.envelope(method='POST',path='/services/switch/turn_on',body={'entity_id':'switch.selected'}))
+  self.assertFalse(result['ok']);self.assertEqual(self.calls,[])

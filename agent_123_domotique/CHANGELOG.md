@@ -1,3 +1,7 @@
+## 0.6.8
+
+- Revérifie le retrait d’un téléphone après une lecture d’inventaire avant d’envoyer une commande locale.
+
 ## 0.6.7
 
 - Accès local chiffré automatique pour les téléphones associés, indépendant du forfait distant.

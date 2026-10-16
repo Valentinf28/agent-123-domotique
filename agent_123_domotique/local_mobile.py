@@ -97,6 +97,8 @@ class LocalMobile:
   if write:prior=self.reserve(phone['id'],request['requestId'],hashlib.sha256(json.dumps(envelope,sort_keys=True).encode()).hexdigest())
   if prior:return prior
   try:
+   # Registry lookup may await HA. Recheck revocation and policy before delivery.
+   if self.manifest()!=manifest:raise ValueError('Local phone authority changed')
    result=self.dispatch(request,allowed,hidden)
    response={'requestId':request['requestId'],'scope':manifest['scope'],'ok':True,'result':result}
    if len(json.dumps(response))>1900000:raise ValueError('Local response too large')
