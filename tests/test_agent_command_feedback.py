@@ -38,7 +38,7 @@ class CommandFeedbackTests(unittest.TestCase):
             stack.enter_context(patch.object(agent.threading,'Thread'))
             stack.enter_context(patch.object(agent,'write_state',side_effect=lambda value:saved.append(copy.deepcopy(value))))
             stack.enter_context(patch.object(agent.time,'monotonic',return_value=100))
-            stack.enter_context(patch.object(agent.time,'sleep',side_effect=sleep))
+            stack.enter_context(patch.object(agent.HEARTBEAT_WAKE_EVENT,'wait',side_effect=sleep))
             with self.assertRaises(KeyboardInterrupt):agent.main()
         execute.assert_called_once_with('fixture',command)
         self.assertEqual(sent[1]['inventory'][0]['state'],'off')

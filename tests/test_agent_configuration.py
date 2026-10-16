@@ -62,7 +62,7 @@ class StartupTests(unittest.TestCase):
             fetch=stack.enter_context(patch.object(agent,'fetch_relay_configuration',return_value={'url':'wss://relay.example','houseId':'own-house','token':'a'*64}))
             if configuration_error: fetch.side_effect=RuntimeError('relay offline')
             thread=stack.enter_context(patch.object(agent.threading,'Thread'))
-            stack.enter_context(patch.object(agent.time,'sleep',side_effect=KeyboardInterrupt))
+            stack.enter_context(patch.object(agent.HEARTBEAT_WAKE_EVENT,'wait',side_effect=KeyboardInterrupt))
             with self.assertRaises(KeyboardInterrupt):agent.main()
             enroll.assert_not_called()
             heartbeat.assert_called_once()

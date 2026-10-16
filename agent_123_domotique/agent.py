@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.11"
+AGENT_VERSION = "0.6.12"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -47,6 +47,7 @@ def grid_automation_sources(payload):
 
 
 HA_TUNNELS: dict[str, websocket.WebSocket] = {}
+HEARTBEAT_WAKE_EVENT = threading.Event()
 RELAY_IDLE_TIMEOUT_SECONDS = 30
 RELAY_PONG_TIMEOUT_SECONDS = 15
 
@@ -2924,6 +2925,9 @@ def relay_connected_session(
         socket.settimeout(RELAY_IDLE_TIMEOUT_SECONDS)
         if message.get("type") == "pong":
             continue
+        if message == {"type": "heartbeat.wake"}:
+            HEARTBEAT_WAKE_EVENT.set()
+            continue
         if message.get("type") == "command":
             relay_send(relay_command(supervisor_token, message, relay_send))
 
@@ -3193,6 +3197,7 @@ def main() -> None:
         while True:
             time.sleep(300)
     while True:
+        HEARTBEAT_WAKE_EVENT.clear()
         cycle_started_at = time.monotonic()
         fast_follow_up = False
         try:
@@ -3216,7 +3221,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["local.mobile.encrypted", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["heartbeat.wake", "local.mobile.encrypted", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             from installation_update import Update, heartbeat_status
             update_status = heartbeat_status(AGENT_VERSION)
             if update_status:
@@ -3316,7 +3321,7 @@ def main() -> None:
         except Exception as error:
             log(f"Erreur inattendue ({type(error).__name__}: {error}), nouvelle tentative")
         cycle_duration = time.monotonic() - cycle_started_at
-        time.sleep(0.2 if fast_follow_up else max(0.2, interval - cycle_duration))
+        HEARTBEAT_WAKE_EVENT.wait(0.2 if fast_follow_up else max(0.2, interval - cycle_duration))
 
 
 if __name__ == "__main__":

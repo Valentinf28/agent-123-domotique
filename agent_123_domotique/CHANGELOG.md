@@ -1,3 +1,9 @@
+## 0.6.12
+
+- Réveille immédiatement la synchronisation lors d’une commande du portail, par la liaison sortante existante.
+- Le réveil ne transporte aucune commande : les demandes restent durables et revérifiées avant exécution par le parcours existant.
+- Le cycle périodique est conservé si le relais est indisponible.
+
 ## 0.6.11
 
 - Attend la propagation des métadonnées natives jusqu’à 90 secondes en arrière-plan avant de refuser une version cible encore indisponible.
