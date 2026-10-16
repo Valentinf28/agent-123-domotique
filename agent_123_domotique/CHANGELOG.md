@@ -1,3 +1,8 @@
+## 0.6.9
+
+- Retour immédiat des résultats et d’un état relu après les commandes du portail, sans attendre le cycle périodique suivant.
+- Reprise au rythme habituel si le portail est indisponible ; conservation des résultats durables et aucun rejeu de commande.
+
 ## 0.6.8
 
 - Revérifie le retrait d’un téléphone après une lecture d’inventaire avant d’envoyer une commande locale.

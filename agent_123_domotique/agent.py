@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.8"
+AGENT_VERSION = "0.6.9"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -3196,6 +3196,7 @@ def main() -> None:
             time.sleep(300)
     while True:
         cycle_started_at = time.monotonic()
+        fast_follow_up = False
         try:
             if not state.get("token"):
                 if factory_ready:
@@ -3296,6 +3297,9 @@ def main() -> None:
                 f"Connecté · Home Assistant {summary['haVersion']} · "
                 f"{summary['inventoryCount']} entités"
             )
+            # Read fresh states and report persisted results immediately after execution.
+            # A failed heartbeat keeps the normal retry interval and the durable results.
+            fast_follow_up = bool(state.get("command_results"))
         except urllib.error.HTTPError as error:
             if error.code == 401 and state.get("token"):
                 log("Identité de box refusée ; nouvel enrôlement requis")
@@ -3314,7 +3318,7 @@ def main() -> None:
         except Exception as error:
             log(f"Erreur inattendue ({type(error).__name__}: {error}), nouvelle tentative")
         cycle_duration = time.monotonic() - cycle_started_at
-        time.sleep(max(0.2, interval - cycle_duration))
+        time.sleep(0.2 if fast_follow_up else max(0.2, interval - cycle_duration))
 
 
 if __name__ == "__main__":
