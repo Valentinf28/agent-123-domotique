@@ -32,7 +32,9 @@ def _api(data):
     def request(method, url, **kwargs):
         if method != 'GET' or url not in (endpoint.rstrip('/')+'/v1.0/m/life/users/homes', endpoint.rstrip('/')+'/v1.0/m/life/ha/home/devices'):
             raise ValueError('Read-only home inventory')
-        return original(method, url, **kwargs, timeout=4, allow_redirects=False)
+        kwargs['timeout'] = 4
+        kwargs['allow_redirects'] = False
+        return original(method, url, **kwargs)
     api.session.request = request
     return api
 

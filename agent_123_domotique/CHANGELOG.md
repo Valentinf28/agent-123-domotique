@@ -1,3 +1,8 @@
+## 0.6.6
+
+- Corrige la lecture des maisons Smart Life / Tuya avec le SDK natif : délai HTTP borné sans argument en double.
+- Conserve la connexion existante et le choix de la maison avant l’ajout des appareils.
+
 ## 0.6.5
 
 - Préparation des mises à jour à distance : actualisation du catalogue natif et de l’entité de mise à jour avant validation de la version.
