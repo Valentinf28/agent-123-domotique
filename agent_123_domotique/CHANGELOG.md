@@ -1,3 +1,8 @@
+## 0.6.15
+
+- Inclut les mesures électriques dans chaque résumé rapide, indépendamment du nom du capteur.
+- Évite l’attente de l’inventaire complet pour les nouveaux compteurs et leurs capteurs renommés.
+
 ## 0.6.14
 
 - Conserve la copie précédente du compteur hors du dossier des intégrations chargées par Home Assistant.

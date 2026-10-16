@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.14"
+AGENT_VERSION = "0.6.15"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1092,11 +1092,14 @@ def home_assistant_summary(
         if not isinstance(state, dict):
             continue
         entity_id = str(state.get("entity_id", ""))
-        if not full_inventory and entity_id != "sensor.home_local_configuration" and not entity_id.startswith(FAST_ENTITY_PREFIXES):
-            continue
         attributes = state.get("attributes")
         if not isinstance(attributes, dict):
             attributes = {}
+        electrical_measurement = entity_id.startswith("sensor.") and attributes.get("device_class") in {
+            "power", "energy", "current", "voltage", "frequency", "power_factor"
+        }
+        if not full_inventory and entity_id != "sensor.home_local_configuration" and not entity_id.startswith(FAST_ENTITY_PREFIXES) and not electrical_measurement:
+            continue
         safe_attributes = {
             key: attributes[key]
             for key in SAFE_ATTRIBUTE_KEYS
