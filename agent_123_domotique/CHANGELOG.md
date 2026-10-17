@@ -1,3 +1,8 @@
+# 0.6.16
+
+- Ajout guidé local des bornes Lektrico : découverte, confirmation du numéro et lecture des fonctions natives.
+- Connexion réservée aux sessions de configuration ; aucune recharge déclenchée.
+
 ## 0.6.15
 
 - Inclut les mesures électriques dans chaque résumé rapide, indépendamment du nom du capteur.

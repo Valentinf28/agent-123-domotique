@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.15"
+AGENT_VERSION = "0.6.16"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1854,7 +1854,7 @@ def close_ha_tunnel(upstream) -> None:
 
 def queued_command_result(supervisor_token: str, command: dict[str, Any]) -> dict[str, Any]:
     """Reset commands are direct-session only and never durable-heartbeat jobs."""
-    if command.get("action") in ("installation.reset", "installation.update", "commissioning.activate_ddzy422", "commissioning.tuya", "commissioning.shelly", "commissioning.equipment"):
+    if command.get("action") in ("installation.reset", "installation.update", "commissioning.activate_ddzy422", "commissioning.tuya", "commissioning.shelly", "commissioning.equipment", "commissioning.ev_discover", "commissioning.lektrico"):
         return {"ok": False, "error": "Cette opération nécessite une session directe."}
     return relay_command(supervisor_token, command)
 
@@ -1911,6 +1911,22 @@ def relay_command(
             result = Update(call_update, supervisor_update, lambda slug: verify_supervisor_archive(slug, supervisor_token),
                 registry=lambda: home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"}).get("result"),
                 runtime_version=AGENT_VERSION, refresh_catalog=lambda entity: native_catalog_refresh(call_update, entity), authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"})).command(payload)
+        elif action in ("commissioning.ev_discover", "commissioning.lektrico"):
+            if action == "commissioning.ev_discover":
+                from ev_discovery import discover as setup
+            else:
+                from lektrico_setup import configure as setup
+            def call_ev(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            def ev_registry(command):
+                response = home_assistant_ws_command(supervisor_token, command)
+                if not isinstance(response, dict) or response.get("success") is False:
+                    raise RuntimeError("La recherche native n’a pas répondu.")
+                return response.get("result") if "result" in response else response
+            try:
+                result = setup(payload, call_ev, registry=ev_registry)
+            except Exception:
+                raise RuntimeError("La connexion de la borne n’a pas abouti. Recherchez à nouveau avant de reprendre.") from None
         elif action == "commissioning.equipment":
             from equipment_setup import configure as configure_equipment
             def call_equipment(path, **kwargs):
@@ -3229,7 +3245,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["heartbeat.wake", "local.mobile.encrypted", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             from installation_update import Update, heartbeat_status
             update_status = heartbeat_status(AGENT_VERSION)
             if update_status:
