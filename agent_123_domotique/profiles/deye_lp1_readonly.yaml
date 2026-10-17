@@ -651,6 +651,7 @@ parameters:
     validation:
       min: 1
 - group: Battery
+  update_interval: 5
   items:
   - name: Battery Temperature
     class: temperature
@@ -712,6 +713,7 @@ parameters:
     digits: 1
     icon: mdi:battery-check
 - group: Grid
+  update_interval: 5
   items:
   - name: Grid Frequency
     l: 1
@@ -867,6 +869,7 @@ parameters:
     - 172
     icon: mdi:transmission-tower
 - group: Load
+  update_interval: 5
   items:
   - name: Load L1 Voltage
     l: 1

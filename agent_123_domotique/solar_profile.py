@@ -5,7 +5,8 @@ import hashlib
 PROFILE = 'deye_sg01hp3_readonly.yaml'
 PROFILE_SHA = 'eeb4983bd4d5b3dfdb22acabfec4efe263e1fe66c70088bd44d1bcd222e9e26b'
 LP1_PROFILE = 'deye_lp1_readonly.yaml'
-LP1_PROFILE_SHA = '19579d03cc63815d3a91cbba513b8c792582a17e3ee344ee618a321595406bad'
+LP1_PROFILE_SHA = 'c972255606fc6f876b2b66f20d163872cc4121e2bfcf456f712302a679d7418d'
+LEGACY_LP1_PROFILE_SHA = '19579d03cc63815d3a91cbba513b8c792582a17e3ee344ee618a321595406bad'
 
 MICRO_PROFILE = 'deye_micro_readonly.yaml'
 MICRO_PROFILE_SHA = '1829bb97fe167474a75ace476c49487fcf3d9558d5bdd9246a2ca9395661e6fb'
@@ -29,10 +30,22 @@ def ensure_profile(root, name):
     if destination.is_symlink():
         raise RuntimeError('Un profil solaire différent existe déjà ; il a été conservé.')
     if destination.exists() and destination.read_bytes() != data:
-        if name != MICRO_PROFILE or hashlib.sha256(destination.read_bytes()).hexdigest() != LEGACY_MICRO_PROFILE_SHA:
+        legacy = {MICRO_PROFILE: LEGACY_MICRO_PROFILE_SHA, LP1_PROFILE: LEGACY_LP1_PROFILE_SHA}
+        if hashlib.sha256(destination.read_bytes()).hexdigest() != legacy.get(name):
             raise RuntimeError('Un profil solaire différent existe déjà ; il a été conservé.')
         import os, tempfile
-        fd, temporary = tempfile.mkstemp(prefix='.123home-micro-profile-', dir=target)
+        if name == LP1_PROFILE:
+            import json
+            marker=target/'.123home-lp1-cadence.json'
+            if marker.is_symlink():raise RuntimeError('Le suivi du profil solaire doit être vérifié.')
+            mfd, pending_marker=tempfile.mkstemp(prefix='.123home-cadence-',dir=target)
+            try:
+                with os.fdopen(mfd,'w') as output:
+                    json.dump({'sha256':expected},output);output.flush();os.fsync(output.fileno())
+                os.chmod(pending_marker,0o644);os.replace(pending_marker,marker)
+            finally:
+                if os.path.exists(pending_marker):os.unlink(pending_marker)
+        fd, temporary = tempfile.mkstemp(prefix='.123home-measurement-profile-', dir=target)
         try:
             with os.fdopen(fd, 'wb') as output:
                 output.write(data); output.flush(); os.fsync(output.fileno())

@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import urllib.error
 from network_discovery import local_interfaces
-from solar_profile import PROFILE, LP1_PROFILE, MICRO_PROFILE, ensure_profile
+from solar_profile import PROFILE, LP1_PROFILE, LP1_PROFILE_SHA, MICRO_PROFILE, ensure_profile
 
 
 def settings(payload, adapters, topology=None):
@@ -89,6 +89,7 @@ def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), 
                 additional=entry.get('options',{}).get('additional_options',{})
                 if additional.get('mppt',4)!=topology['mppt'] or additional.get('phase')!=1 or additional.get('mod',0)!=values['additional_options']['mod']:
                     reconcile_topology(entry, values, call, data)
+                reconcile_cadence(entry, root, call, data)
             return {'connector':'solarman','status':'configured','entryId':matching[0]['entry_id'], 'measurementsVerified':False}
         if own or any(entry['entry_id'] not in {row['entry_id'] for row in candidates} for entry in live):
             raise RuntimeError('Une connexion solaire est en cours d’enregistrement. Réessayez dans quelques instants.')
@@ -201,3 +202,28 @@ def reconcile_topology(entry, values, call, data):
         if isinstance(reply,dict) and reply.get('type')=='form':
             state={'entryId':entry_id,'submitted':False};path.write_text(json.dumps(state));path.chmod(0o600)
         raise RuntimeError('La correction des entrées solaires n’a pas été confirmée.')
+
+
+def reconcile_cadence(entry, root, call, data):
+    """Reload only the selected managed entry after its pinned profile upgrade."""
+    marker=Path(root)/'inverter_definitions/custom/.123home-lp1-cadence.json'
+    if not marker.exists():return
+    if marker.is_symlink() or json.loads(marker.read_text()).get('sha256')!=LP1_PROFILE_SHA:
+        raise RuntimeError('La cadence du profil solaire doit être vérifiée.')
+    entry_id=entry['entry_id']
+    if not isinstance(entry_id,str) or not re.fullmatch('[A-Za-z0-9_-]{1,100}',entry_id):
+        raise RuntimeError('Connexion solaire invalide.')
+    receipt=Path(data)/('solar-cadence-'+entry_id+'.json')
+    if receipt.is_symlink():raise RuntimeError('Le suivi de connexion doit être vérifié.')
+    if receipt.exists() and json.loads(receipt.read_text()).get('sha256')==LP1_PROFILE_SHA:return
+    reply=call('/config/config_entries/entry/'+entry_id+'/reload',method='POST',payload={})
+    if not isinstance(reply,dict) or reply.get('require_restart') is not False:
+        raise RuntimeError('La lecture solaire doit être rechargée avant de confirmer ses mesures.')
+    import tempfile
+    fd,temporary=tempfile.mkstemp(prefix='.solar-cadence-',dir=data)
+    try:
+        with os.fdopen(fd,'w') as output:
+            json.dump({'sha256':LP1_PROFILE_SHA},output);output.flush();os.fsync(output.fileno())
+        os.chmod(temporary,0o600);os.replace(temporary,receipt)
+    finally:
+        if os.path.exists(temporary):os.unlink(temporary)
