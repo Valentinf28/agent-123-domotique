@@ -30,7 +30,7 @@ class TopologyReconcileTests(TestCase):
  # Inherit setup fixtures but run only dedicated migration scenarios here.
  def test_existing_connection_options_are_preserved_and_only_topology_is_changed(self):
   payload=PAYLOAD|{'model':'deye_lp1'};topology={'loggerSerial':payload['loggerSerial'],'mppt':3,'phase':1,'mod':0}
-  options=settings(payload,ADAPTERS,topology);options.pop('name');options['additional_options']['mppt']=2;options['additional_options']['battery_nominal_voltage']=51
+  options=settings(payload,ADAPTERS,topology);options.pop('name');options['additional_options']['mppt']=2;options['additional_options'].pop('mod');options['additional_options']['battery_nominal_voltage']=51
   entry={'domain':'solarman','entry_id':'saved','options':options};self.storage.write_text(json.dumps({'data':{'entries':[entry]}}));before=self.storage.read_bytes()
   call=Mock(side_effect=[[{'entry_id':'saved'}],{'handler':'saved','flow_id':'options1','type':'form','step_id':'init','data_schema':[{'name':k} for k in options]},{'type':'create_entry'}])
   result=self.run_setup(call,payload);self.assertEqual(result['entryId'],'saved');self.assertEqual(call.call_args.args[0],'/config/config_entries/options/flow/options1')

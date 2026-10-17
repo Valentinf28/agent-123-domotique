@@ -72,7 +72,7 @@ def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), 
             if len(matching) != 1 or any(matching[0].get('options',{}).get(k) != values[k]
                                        for k in ('host','logger_serial','lookup_file')):
                 raise RuntimeError('Ce boîtier possède déjà une connexion différente. Elle a été conservée ; une vérification est nécessaire.')
-            if matching[0].get('options', {}).get('additional_options', {}).get('mod') != values['additional_options']['mod']:
+            if matching[0].get('options', {}).get('additional_options', {}).get('mod',0) != values['additional_options']['mod']:
                 raise RuntimeError('Le profil '+('haute tension' if payload['model']=='deye_sg01hp3' else 'basse tension')+' de cette connexion doit être corrigé avant validation.')
             if matching[0].get('disabled_by') or any(entry.get('disabled_by') for entry in live if entry['entry_id']==matching[0]['entry_id']):
                 raise RuntimeError('Cette ancienne connexion est désactivée. Elle n’a pas été réactivée automatiquement.')
@@ -81,7 +81,7 @@ def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), 
             if payload['model']=='deye_lp1':
                 entry=matching[0]
                 additional=entry.get('options',{}).get('additional_options',{})
-                if additional.get('mppt')!=topology['mppt'] or additional.get('phase')!=1:
+                if additional.get('mppt',4)!=topology['mppt'] or additional.get('phase')!=1:
                     reconcile_topology(entry, values, call, data)
             return {'connector':'solarman','status':'configured','entryId':matching[0]['entry_id'], 'measurementsVerified':False}
         if own or any(entry['entry_id'] not in {row['entry_id'] for row in candidates} for entry in live):
