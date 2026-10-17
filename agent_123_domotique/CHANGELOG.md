@@ -1,3 +1,7 @@
+# 0.6.17
+
+- Préparation après remise à zéro : un ancien connecteur SolarMAN sans connexion active est sauvegardé avant installation du connecteur guidé. Les connexions actives et les dossiers ambigus sont préservés.
+
 # 0.6.16
 
 - Ajout guidé local des bornes Lektrico : découverte, confirmation du numéro et lecture des fonctions natives.

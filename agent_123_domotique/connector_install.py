@@ -8,11 +8,29 @@ import stat
 import tempfile
 import zipfile
 import fcntl
+import uuid
 
 VERSION = "25.08.16"
 DIGEST = "04fd37da1ba1cd3a590146a48602162ad5c7e0c319c80ca326369cd5a26da977"
 BUNDLE = Path(__file__).parent / "vendor" / f"solarman-{VERSION}.zip"
 CONFIG = Path("/homeassistant_config")
+
+
+def unused_connector(config):
+    """An old tree is replaceable only with readable, empty SolarMAN ownership."""
+    storage = config / '.storage/core.config_entries'
+    if storage.parent.is_symlink() or storage.is_symlink() or not storage.is_file():
+        return False
+    try:
+        entries = json.loads(storage.read_text())['data']['entries']
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return isinstance(entries, list) and all(isinstance(e, dict) and isinstance(e.get('domain'), str) for e in entries) and not any(e['domain'] == 'solarman' for e in entries)
+
+
+def installed_result():
+    return {"connector": "solarman", "status": "installed", "version": VERSION,
+            "restartRequired": True, "configured": False}
 
 
 def install_solarman(config=CONFIG, bundle=BUNDLE):
@@ -30,16 +48,22 @@ def install_solarman(config=CONFIG, bundle=BUNDLE):
     with os.fdopen(descriptor, "w") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
         destination = components / "solarman"
+        replace_unused = False
         if destination.exists() or destination.is_symlink():
-            # Only our managed connector receives the known, pinned profile migration.
             marker = destination / "123home-bundle.json"
             if not destination.is_symlink() and marker.is_file() and not marker.is_symlink():
                 value = json.loads(marker.read_text())
                 manifest = json.loads((destination / "manifest.json").read_text())
                 if value == {"revision": 1, "profile": "deye_sg01hp3_readonly.yaml"} and manifest.get("domain") == "solarman" and manifest.get("version") == VERSION:
-                    from solar_profile import ensure_profile, MICRO_PROFILE
-                    ensure_profile(destination, MICRO_PROFILE)
-            return {"connector": "solarman", "status": "existing_preserved", "configured": False}
+                    from solar_profile import ensure_profile, PROFILE, LP1_PROFILE, MICRO_PROFILE
+                    for profile in (PROFILE, LP1_PROFILE, MICRO_PROFILE):
+                        ensure_profile(destination, profile)
+                    return installed_result()
+            # Preserve every active/ambiguous/custom-managed installation.
+            replace_unused = (destination.is_dir() and not destination.is_symlink()
+                              and not marker.exists() and not marker.is_symlink() and unused_connector(config))
+            if not replace_unused:
+                return {"connector": "solarman", "status": "existing_preserved", "configured": False}
         if hashlib.sha256(bundle.read_bytes()).hexdigest() != DIGEST:
             raise RuntimeError("Le connecteur solaire fourni est incomplet ou altéré.")
         temporary = Path(tempfile.mkdtemp(prefix=".123home-solarman-", dir=components))
@@ -70,11 +94,28 @@ def install_solarman(config=CONFIG, bundle=BUNDLE):
             from solar_profile import adapt_connector
             adapt_connector(temporary)
             shutil.copyfile(bundle.parent / "SOLARMAN-LICENSE", temporary / "LICENSE-123HOME-BUNDLE")
-            # Destination is absent and staging is on the same filesystem.
             temporary.chmod(0o755)
-            temporary.rename(destination)
+            if replace_unused:
+                # Stage completely first. Retain the entire old tree outside HA's
+                # loader path, on the same filesystem, so rollback is an atomic move.
+                backups = config / '.labox-connector-backups'
+                if backups.is_symlink() or backups.exists() and not backups.is_dir():
+                    raise RuntimeError('Le dossier de sauvegarde des connecteurs doit être vérifié.')
+                backups.mkdir(mode=0o700, exist_ok=True)
+                if not unused_connector(config):
+                    raise RuntimeError('Une connexion solaire a été ajoutée pendant la préparation. Elle est conservée.')
+                backup = backups / ('solarman-' + uuid.uuid4().hex)
+                destination.rename(backup)
+                try:
+                    if not unused_connector(config):
+                        raise RuntimeError('Une connexion solaire a été ajoutée pendant la préparation. Elle est conservée.')
+                    temporary.rename(destination)
+                except Exception:
+                    backup.rename(destination)
+                    raise
+            else:
+                temporary.rename(destination)
         finally:
             if temporary.exists():
                 shutil.rmtree(temporary)
-        return {"connector": "solarman", "status": "installed", "version": VERSION,
-                "restartRequired": True, "configured": False}
+        return installed_result()
