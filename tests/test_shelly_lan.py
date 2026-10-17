@@ -27,7 +27,7 @@ class LanNative(Native):
     return {'type':'form','handler':'shelly','flow_id':'manual1','step_id':'credentials','data_schema':[{'name':'password'}]}
    self.native=[{'entry_id':'entry1','domain':'shelly','state':'loaded','disabled_by':None}]
    self.device_rows=[{'id':'device1','config_entries':['entry1'],'manufacturer':'Shelly','model':'Plus 1','connections':[['mac',MAC]]}]
-   return {'type':'create_entry','result':{'entry_id':'entry1','unique_id':MAC}}
+   return {'type':'create_entry','result':{'entry_id':'entry1','domain':'shelly','state':'loaded'}}
   return super().call(path,**kwargs)
 
 class LanTests(TestCase):
@@ -61,6 +61,40 @@ class LanTests(TestCase):
   r=self.step(n,'credentials',username='',password='private-secret');self.assertEqual(len(r['devices']),1);self.assertNotIn('private-secret',json.dumps(r));self.assertNotIn('private-secret',(self.data/'shelly-setup.json').read_text())
  def test_lost_create_reply_reconciles_without_duplicate_entry(self):
   n=LanNative();self.step(n,'connect',confirmed=True);before=len(n.calls);self.step(n,'connect',confirmed=True);self.assertFalse(any(k.get('method')=='POST' for _,k in n.calls[before:]))
+ def test_public_create_result_without_unique_id_confirms_registry_mac(self):
+  n=LanNative();view=self.step(n,'connect',confirmed=True)
+  self.assertEqual(view['devices'][0]['mac'],MAC)
+  self.assertEqual(json.loads((self.data/'shelly-setup.json').read_text()),{})
+ def test_created_entry_with_another_registry_mac_is_rejected(self):
+  class WrongIdentity(LanNative):
+   def call(self,path,**kwargs):
+    value=super().call(path,**kwargs)
+    if path.endswith('/manual1') and kwargs.get('payload',{}).get('host'):
+     self.device_rows[0]['connections']=[['mac','112233445566']]
+    return value
+  n=WrongIdentity()
+  with self.assertRaisesRegex(RuntimeError,'Identité native'):self.step(n,'connect',confirmed=True)
+ def test_late_registry_is_not_failure_and_never_reposts_host(self):
+  class LateRegistry(LanNative):
+   def call(self,path,**kwargs):
+    value=super().call(path,**kwargs)
+    if path.endswith('/manual1') and kwargs.get('payload',{}).get('host'):self.device_rows=[]
+    return value
+  n=LateRegistry();view=self.step(n,'connect',confirmed=True)
+  self.assertEqual(view['entries'][0]['entryId'],'entry1');self.assertEqual(view['devices'],[])
+  before=len(n.calls);self.step(n,'connect',confirmed=True)
+  self.assertFalse(any(k.get('method')=='POST' for _,k in n.calls[before:]))
+  n.device_rows=[{'id':'device1','config_entries':['entry1'],'manufacturer':'Shelly','model':'Plus 1','connections':[['mac',MAC]]}]
+  self.assertEqual(self.step(n)['devices'][0]['mac'],MAC)
+ def test_late_registry_cannot_be_claimed_by_another_session(self):
+  class LateRegistry(LanNative):
+   def call(self,path,**kwargs):
+    value=super().call(path,**kwargs)
+    if path.endswith('/manual1') and kwargs.get('payload',{}).get('host'):self.device_rows=[]
+    return value
+  n=LateRegistry();self.step(n,'connect',confirmed=True);before=len(n.calls)
+  with self.assertRaises(RuntimeError):self.step(n,'connect',confirmed=True,session='223e4567-e89b-42d3-a456-426614174000')
+  self.assertFalse(any(k.get('method')=='POST' for _,k in n.calls[before:]))
  def test_lan_probe_rejects_external_localhost_box_and_redirect(self):
   interfaces=[ipaddress.IPv4Interface('192.168.9.5/24')]
   with patch('shelly_lan.http.client.HTTPConnection') as factory:

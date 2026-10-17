@@ -102,16 +102,42 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time,lan=Non
             temporary=file.with_suffix('.tmp');fd=os.open(temporary,os.O_CREAT|os.O_WRONLY|os.O_TRUNC|os.O_NOFOLLOW,0o600)
             with os.fdopen(fd,'w') as stream:json.dump(journal,stream)
             temporary.replace(file)
+        def created_view(reply, domain):
+            nonlocal native
+            created=reply.get('result')
+            entry_id=created.get('entry_id') if isinstance(created,dict) else None
+            if not isinstance(entry_id,str) or not ID.fullmatch(entry_id) or created.get('domain',domain)!=domain:
+                raise RuntimeError('La connexion native doit être actualisée.')
+            # HA's public create_entry result deliberately omits unique_id.
+            # Bind its entry ID to the current device registry MAC instead.
+            if isinstance(created,dict) and created.get('unique_id') is not None and mac(created['unique_id'])!=identity:
+                raise RuntimeError('Identité native non confirmée.')
+            journal[flow_id]['createdEntryId']=entry_id;save()
+            native=entries(call)
+            attached=[d for d in devices(native,call,registry) if d['entryId']==entry_id and d['domain']==domain]
+            confirmed=[d for d in attached if d['mac']==identity]
+            if len(confirmed)>1 or not confirmed and any(d['mac'] for d in attached):
+                raise RuntimeError('Identité native non confirmée.')
+            if confirmed:
+                journal.pop(flow_id,None);save()
+            # A registered entry may still be loading. Keep the submitted
+            # journal until its registry appears, without reporting a failure
+            # or replaying the host/password submission.
+            return view()
         # A lost reply must be reconciled by native identity, never reposted.
         connected=[d for d in devices(native,call,registry) if d['mac']==identity]
         if connected:return view()
-        candidate=next((d for d in found() if d['flowId']==flow_id and d['mac']==identity),None)
-        if not candidate:raise RuntimeError('Cette découverte a changé. Actualisez la recherche.')
         lease=journal.get(flow_id)
         if lease and (lease['ownerScope']!=owner or lease['session']!=session):
             if lease.get('submitted') or clock()<lease['expiresAt']:raise RuntimeError('Une autre session configure cet appareil.')
             lease=None
+        if lease and lease.get('submitted') and lease.get('createdEntryId'):
+            # Refreshing a known successful submission is read-only, even
+            # before its device and entities have finished registering.
+            return view()
         if lease and lease.get('submitted'):raise RuntimeError('La box vérifie encore le dernier envoi. Actualisez sans renvoyer les identifiants.')
+        candidate=next((d for d in found() if d['flowId']==flow_id and d['mac']==identity),None)
+        if not candidate:raise RuntimeError('Cette découverte a changé. Actualisez la recherche.')
         if lease and clock()>=lease['expiresAt']:
             if operation=='connect' and not lease.get('submitted'):lease=None
             else:raise RuntimeError('Cette session locale a expiré. Actualisez la recherche.')
@@ -131,11 +157,7 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time,lan=Non
                 journal[flow_id]['nativeFlowId']=native_flow_id;save()
                 flow=call('/config/config_entries/flow/'+native_flow_id,method='POST',payload=values)
                 if isinstance(flow,dict) and flow.get('type')=='create_entry':
-                    created=flow.get('result',{})
-                    if mac(created.get('unique_id'))!=identity:raise RuntimeError('Identité native non confirmée.')
-                    native=entries(call)
-                    if not any(e['entryId']==created.get('entry_id') and e['domain']=='shelly' for e in native):raise RuntimeError('Connexion native à actualiser.')
-                    journal.pop(flow_id,None);save();return view()
+                    return created_view(flow, 'shelly')
                 if not isinstance(flow,dict) or flow.get('type')!='form' or flow.get('step_id')!='credentials':
                     raise RuntimeError('La connexion réseau n’a pas été confirmée.')
                 journal[flow_id].update(submitted=False,step='credentials');save();lease=journal[flow_id]
@@ -163,11 +185,7 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time,lan=Non
         # No exception strings or native response data are returned to the caller.
         reply=call('/config/config_entries/flow/'+native_flow_id,method='POST',payload=values)
         if isinstance(reply,dict) and reply.get('type')=='create_entry':
-            native=entries(call);created=reply.get('result',{});
-            if lan_candidate and mac(created.get('unique_id'))!=identity:raise RuntimeError('Identité native non confirmée.')
-            entry_id=created.get('entry_id') if isinstance(created,dict) else None
-            if not any(e['entryId']==entry_id and e['domain']==candidate['domain'] for e in native):raise RuntimeError('La connexion native n’a pas encore été confirmée. Actualisez la recherche.')
-            journal.pop(flow_id,None);save();return view()
+            return created_view(reply, candidate['domain'])
         if isinstance(reply,dict) and reply.get('type')=='form' and reply.get('step_id') in ('credentials','get_encryption_key'):
             journal[flow_id]['submitted']=False;save()
             return {**view(),'authentication':{'flowId':flow_id,'mac':identity,'name':candidate['name'],'kind':'key' if reply['step_id']=='get_encryption_key' else 'password','usernameRequired':any(f.get('name')=='username' for f in reply.get('data_schema',[]) if isinstance(f,dict)),'retry':bool(reply.get('errors'))}}
