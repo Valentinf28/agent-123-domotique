@@ -46,7 +46,7 @@ def ensure_profile(root, name):
 def qualify_managed_connector(root):
     """Distinct loaded version proves HA has discarded the unadapted module cache."""
     import json, os, tempfile
-    from connector_install import VERSION, MANAGED_VERSION
+    from connector_install import MANAGED_VERSION, MANAGED_PRIOR_VERSIONS
     root = Path(root)
     paths = [root / name for name in ('manifest.json', 'config_flow.py', 'provider.py', '123home-bundle.json')]
     if root.is_symlink() or any(path.is_symlink() for path in paths):
@@ -54,7 +54,7 @@ def qualify_managed_connector(root):
     if (root/'config_flow.py').read_text().count('vol.Optional("logger_serial")') != 1 or 'if serial := self.config._options.get("logger_serial"):' not in (root/'provider.py').read_text():
         raise RuntimeError('La préparation du connecteur solaire est incomplète.')
     manifest = json.loads((root/'manifest.json').read_text())
-    if manifest.get('domain') != 'solarman' or manifest.get('version') not in (VERSION, MANAGED_VERSION):
+    if manifest.get('domain') != 'solarman' or manifest.get('version') not in MANAGED_PRIOR_VERSIONS:
         raise RuntimeError('La version du connecteur solaire doit être vérifiée.')
     manifest['version'] = MANAGED_VERSION
     for name, value in [('manifest.json', manifest), ('123home-bundle.json', {'revision':2,'profile':PROFILE})]:

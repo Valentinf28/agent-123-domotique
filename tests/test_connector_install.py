@@ -37,6 +37,7 @@ class ConnectorInstallTests(unittest.TestCase):
 
     def test_managed_revision_distinguishes_cached_upstream_and_migrates_idempotently(self):
         with tempfile.TemporaryDirectory() as folder:
+            self.assertRegex(installer.MANAGED_VERSION,r'^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\+labox\.[1-9][0-9]*$')
             config=Path(folder);installer.install_solarman(config);root=config/'custom_components/solarman'
             manifest=json.loads((root/'manifest.json').read_text());self.assertEqual(manifest['version'],installer.MANAGED_VERSION)
             # Prior managed revision had the same public upstream version while HA kept old code.

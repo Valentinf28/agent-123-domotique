@@ -1,3 +1,7 @@
+# 0.6.19
+
+- Normalise la version du connecteur géré au format accepté par le moteur Home Assistant.
+
 # 0.6.18
 
 - La version gérée du connecteur SolarMAN diffère de la version amont : une ancienne version en mémoire ne peut plus être déclarée prête. L’activation impose son rechargement avant connexion.

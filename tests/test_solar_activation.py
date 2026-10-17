@@ -13,7 +13,7 @@ class ActivationTests(unittest.TestCase):
         self.config=Path(self.folder.name)/'config'; self.data=Path(self.folder.name)/'data'
         marker=self.config/'custom_components/solarman/123home-bundle.json';marker.parent.mkdir(parents=True);marker.write_text('{}')
     def run_activation(self,call,now=1000,manifest=None):
-        return activate(call,loaded_manifest=manifest if manifest is not None else {'domain':'solarman','version':'25.08.16+labox.1','is_built_in':False},config=self.config,data=self.data,now=now)
+        return activate(call,loaded_manifest=manifest if manifest is not None else {'domain':'solarman','version':'25.8.16+labox.1','is_built_in':False},config=self.config,data=self.data,now=now)
     def test_available_connector_does_not_restart(self):
         call=Mock(return_value=['solarman'])
         self.assertEqual(self.run_activation(call)['status'],'ready');self.assertEqual(call.call_count,1)
