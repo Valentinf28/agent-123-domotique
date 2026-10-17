@@ -35,6 +35,18 @@ class ConnectorInstallTests(unittest.TestCase):
             self.assertEqual((root / 'user-customization').read_text(),'keep')
             self.assertEqual(unrelated.read_text(),'do not modify')
 
+    def test_managed_revision_distinguishes_cached_upstream_and_migrates_idempotently(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config=Path(folder);installer.install_solarman(config);root=config/'custom_components/solarman'
+            manifest=json.loads((root/'manifest.json').read_text());self.assertEqual(manifest['version'],installer.MANAGED_VERSION)
+            # Prior managed revision had the same public upstream version while HA kept old code.
+            manifest['version']=installer.VERSION;(root/'manifest.json').write_text(json.dumps(manifest))
+            (root/'123home-bundle.json').write_text(json.dumps({'revision':1,'profile':'deye_sg01hp3_readonly.yaml'}))
+            before=(root/'config_flow.py').read_bytes();installer.install_solarman(config)
+            self.assertEqual(json.loads((root/'manifest.json').read_text())['version'],installer.MANAGED_VERSION)
+            self.assertEqual((root/'config_flow.py').read_bytes(),before)
+            installer.install_solarman(config);self.assertEqual((root/'config_flow.py').read_text().count('vol.Optional("logger_serial")'),1)
+
     def test_explicit_logger_serial_skips_upstream_network_reconfiguration(self):
         with tempfile.TemporaryDirectory() as folder:
             installer.install_solarman(folder)

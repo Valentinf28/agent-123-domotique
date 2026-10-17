@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import time
 import urllib.error
-from connector_install import VERSION
+from connector_install import MANAGED_VERSION
 
 
 def activate(call, *, loaded_manifest, config=Path('/homeassistant_config'), data=Path('/data'), now=None):
@@ -20,7 +20,7 @@ def activate(call, *, loaded_manifest, config=Path('/homeassistant_config'), dat
         handlers = call('/config/config_entries/flow_handlers')
         if not isinstance(handlers,list):
             raise RuntimeError('La box ne peut pas vérifier les connecteurs disponibles.')
-        if 'solarman' in handlers and isinstance(loaded_manifest, dict) and loaded_manifest.get('domain') == 'solarman' and loaded_manifest.get('is_built_in') is False and loaded_manifest.get('version') == VERSION:
+        if 'solarman' in handlers and isinstance(loaded_manifest, dict) and loaded_manifest.get('domain') == 'solarman' and loaded_manifest.get('is_built_in') is False and loaded_manifest.get('version') == MANAGED_VERSION:
             return {'connector':'solarman','status':'ready','configured':False}
         journal = data / 'solar-activation.json'
         state = json.loads(journal.read_text()) if journal.exists() else {}

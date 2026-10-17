@@ -13,7 +13,7 @@ class ActivationTests(unittest.TestCase):
         self.config=Path(self.folder.name)/'config'; self.data=Path(self.folder.name)/'data'
         marker=self.config/'custom_components/solarman/123home-bundle.json';marker.parent.mkdir(parents=True);marker.write_text('{}')
     def run_activation(self,call,now=1000,manifest=None):
-        return activate(call,loaded_manifest=manifest if manifest is not None else {'domain':'solarman','version':'25.08.16','is_built_in':False},config=self.config,data=self.data,now=now)
+        return activate(call,loaded_manifest=manifest if manifest is not None else {'domain':'solarman','version':'25.08.16+labox.1','is_built_in':False},config=self.config,data=self.data,now=now)
     def test_available_connector_does_not_restart(self):
         call=Mock(return_value=['solarman'])
         self.assertEqual(self.run_activation(call)['status'],'ready');self.assertEqual(call.call_count,1)
@@ -39,6 +39,14 @@ class ActivationTests(unittest.TestCase):
         call=Mock()
         with self.assertRaises(RuntimeError):self.run_activation(call)
         call.assert_not_called()
+
+    def test_unadapted_upstream_same_version_must_reload_before_ready(self):
+        call=Mock(side_effect=[['solarman'], []])
+        result=self.run_activation(call,manifest={'domain':'solarman','version':'25.08.16','is_built_in':False})
+        self.assertEqual(result['status'],'activation_pending')
+        self.assertEqual(call.call_args.args[0],'/services/homeassistant/restart')
+        ready=Mock(return_value=['solarman'])
+        self.assertEqual(self.run_activation(ready,now=1100)['status'],'ready')
 
     def test_builtin_or_wrong_version_never_declared_ready(self):
         for manifest in ({'domain':'solarman','is_built_in':True}, {'domain':'solarman','is_built_in':False,'version':'old'}, {}):

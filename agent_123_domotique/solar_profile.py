@@ -43,6 +43,33 @@ def ensure_profile(root, name):
         with destination.open('xb') as output:
             output.write(data)
 
+def qualify_managed_connector(root):
+    """Distinct loaded version proves HA has discarded the unadapted module cache."""
+    import json, os, tempfile
+    from connector_install import VERSION, MANAGED_VERSION
+    root = Path(root)
+    paths = [root / name for name in ('manifest.json', 'config_flow.py', 'provider.py', '123home-bundle.json')]
+    if root.is_symlink() or any(path.is_symlink() for path in paths):
+        raise RuntimeError('Le connecteur solaire doit être vérifié avant activation.')
+    if (root/'config_flow.py').read_text().count('vol.Optional("logger_serial")') != 1 or 'if serial := self.config._options.get("logger_serial"):' not in (root/'provider.py').read_text():
+        raise RuntimeError('La préparation du connecteur solaire est incomplète.')
+    manifest = json.loads((root/'manifest.json').read_text())
+    if manifest.get('domain') != 'solarman' or manifest.get('version') not in (VERSION, MANAGED_VERSION):
+        raise RuntimeError('La version du connecteur solaire doit être vérifiée.')
+    manifest['version'] = MANAGED_VERSION
+    for name, value in [('manifest.json', manifest), ('123home-bundle.json', {'revision':2,'profile':PROFILE})]:
+        target=root/name
+        if target.is_file() and json.loads(target.read_text()) == value:
+            continue
+        fd, temporary = tempfile.mkstemp(prefix='.123home-metadata-', dir=root)
+        try:
+            with os.fdopen(fd, 'w') as output:
+                json.dump(value, output); output.flush(); os.fsync(output.fileno())
+            os.chmod(temporary, 0o644); os.replace(temporary, target)
+        finally:
+            if os.path.exists(temporary): os.unlink(temporary)
+
+
 def adapt_connector(root):
     root = Path(root)
     ensure_profile(root, PROFILE)
@@ -60,4 +87,4 @@ def adapt_connector(root):
                 raise RuntimeError('Version du connecteur incompatible avec la préparation.')
             content = content.replace(old,new,1)
         path.write_text(content)
-    (root / '123home-bundle.json').write_text('{"revision":1,"profile":"' + PROFILE + '"}')
+    qualify_managed_connector(root)

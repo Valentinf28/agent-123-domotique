@@ -11,6 +11,7 @@ import fcntl
 import uuid
 
 VERSION = "25.08.16"
+MANAGED_VERSION = VERSION + "+labox.1"
 DIGEST = "04fd37da1ba1cd3a590146a48602162ad5c7e0c319c80ca326369cd5a26da977"
 BUNDLE = Path(__file__).parent / "vendor" / f"solarman-{VERSION}.zip"
 CONFIG = Path("/homeassistant_config")
@@ -54,10 +55,11 @@ def install_solarman(config=CONFIG, bundle=BUNDLE):
             if not destination.is_symlink() and marker.is_file() and not marker.is_symlink():
                 value = json.loads(marker.read_text())
                 manifest = json.loads((destination / "manifest.json").read_text())
-                if value == {"revision": 1, "profile": "deye_sg01hp3_readonly.yaml"} and manifest.get("domain") == "solarman" and manifest.get("version") == VERSION:
-                    from solar_profile import ensure_profile, PROFILE, LP1_PROFILE, MICRO_PROFILE
+                if value in ({"revision": 1, "profile": "deye_sg01hp3_readonly.yaml"}, {"revision": 2, "profile": "deye_sg01hp3_readonly.yaml"}) and manifest.get("domain") == "solarman" and manifest.get("version") in (VERSION, MANAGED_VERSION):
+                    from solar_profile import ensure_profile, qualify_managed_connector, PROFILE, LP1_PROFILE, MICRO_PROFILE
                     for profile in (PROFILE, LP1_PROFILE, MICRO_PROFILE):
                         ensure_profile(destination, profile)
+                    qualify_managed_connector(destination)
                     return installed_result()
             # Preserve every active/ambiguous/custom-managed installation.
             replace_unused = (destination.is_dir() and not destination.is_symlink()

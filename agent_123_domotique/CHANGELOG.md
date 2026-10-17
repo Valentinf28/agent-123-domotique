@@ -1,3 +1,7 @@
+# 0.6.18
+
+- La version gérée du connecteur SolarMAN diffère de la version amont : une ancienne version en mémoire ne peut plus être déclarée prête. L’activation impose son rechargement avant connexion.
+
 # 0.6.17
 
 - Préparation après remise à zéro : un ancien connecteur SolarMAN sans connexion active est sauvegardé avant installation du connecteur guidé. Les connexions actives et les dossiers ambigus sont préservés.

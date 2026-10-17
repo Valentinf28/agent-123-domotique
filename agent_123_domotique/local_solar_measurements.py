@@ -5,7 +5,7 @@ import json
 import math
 from pathlib import Path
 import re
-from connector_install import VERSION as SOLARMAN_VERSION
+from connector_install import MANAGED_VERSION as SOLARMAN_VERSION
 from solar_profile import MICRO_PROFILE, MICRO_PROFILE_SHA
 from ddzy422_setup import DOMAIN, verify_bundle
 
