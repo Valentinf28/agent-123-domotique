@@ -1,4 +1,182 @@
+# 0.6.19
+
+- Normalise la version du connecteur géré au format accepté par le moteur Home Assistant.
+
+# 0.6.18
+
+- La version gérée du connecteur SolarMAN diffère de la version amont : une ancienne version en mémoire ne peut plus être déclarée prête. L’activation impose son rechargement avant connexion.
+
+# 0.6.17
+
+- Préparation après remise à zéro : un ancien connecteur SolarMAN sans connexion active est sauvegardé avant installation du connecteur guidé. Les connexions actives et les dossiers ambigus sont préservés.
+
+# 0.6.16
+
+- Ajout guidé local des bornes Lektrico : découverte, confirmation du numéro et lecture des fonctions natives.
+- Connexion réservée aux sessions de configuration ; aucune recharge déclenchée.
+
+## 0.6.15
+
+- Inclut les mesures électriques dans chaque résumé rapide, indépendamment du nom du capteur.
+- Évite l’attente de l’inventaire complet pour les nouveaux compteurs et leurs capteurs renommés.
+
+## 0.6.14
+
+- Conserve la copie précédente du compteur hors du dossier des intégrations chargées par Home Assistant.
+- Répare uniquement la copie 0.1.0 reconnue créée par la migration précédente.
+
+## 0.6.13
+
+- Lectures locales Deye micro-onduleurs et compteur DDZY422 toutes les 5 secondes.
+- Migration limitée aux profils et connecteurs gérés dont les empreintes sont reconnues.
+- Réveil de la synchronisation sur changement des mesures solaires.
+
+## 0.6.12
+
+- Réveille immédiatement la synchronisation lors d’une commande du portail, par la liaison sortante existante.
+- Le réveil ne transporte aucune commande : les demandes restent durables et revérifiées avant exécution par le parcours existant.
+- Le cycle périodique est conservé si le relais est indisponible.
+
+## 0.6.11
+
+- Attend la propagation des métadonnées natives jusqu’à 90 secondes en arrière-plan avant de refuser une version cible encore indisponible.
+- Recette ciblée de mise à jour distante après correction du chemin natif.
+
+## 0.6.10
+
+- Préparation des mises à jour par l’action native Home Assistant de l’agent ; suppression de l’appel Supervisor interdit aux extensions.
+- Actualisation du catalogue avec délai adapté, sans ajout de droits d’administration ni désactivation de protections.
+- Échec de préparation distinguant vérification initiale, actualisation et version cible indisponible.
+
+## 0.6.9
+
+- Retour immédiat des résultats et d’un état relu après les commandes du portail, sans attendre le cycle périodique suivant.
+- Reprise au rythme habituel si le portail est indisponible ; conservation des résultats durables et aucun rejeu de commande.
+
+## 0.6.8
+
+- Revérifie le retrait d’un téléphone après une lecture d’inventaire avant d’envoyer une commande locale.
+
+## 0.6.7
+
+- Accès local chiffré automatique pour les téléphones associés, indépendant du forfait distant.
+- Autorisations propres à chaque téléphone, propriétaire et box ; commandes limitées aux appareils affectés.
+- Vérification d’identité, retrait des téléphones synchronisé et protection contre le rejeu des commandes.
+
+## 0.6.6
+
+- Corrige la lecture des maisons Smart Life / Tuya avec le SDK natif : délai HTTP borné sans argument en double.
+- Conserve la connexion existante et le choix de la maison avant l’ajout des appareils.
+
+## 0.6.5
+
+- Préparation des mises à jour à distance : actualisation du catalogue natif et de l’entité de mise à jour avant validation de la version.
+- Préparation suivie en arrière-plan, sans installation pendant la recherche ; sauvegarde et accord exact restent obligatoires.
+- Une préparation interrompue reste arrêtée, sans nouvel envoi automatique de l’installation.
+
+## 0.6.4
+
+- Parcours natifs locaux Hue, WiZ, TP-Link, SwitchBot, Reolink et Enphase.
+- Association Zigbee limitée à 60 s ; partage Matter d’appareils déjà en réseau.
+- Lecture des appareils Netatmo, Tado et Home Connect déjà connectés. Aucune nouvelle autorisation OAuth générique.
+- Sessions liées au propriétaire, aucun identifiant enregistré par le parcours, aucun actionnement pendant l’ajout.
+
+## 0.6.3
+
+- Ajout local des Shelly Wi-Fi/Ethernet et capteurs Shelly BLU via les découvertes natives de la box.
+- Confirmation des identités, authentification locale et clés BLE transmises uniquement en direct.
+- Exposition des sorties, thermostats, états d’ouverture et mesures réelles de puissance/énergie.
+
+## 0.6.2
+
+- Choix de la maison Smart Life / Tuya avant l’ajout des appareils.
+- Lecture seule des appartenances depuis la box ; aucune nouvelle authentification ni modification des jetons natifs.
+
+## 0.6.1
+
+- Restore guided Tuya commissioning and include its connector in the image.
+- Unwrap HA registry responses; preserve entries; keep login data off durable queues and logs.
+
+## 0.6.1-dev30
+
+- Autorise exclusivement le nettoyage interne du rattachement de sauvegarde enregistré dans la préparation ; les autres commandes restent suspendues pendant la remise à zéro.
+
+## 0.6.1-dev29
+
+- Autorise un code d’installation vide pour le mode de première activation par QR, en conservant la validation des codes classiques.
+
+## 0.6.1-dev28
+
+- Inclut les deux modules de première activation dans l’image installable et aligne la version annoncée sur le paquet.
+
+# 0.6.1-dev27 — reprise atelier protégée
+
+Empêche les tâches de fond de réécrire l’ancienne identité après une remise en première activation. Le blocage de configuration est levé uniquement quand la nouvelle unité est associée.
+
+# 0.6.1-dev26 — préparation de recette première activation
+
+Après remise à zéro avec sauvegarde vérifiée : préparation séparée des options atelier, retrait confirmé de l’ancienne identité locale et redémarrage de l’agent en attente d’activation. Commandes directes liées au propriétaire et à l’opération. Aucune remise à zéro du système Home Assistant ni revendication de cession certifiée.
+
+# 0.6.1-dev25 — activation client sans ordinateur
+
+Activation sortante des unités préparées en atelier par code privé, association par le propriétaire depuis le portail et reprise durable sans remplacement d’une identité existante. Voir FACTORY-ACTIVATION.md. Qualification sur box neuve requise ; aucune mise à jour automatique des box existantes.
+
+## 0.6.1-dev24 — candidat non publié
+
+- Mise à jour de l’agent depuis le portail, réservée aux versions stables approuvées : consentement propriétaire, opération et commit attendu liés à un aperçu confirmé.
+- Identification stricte de l’entité de mise à jour Home Assistant, du slug et de l’identifiant natif du dépôt connu ; refus des rétrogradations, des mises à jour automatiques et d’un catalogue différent de la cible consentie.
+- Sauvegarde native complète vérifiée avant l’installation. Journal persistant empêchant tout second envoi après une réponse perdue ; confirmation seulement par version effectivement observée et preuve de retour dans le heartbeat authentifié.
+- L’API native installe la version courante du catalogue : aucun verrouillage d’image ni contrôle d’empreinte binaire n’est prétendu. Une version inattendue nécessite une vérification.
+- Première installation du support sur un ancien agent à réaliser par l’opérateur. Aucun déploiement de flotte ni redémarrage n’est exécuté par la préparation de ce candidat.
+
+## 0.6.1-dev23 — 14 octobre 2026 — candidat non publié
+
+- Compteur monophasé DDZY422-D2 : composant Home Assistant natif local, UDP AT+INVDATA, identité MAC et numéro, trames et CRC vérifiés. Aucun profil Solarman V5 pour ce compteur.
+- Neuf capteurs : puissance réseau signée, soutirage/injection, index physiques kWh et mesures électriques. Entités indisponibles sur échec ou données périmées ; continuité des index persistée au rechargement.
+- Installation du composant par paquet vérifié, préservation de tout composant tiers, puis configuration par formulaire natif. Premier chargement nécessitant un redémarrage Home Assistant explicite ; aucun redémarrage déclenché par ce code.
+- Activation native depuis le portail : disponibilité vérifiée en lecture seule ; redémarrage uniquement après confirmation explicite et contrôle administrateur, journal persistant et délai de cinq minutes contre les répétitions après réponse perdue.
+- Vérification en lecture seule limitée à l’entrée et au modèle, données actuelles et identifiants natifs pour l’association des mesures. Disponibilité des connecteurs consultable sans activation.
+- Micro-onduleurs Deye M100G4/M200G4 : profil AC minimal en lecture seule du connecteur Solarman existant, avec contrôle préalable d’identité locale. Aucun réglage d’onduleur ou compteur modifié.
+- Tests unitaires natifs avec interfaces Home Assistant simulées. Chargement réel dans Home Assistant et recette permanente sur les appareils encore à effectuer.
+
+## 0.6.1-dev22 — 14 octobre 2026
+
+- Pilote ciblé : recommencer l’installation depuis le portail, avec aperçu exact, confirmation propriétaire et journal durable.
+- Sauvegarde Home Assistant complète vérifiée avant suppression des intégrations d’équipements prises en charge et automatismes modifiables ; historique, identité, réseau et accès distant conservés.
+- Permissions administrateur Home Assistant vérifiées ; accès Supervisor limité au rôle sauvegarde. Modifications concurrentes suspendues pendant l’opération.
+- Reprise explicite après interruption ; aucune suppression automatique au redémarrage et aucune modification directe des fichiers internes Home Assistant.
+- Cette version ne comprend pas les connecteurs expérimentaux des versions locales non publiées après dev17.
+
+## 0.6.1-dev17 — 13 octobre 2026
+
+- Connexion guidée des Deye hybrides monophasés SG0*LP1 avec profil basse tension en lecture seule, issu du connecteur épinglé 25.08.16.
+- Capacité explicite pour empêcher l’envoi de ce profil aux anciennes versions ; récupération d’adresse également prise en charge.
+- La vérification expose les identifiants des mesures du seul connecteur contrôlé, pour terminer leur association côté portail sans confondre les onduleurs.
+- Connexions désactivées et profils personnalisés conservés. Aucun réglage ni courant de charge modifié.
+
+## 0.6.1-dev9
+
+- Ajout de la configuration guidée de la localisation : coordonnées et fuseau validés, relecture obligatoire, autres réglages conservés.
+- La confirmation géographique reste distincte du contrôle des données météo.
+
 # Journal des versions
+
+## En développement — non publié
+
+- Vérification guidée : ajoute le pourcentage de batterie, limité au connecteur vérifié, avec validation de l’unité, de la plage et de la fraîcheur. Ce contrôle optionnel ne certifie ni le câblage ni la remise client.
+
+- Activation guidée du connecteur : contrôle de disponibilité, demande de redémarrage si nécessaire, délai de cinq minutes contre les répétitions après réponse perdue. 74 tests Python ; validation matérielle non effectuée.
+
+- Connexion guidée Deye SG01HP3 via le formulaire interne, numéro de logger explicite et profil de mesure. Conservation des connexions existantes et journal anti-doublon après réponse perdue. 69 tests Python ; activation et mesures sur le Showroom non encore validées.
+
+- Préparation du connecteur SolarMAN officiel embarqué, sans HACS : archive fixe vérifiée, installation atomique et conservation de toute installation existante. Montage de configuration requis ; aucun redémarrage ni paramétrage onduleur automatique.
+- 61 tests Python passent ; le chargement du connecteur sur HAOS et le formulaire portail restent à valider.
+
+- Configure le relais d’une nouvelle box depuis son identité d’enrôlement, sans écraser un relais renseigné manuellement.
+- Ajoute une recherche locale et bornée des loggers solaires, annoncée au portail par une capacité explicite.
+- Conserve les résultats de commandes jusqu’à leur transmission réussie au portail.
+- Interrompt le lecteur d’un tunnel avant de fermer sa socket, pour éviter de bloquer les autres commandes pendant la fermeture.
+- Validation : 54 tests ; recherche réseau depuis le Mac au Showroom. Nouvelle version non installée sur HAOS, installation des connecteurs et parcours complet encore à tester.
 
 ## 0.6.0
 

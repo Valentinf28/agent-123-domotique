@@ -98,7 +98,8 @@ class RegistryInventoryTests(unittest.TestCase):
                 patch.object(agent, "maintain_daily_pv_peak"):
             summary = agent.home_assistant_summary("token", full_inventory=False)
 
-        self.assertEqual(summary["agentVersion"], "0.6.0")
+        expected_version = next(line.split('"')[1] for line in AGENT_PATH.with_name("config.yaml").read_text().splitlines() if line.startswith("version:"))
+        self.assertEqual(summary["agentVersion"], expected_version)
         self.assertEqual(summary["inventory"][0]["entityId"], "automation.couper_filtration")
         self.assertEqual(
             summary["inventory"][0]["attributes"]["last_triggered"],

@@ -19,3 +19,7 @@ Le code expire après 30 minutes et ne peut être utilisé qu'une seule fois.
 
 Cette première version transmet uniquement la version de Home Assistant et le
 nombre total d'entités. Le jeton interne Home Assistant reste dans la box.
+
+### Reprise contrôlée du pilote
+
+La version 0.6.1-dev1 reste expérimentale. Le champ facultatif `restore_identity` reçoit une identité de sauvegarde existante (agent_id, token, house_id). Il refuse un état non vide différent et vérifie auprès du portail HTTPS que la clé appartient à la maison attendue avant sauvegarde atomique en 0600. Arrêter l’ancien agent avant démarrage du pilote, puis vider ce champ après reprise réussie. Ne jamais enregistrer ce contenu dans Git ou les journaux. Cette reprise ne crée ni nouvelle box ni nouvelle installation.
