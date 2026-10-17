@@ -11,6 +11,7 @@ RUN virtualenv --system-site-packages /opt/tuya-sdk && /opt/tuya-sdk/bin/pip ins
 ENV PATH="/opt/tuya-sdk/bin:$PATH"
 
 COPY tuya_homes.py /opt/agent/tuya_homes.py
+COPY shelly_lan.py /opt/agent/shelly_lan.py
 COPY shelly_setup.py /opt/agent/shelly_setup.py
 COPY lektrico_setup.py /opt/agent/lektrico_setup.py
 COPY ev_discovery.py /opt/agent/ev_discovery.py

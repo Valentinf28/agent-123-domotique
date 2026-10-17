@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.19"
+AGENT_VERSION = "0.6.20"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1948,7 +1948,13 @@ def relay_command(
                 result = home_assistant_ws_command(supervisor_token, command)
                 return result.get("result") if isinstance(result, dict) and "result" in result else result
             try:
-                result = configure_shelly(payload, call_shelly, registry=shelly_registry)
+                from shelly_lan import scan as scan_shelly, identify as identify_shelly
+                from network_discovery import current_adapters, local_interfaces
+                network = shelly_registry({'type':'network'})
+                adapters = network.get('adapters',[]) if isinstance(network,dict) else []
+                result = configure_shelly(payload, call_shelly, registry=shelly_registry,
+                    lan=lambda: scan_shelly(adapters),
+                    identify=lambda host: identify_shelly(host, local_interfaces(current_adapters(adapters)),timeout=2))
             except Exception:
                 raise RuntimeError("La connexion locale n’a pas abouti. Actualisez la recherche avant de reprendre.") from None
         elif action == "commissioning.tuya":

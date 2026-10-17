@@ -1,4 +1,4 @@
-"""Local Shelly and Shelly BLU onboarding through native HA discovery only.
+"""Local Shelly and Shelly BLU onboarding through native HA discovery and verified local LAN identification.
 
 Never operates a relay, configures Wi-Fi, refreshes cloud credentials or persists
 passwords / BLE keys. Discovery flow identities are rechecked on every write.
@@ -72,12 +72,25 @@ def devices(native,call,registry):
         result.append({'id':device['id'],'entryId':refs[0],'domain':domain,'mac':next(iter(identities)) if len(identities)==1 else '', 'name':name[:120],'brand':'Shelly','model':model[:120],'room':area_map.get(device.get('area_id'),''),'entities':exposed[:100]})
     return result[:200]
 
-def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
+def configure(payload,call,*,registry,data=Path('/data'),clock=time.time,lan=None,identify=None):
     operation=payload.get('operation');owner=payload.get('ownerScope','')
     fields={'status':set(),'connect':{'session','flowId','mac','confirmed'},'credentials':{'session','flowId','mac','username','password'},'key':{'session','flowId','mac','bindkey'}}
     if operation not in fields or set(payload)!={'operation','ownerScope'}|fields[operation] or not isinstance(owner,str) or not OWNER.fullmatch(owner):raise ValueError('Étape locale invalide.')
     native=entries(call)
-    def view():return {'connector':'shelly','status':'ready','devicesVerified':False,'entries':[e for e in native if e['domain'] in DOMAINS],'bluetoothConfigured':any(e['domain']=='bluetooth' and e['state']=='loaded' and not e['disabled'] for e in native),'discoveries':discoveries(registry),'devices':devices(native,call,registry)}
+    journal={}
+    file=Path(data)/'shelly-setup.json'
+    if file.exists():journal=json.loads(file.read_text())
+    def found():
+        rows=discoveries(registry)
+        connected={d['mac'] for d in devices(native,call,registry)}
+        for candidate in lan() if lan else []:
+            if candidate['mac'] in connected or any(d['mac']==candidate['mac'] for d in rows):continue
+            row={k:candidate[k] for k in ('flowId','domain','mac','name','step')}
+            lease=journal.get(row['flowId'],{})
+            if lease.get('ownerScope')==owner and lease.get('nativeFlowId') and lease.get('step')=='credentials':row['step']='credentials'
+            rows.append(row)
+        return rows[:100]
+    def view():return {'connector':'shelly','status':'ready','devicesVerified':False,'entries':[e for e in native if e['domain'] in DOMAINS],'bluetoothConfigured':any(e['domain']=='bluetooth' and e['state']=='loaded' and not e['disabled'] for e in native),'discoveries':found(),'devices':devices(native,call,registry)}
     if operation=='status':return view()
     session=payload['session'];flow_id=payload['flowId'];identity=mac(payload['mac'])
     if not isinstance(session,str) or not UUID.fullmatch(session) or not isinstance(flow_id,str) or not ID.fullmatch(flow_id) or not identity:raise ValueError('Choisissez un appareil découvert par cette box.')
@@ -92,10 +105,8 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
         # A lost reply must be reconciled by native identity, never reposted.
         connected=[d for d in devices(native,call,registry) if d['mac']==identity]
         if connected:return view()
-        candidate=next((d for d in discoveries(registry) if d['flowId']==flow_id and d['mac']==identity),None)
+        candidate=next((d for d in found() if d['flowId']==flow_id and d['mac']==identity),None)
         if not candidate:raise RuntimeError('Cette découverte a changé. Actualisez la recherche.')
-        flow=call('/config/config_entries/flow/'+flow_id)
-        if not isinstance(flow,dict) or flow.get('flow_id')!=flow_id or flow.get('handler')!=candidate['domain'] or flow.get('type')!='form' or flow.get('step_id')!=candidate['step']:raise RuntimeError('Le formulaire local a changé. Actualisez la recherche.')
         lease=journal.get(flow_id)
         if lease and (lease['ownerScope']!=owner or lease['session']!=session):
             if lease.get('submitted') or clock()<lease['expiresAt']:raise RuntimeError('Une autre session configure cet appareil.')
@@ -104,9 +115,38 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
         if lease and clock()>=lease['expiresAt']:
             if operation=='connect' and not lease.get('submitted'):lease=None
             else:raise RuntimeError('Cette session locale a expiré. Actualisez la recherche.')
+        lan_candidate=None
+        native_flow_id=lease.get('nativeFlowId',flow_id) if lease else flow_id
+        if flow_id.startswith('lan_'):
+            lan_candidate=next((d for d in lan() if d['flowId']==flow_id and d['mac']==identity),None) if lan else None
+            if not lan_candidate or not identify or identify(lan_candidate['host'])['mac']!=identity:
+                raise RuntimeError('L’identité réseau de cet appareil a changé. Actualisez.')
+            if not lease or not lease.get('nativeFlowId'):
+                if operation!='connect':raise RuntimeError('Reprenez la connexion de cet appareil.')
+                journal[flow_id]={**(journal.get(flow_id) or {}),'ownerScope':owner,'session':session,'mac':identity,'expiresAt':clock()+600,'submitted':True};save()
+                from shelly_lan import start
+                native_flow_id,values=start(call,lan_candidate)
+                # Recheck DHCP identity immediately before the native host submission.
+                if identify(lan_candidate['host'])['mac']!=identity:raise RuntimeError('L’appareil a changé d’adresse.')
+                journal[flow_id]['nativeFlowId']=native_flow_id;save()
+                flow=call('/config/config_entries/flow/'+native_flow_id,method='POST',payload=values)
+                if isinstance(flow,dict) and flow.get('type')=='create_entry':
+                    created=flow.get('result',{})
+                    if mac(created.get('unique_id'))!=identity:raise RuntimeError('Identité native non confirmée.')
+                    native=entries(call)
+                    if not any(e['entryId']==created.get('entry_id') and e['domain']=='shelly' for e in native):raise RuntimeError('Connexion native à actualiser.')
+                    journal.pop(flow_id,None);save();return view()
+                if not isinstance(flow,dict) or flow.get('type')!='form' or flow.get('step_id')!='credentials':
+                    raise RuntimeError('La connexion réseau n’a pas été confirmée.')
+                journal[flow_id].update(submitted=False,step='credentials');save();lease=journal[flow_id]
+                candidate['step']='credentials'
+            else:flow=call('/config/config_entries/flow/'+native_flow_id)
+        else:flow=call('/config/config_entries/flow/'+native_flow_id)
+        if not isinstance(flow,dict) or flow.get('flow_id')!=native_flow_id or flow.get('handler')!=candidate['domain'] or flow.get('type')!='form' or flow.get('step_id')!=candidate['step']:
+            raise RuntimeError('Le formulaire local a changé. Actualisez la recherche.')
         schema=flow.get('data_schema',[]);names={f.get('name') for f in schema if isinstance(f,dict)}
         if operation=='connect' and candidate['step'] in ('credentials','get_encryption_key'):
-            journal[flow_id]={'ownerScope':owner,'session':session,'mac':identity,'expiresAt':clock()+600,'submitted':False};save()
+            journal[flow_id]={**(journal.get(flow_id) or {}),'ownerScope':owner,'session':session,'mac':identity,'expiresAt':clock()+600,'submitted':False};save()
             return {**view(),'authentication':{'flowId':flow_id,'mac':identity,'name':candidate['name'],'kind':'key' if candidate['step']=='get_encryption_key' else 'password','usernameRequired':'username' in names}}
         values={}
         if operation=='credentials':
@@ -119,11 +159,13 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
             if not lease or candidate['step']!='get_encryption_key' or names!={'bindkey'} or not isinstance(payload['bindkey'],str) or not re.fullmatch('[a-fA-F0-9]{32}',payload['bindkey']):raise ValueError('Recopiez la clé Bluetooth de 32 caractères de ce capteur.')
             values={'bindkey':payload['bindkey']}
         elif candidate['step'] not in ('confirm_discovery','bluetooth_confirm'):raise RuntimeError('Cette étape nécessite une autre vérification.')
-        journal[flow_id]={'ownerScope':owner,'session':session,'mac':identity,'expiresAt':clock()+600,'submitted':True};save()
+        journal[flow_id]={**(journal.get(flow_id) or {}),'ownerScope':owner,'session':session,'mac':identity,'expiresAt':clock()+600,'submitted':True};save()
         # No exception strings or native response data are returned to the caller.
-        reply=call('/config/config_entries/flow/'+flow_id,method='POST',payload=values)
+        reply=call('/config/config_entries/flow/'+native_flow_id,method='POST',payload=values)
         if isinstance(reply,dict) and reply.get('type')=='create_entry':
-            native=entries(call);created=reply.get('result',{});entry_id=created.get('entry_id') if isinstance(created,dict) else None
+            native=entries(call);created=reply.get('result',{});
+            if lan_candidate and mac(created.get('unique_id'))!=identity:raise RuntimeError('Identité native non confirmée.')
+            entry_id=created.get('entry_id') if isinstance(created,dict) else None
             if not any(e['entryId']==entry_id and e['domain']==candidate['domain'] for e in native):raise RuntimeError('La connexion native n’a pas encore été confirmée. Actualisez la recherche.')
             journal.pop(flow_id,None);save();return view()
         if isinstance(reply,dict) and reply.get('type')=='form' and reply.get('step_id') in ('credentials','get_encryption_key'):
