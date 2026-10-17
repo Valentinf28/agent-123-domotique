@@ -30,4 +30,14 @@ class TransportTests(unittest.TestCase):
     result=agent.relay_command('token',{'action':action,'payload':payload})
    self.assertTrue(result['ok']);self.assertEqual(connector.configure.call_args.args[:2],(payload,adapters))
 
+ def test_new_solar_measurements_invalidate_identity_cache_only_after_success(self):
+  connector=types.ModuleType('solar_setup');connector.configure=Mock(return_value={'entryId':'same-entry'})
+  agent.REGISTRY_METADATA_FETCHED_AT=12345
+  with patch.dict(sys.modules,{'solar_setup':connector}),patch.object(agent,'home_assistant_ws_command',return_value={'adapters':[]}):
+   result=agent.relay_command('token',{'action':'commissioning.configure_deye','payload':{}})
+   self.assertTrue(result['ok']);self.assertEqual(agent.REGISTRY_METADATA_FETCHED_AT,0)
+   agent.REGISTRY_METADATA_FETCHED_AT=999;connector.configure.side_effect=RuntimeError('not ready')
+   result=agent.relay_command('token',{'action':'commissioning.configure_deye','payload':{}})
+   self.assertFalse(result['ok']);self.assertEqual(agent.REGISTRY_METADATA_FETCHED_AT,999)
+
 if __name__=='__main__':unittest.main()

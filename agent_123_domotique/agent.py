@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.22"
+AGENT_VERSION = "0.6.23"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1864,6 +1864,7 @@ def relay_command(
     message: dict[str, Any],
     relay_send=None,
 ) -> dict[str, Any]:
+    global REGISTRY_METADATA_FETCHED_AT
     command_id = str(message.get("id", ""))
     action = str(message.get("action", ""))
     payload = message.get("payload")
@@ -2886,6 +2887,10 @@ def relay_command(
             result = {"closed": True}
         else:
             raise ValueError("Commande non autorisée")
+        if action in ("commissioning.configure_deye", "commissioning.configure_deye_micro", "commissioning.configure_ddzy422"):
+            # Native setup/options may add measurements. Keep the normal full
+            # inventory cadence but refresh their registry identity next time.
+            REGISTRY_METADATA_FETCHED_AT = 0.0
         return {"type": "command.result", "id": command_id, "ok": True, "result": result}
     except Exception as error:
         message = str(error)[:240]
