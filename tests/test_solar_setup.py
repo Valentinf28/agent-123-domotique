@@ -23,7 +23,7 @@ class SolarSetupTests(unittest.TestCase):
         self.storage = self.config/'.storage/core.config_entries'
         self.storage.write_text(json.dumps({'data':{'entries':[]}}))
     def run_setup(self,call,payload=PAYLOAD):
-        return configure(payload,ADAPTERS,call,config=self.config,data=self.data)
+        return configure(payload,ADAPTERS,call,config=self.config,data=self.data,topology_reader=lambda host,serial:{'loggerSerial':serial,'mppt':3,'phase':1,'mod':0})
     def test_valid_creation_uses_fixed_readonly_profile_and_serial(self):
         call=Mock(side_effect=[[],{'type':'form','step_id':'user','flow_id':'flow1'},{'type':'create_entry','result':{'entry_id':'entry1'}}])
         result=self.run_setup(call)
@@ -40,7 +40,7 @@ class SolarSetupTests(unittest.TestCase):
         self.assertEqual(result['entryId'],'mono1')
         submitted=call.call_args.kwargs['payload']
         self.assertEqual(submitted['lookup_file'],'custom/deye_lp1_readonly.yaml')
-        self.assertEqual(submitted['additional_options'],{'mod':0,'phase':1,'mppt':2})
+        self.assertEqual(submitted['additional_options'],{'mod':0,'phase':1,'mppt':3})
         self.assertFalse(result['measurementsVerified'])
         profile=(self.config/'custom_components/solarman/inverter_definitions/custom/deye_lp1_readonly.yaml').read_text()
         self.assertNotRegex(profile,r'platform:\s*(number|select|switch|time|datetime|button)\b')
