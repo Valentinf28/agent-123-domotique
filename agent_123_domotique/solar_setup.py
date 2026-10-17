@@ -31,12 +31,12 @@ def settings(payload, adapters, topology=None):
     if payload['model']=='deye_lp1':
         if (not isinstance(topology,dict) or topology.get('loggerSerial')!=serial
             or type(topology.get('mppt')) is not int or not 1<=topology['mppt']<=4
-            or topology.get('phase')!=1 or topology.get('mod')!=0):
+            or topology.get('phase')!=1 or topology.get('mod') not in (None,0,1)):
             raise ValueError('Les entrées solaires de cet onduleur doivent être lues avant sa connexion.')
     return {'name': f'1.2.3 Home Deye {serial}', 'host': str(host), 'port': 8899,
             'transport': 'tcp', 'logger_serial': serial,
             'lookup_file': 'custom/' + {'deye_lp1':LP1_PROFILE,'deye_sg01hp3':PROFILE,'deye_micro':MICRO_PROFILE}[payload['model']],
-            'additional_options': {'mod':0,'phase':1,'mppt':topology['mppt']} if payload['model']=='deye_lp1' else {'mod':1 if payload['model']=='deye_sg01hp3' else 0}}
+            'additional_options': {'mod':topology.get('mod') or 0,'phase':1,'mppt':topology['mppt']} if payload['model']=='deye_lp1' else {'mod':1 if payload['model']=='deye_sg01hp3' else 0}}
 
 
 def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), data=Path('/data'), topology_reader=None):
@@ -72,7 +72,13 @@ def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), 
             if len(matching) != 1 or any(matching[0].get('options',{}).get(k) != values[k]
                                        for k in ('host','logger_serial','lookup_file')):
                 raise RuntimeError('Ce boîtier possède déjà une connexion différente. Elle a été conservée ; une vérification est nécessaire.')
-            if matching[0].get('options', {}).get('additional_options', {}).get('mod',0) != values['additional_options']['mod']:
+            if payload['model']=='deye_lp1' and topology.get('mod') is None:
+                # No decisive AC balance (e.g. night): preserve the previously
+                # configured scale rather than silently reverting it to 1 W.
+                previous=matching[0].get('options',{}).get('additional_options',{}).get('mod',0)
+                if previous not in (0,1):raise RuntimeError('L’échelle de mesure existante doit être vérifiée.')
+                values['additional_options']['mod']=previous
+            if payload['model']!='deye_lp1' and matching[0].get('options', {}).get('additional_options', {}).get('mod',0) != values['additional_options']['mod']:
                 raise RuntimeError('Le profil '+('haute tension' if payload['model']=='deye_sg01hp3' else 'basse tension')+' de cette connexion doit être corrigé avant validation.')
             if matching[0].get('disabled_by') or any(entry.get('disabled_by') for entry in live if entry['entry_id']==matching[0]['entry_id']):
                 raise RuntimeError('Cette ancienne connexion est désactivée. Elle n’a pas été réactivée automatiquement.')
@@ -81,7 +87,7 @@ def configure(payload, adapters, call, *, config=Path('/homeassistant_config'), 
             if payload['model']=='deye_lp1':
                 entry=matching[0]
                 additional=entry.get('options',{}).get('additional_options',{})
-                if additional.get('mppt',4)!=topology['mppt'] or additional.get('phase')!=1:
+                if additional.get('mppt',4)!=topology['mppt'] or additional.get('phase')!=1 or additional.get('mod',0)!=values['additional_options']['mod']:
                     reconcile_topology(entry, values, call, data)
             return {'connector':'solarman','status':'configured','entryId':matching[0]['entry_id'], 'measurementsVerified':False}
         if own or any(entry['entry_id'] not in {row['entry_id'] for row in candidates} for entry in live):
@@ -172,7 +178,12 @@ def reconcile_topology(entry, values, call, data):
     state=json.loads(path.read_text()) if path.exists() else {}
     # A lost native reply is reconciled from persisted options on the next call,
     # never repeated while the previous submission remains uncertain.
-    if state.get('submitted'):raise RuntimeError('La mise à jour des entrées est encore en cours. Actualisez sans la renvoyer.')
+    if state.get('submitted'):
+        expected=state.get('additionalOptions') or {'mppt':state.get('mppt')}
+        current=entry.get('options',{}).get('additional_options',{})
+        if state.get('entryId')!=entry_id or not all(current.get(key,0 if key=='mod' else 4 if key=='mppt' else None)==value for key,value in expected.items()):
+            raise RuntimeError('La mise à jour des entrées est encore en cours. Actualisez sans la renvoyer.')
+
     flow=call('/config/config_entries/options/flow',method='POST',payload={'handler':entry_id,'show_advanced_options':False})
     fid=flow.get('flow_id');fields={f.get('name') for f in flow.get('data_schema',[]) if isinstance(f,dict)}
     if (flow.get('type')!='form' or flow.get('step_id')!='init' or flow.get('handler')!=entry_id
@@ -184,7 +195,7 @@ def reconcile_topology(entry, values, call, data):
     for key,value in (('port',8899),('transport','tcp')):
         if key in fields:options.setdefault(key,value)
     tmp=path.with_suffix('.tmp')
-    tmp.write_text(json.dumps({'entryId':entry_id,'flowId':fid,'mppt':values['additional_options']['mppt'],'submitted':True}));tmp.chmod(0o600);tmp.replace(path)
+    tmp.write_text(json.dumps({'entryId':entry_id,'flowId':fid,'mppt':values['additional_options']['mppt'],'additionalOptions':values['additional_options'],'submitted':True}));tmp.chmod(0o600);tmp.replace(path)
     reply=call('/config/config_entries/options/flow/'+fid,method='POST',payload=options)
     if not isinstance(reply,dict) or reply.get('type')!='create_entry':
         if isinstance(reply,dict) and reply.get('type')=='form':
