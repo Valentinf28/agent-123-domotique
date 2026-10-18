@@ -17,6 +17,7 @@ COPY lektrico_setup.py /opt/agent/lektrico_setup.py
 COPY ev_discovery.py /opt/agent/ev_discovery.py
 COPY equipment_setup.py /opt/agent/equipment_setup.py
 COPY tuya_setup.py /opt/agent/tuya_setup.py
+COPY overkiz_setup.py /opt/agent/overkiz_setup.py
 COPY pool_camera.py /opt/agent/pool_camera.py
 COPY network_discovery.py /opt/agent/network_discovery.py
 COPY connector_install.py /opt/agent/connector_install.py

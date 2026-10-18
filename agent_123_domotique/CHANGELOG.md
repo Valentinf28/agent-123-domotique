@@ -1,3 +1,9 @@
+# 0.6.27
+
+- Active le parcours Somfy TaHoma / Overkiz depuis le portail : choix du service et connexion native par compte Somfy ou jeton local.
+- Sessions directes liées au propriétaire, reprise sans doublon et exclusion des identifiants des journaux et commandes différées.
+- Conserve les connexions et mesures existantes ; aucune commande de volet pendant la connexion.
+
 # 0.6.19
 
 - Normalise la version du connecteur géré au format accepté par le moteur Home Assistant.
