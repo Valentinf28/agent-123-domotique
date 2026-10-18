@@ -1,3 +1,8 @@
+# 0.6.28
+
+- Reprend les pièces enregistrées par la connexion TaHoma depuis les registres natifs.
+- Identifie la variante lente de chaque volet par son identité Overkiz exacte, sans fusion par nom.
+
 # 0.6.27
 
 - Active le parcours Somfy TaHoma / Overkiz depuis le portail : choix du service et connexion native par compte Somfy ou jeton local.

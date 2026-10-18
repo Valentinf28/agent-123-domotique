@@ -8,6 +8,7 @@ import hashlib
 import base64
 import math
 import os
+import re
 import secrets
 import ssl
 import threading
@@ -23,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.27"
+AGENT_VERSION = "0.6.28"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -646,6 +647,7 @@ def home_assistant_ws_command(
 def registry_metadata_from_results(
     entity_result: Any,
     device_result: Any,
+    area_result: Any = None,
 ) -> dict[str, dict[str, Any]]:
     """Joint les registres HA sans exposer de secret ni d'adresse locale."""
     entities = entity_result.get("result") if isinstance(entity_result, dict) else entity_result
@@ -659,6 +661,10 @@ def registry_metadata_from_results(
         for device in devices
         if isinstance(device, dict) and device.get("id")
     }
+    areas = area_result.get("result") if isinstance(area_result, dict) else area_result
+    area_names = {area.get("area_id"): area.get("name") for area in (areas or [])
+                  if isinstance(area, dict) and isinstance(area.get("area_id"), str)
+                  and isinstance(area.get("name"), str)} if isinstance(areas, list) else {}
     metadata: dict[str, dict[str, Any]] = {}
     for entity in entities:
         if not isinstance(entity, dict) or not entity.get("entity_id"):
@@ -672,6 +678,20 @@ def registry_metadata_from_results(
             values["original_name"] = original_name[:180]
         device = devices_by_id.get(str(entity.get("device_id")), {})
         if isinstance(device, dict):
+            area_name = area_names.get(entity.get("area_id") or device.get("area_id"))
+            if isinstance(area_name, str) and area_name.strip():
+                values["area_name"] = area_name.strip()[:180]
+            # Only merge the native low-speed entity when its exact Overkiz identity
+            # points to one primary cover on the same registered physical device.
+            unique_id = entity.get("unique_id")
+            if platform == "overkiz" and str(entity["entity_id"]).startswith("cover.") and isinstance(unique_id, str) and unique_id.endswith("_low_speed") and entity.get("device_id"):
+                primary = [other for other in entities if isinstance(other, dict)
+                           and other.get("platform") == "overkiz"
+                           and other.get("device_id") == entity.get("device_id")
+                           and other.get("unique_id") == unique_id[:-10]
+                           and re.fullmatch(r"cover\.[a-z0-9_]+", str(other.get("entity_id", "")))]
+                if len(primary) == 1:
+                    values["overkiz_primary_entity"] = primary[0]["entity_id"]
             device_name = device.get("name_by_user") or device.get("name")
             if isinstance(device_name, str) and device_name:
                 values["device_name"] = device_name[:180]
@@ -702,7 +722,11 @@ def home_assistant_registry_metadata(supervisor_token: str) -> dict[str, dict[st
             {"type": "config/device_registry/list"},
             timeout=12,
         )
-        REGISTRY_METADATA_CACHE = registry_metadata_from_results(entities, devices)
+        try:
+            areas = home_assistant_ws_command(supervisor_token, {"type": "config/area_registry/list"}, timeout=12)
+        except Exception:
+            areas = []
+        REGISTRY_METADATA_CACHE = registry_metadata_from_results(entities, devices, areas)
         REGISTRY_METADATA_FETCHED_AT = time.monotonic()
     except Exception as error:
         log(f"Métadonnées du registre Home Assistant indisponibles ({error})")
