@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.30"
+AGENT_VERSION = "0.6.31"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -2098,7 +2098,7 @@ def relay_command(
             from network_discovery import discover_solarman
             # Network boundaries originate from the box, not a remote caller.
             network = home_assistant_ws_command(supervisor_token, {"type": "network"})
-            result = discover_solarman(network.get("adapters", []))
+            result = discover_solarman(network.get("adapters", []), target_mac=payload.get("targetMac"))
             from solar_recovery import diagnostics
             result['warnings'].extend(diagnostics(network.get('adapters', [])))
         elif action == "ha.services.call":
@@ -3305,7 +3305,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["commissioning.discover_solar.mac", "commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             from installation_update import Update, heartbeat_status
             update_status = heartbeat_status(AGENT_VERSION)
             if update_status:

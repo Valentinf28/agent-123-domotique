@@ -1,3 +1,7 @@
+# 0.6.31
+
+- Resolve a requested MAC through bounded local neighbor discovery when the logger does not expose the SolarMAN data port. Report a network-only device without claiming solar compatibility.
+
 # 0.6.30
 
 - Keep infrastructure Wi-Fi networks selectable when Supervisor scans omit authentication details. WPA-PSK connection still requires a password and live status verification.

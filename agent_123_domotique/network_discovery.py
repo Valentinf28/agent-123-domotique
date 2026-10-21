@@ -86,7 +86,58 @@ def parse_reply(data, sender, interface):
     }
 
 
-def discover_solarman(adapters, duration=2.0):
+def normalized_target_mac(value):
+    if value is None:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}", value):
+        raise ValueError("Adresse MAC invalide")
+    value = value.lower()
+    compact = value.replace(":", "")
+    if compact == "000000000000" or int(compact[:2], 16) & 1:
+        raise ValueError("Adresse MAC invalide")
+    return value
+
+
+def matching_neighbors(rows, interfaces, target_mac):
+    """Only return the exact requested neighbor on a bounded local subnet."""
+    matches = {}
+    if not isinstance(rows, list) or len(rows) > 4096:
+        return []
+    for row in rows:
+        if not isinstance(row, dict) or str(row.get("lladdr", "")).lower() != target_mac:
+            continue
+        if not set(row.get("state", [])) & {"REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT"}:
+            continue
+        try:
+            address = ipaddress.IPv4Address(row.get("dst"))
+        except (ValueError, TypeError):
+            continue
+        if not any(i.network.num_addresses <= 256 and address in i.network
+                   and address not in (i.ip, i.network.network_address, i.network.broadcast_address) for i in interfaces):
+            continue
+        matches[str(address)] = {"id": "network:" + target_mac + ":" + str(address),
+                                "host": str(address), "mac": target_mac,
+                                "status": "network_only", "discoveryMethod": "neighbor", "integrated": False}
+    result = list(matches.values())
+    if len(result) > 1:
+        for item in result:
+            item["status"] = "ambiguous"
+    return result
+
+
+def discover_mac_neighbors(interfaces, target_mac):
+    try:
+        result = subprocess.run(["ip", "-j", "-4", "neigh", "show"], capture_output=True,
+                                text=True, timeout=3, check=True)
+        if len(result.stdout) > 1000000:
+            return []
+        return matching_neighbors(json.loads(result.stdout), interfaces, target_mac)
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+        return []
+
+
+def discover_solarman(adapters, duration=2.0, target_mac=None):
+    target_mac = normalized_target_mac(target_mac)
     interfaces = local_interfaces(current_adapters(adapters))
     if not interfaces:
         raise RuntimeError("Aucun réseau local utilisable pour la recherche.")
@@ -145,6 +196,10 @@ def discover_solarman(adapters, duration=2.0):
                         "host": host, "port": 8899, "status": "unidentified",
                         "integrated": False,
                     }
+    if target_mac and not any(d.get("mac") == target_mac for d in found.values()):
+        for device in discover_mac_neighbors(interfaces, target_mac):
+            # A neighbor is a network address, not proof of a solar protocol.
+            found[device["id"]] = device
     return {"devices": sorted(found.values(), key=lambda item: item["id"]),
             "warnings": errors, "protocols": ["solarman"],
             "scope": "solar_loggers", "completedAt": time.time()}

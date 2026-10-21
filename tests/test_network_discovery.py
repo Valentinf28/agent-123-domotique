@@ -70,3 +70,20 @@ class DiscoveryTests(unittest.TestCase):
         with patch.object(discovery.socket, "socket", side_effect=OSError("unreachable")):
             with self.assertRaisesRegex(RuntimeError, "ne peut pas rechercher"):
                 discovery.discover_solarman([{"enabled": True, "ipv4": [{"address": "192.168.6.1", "network_prefix": 24}]}])
+
+class NeighborTests(unittest.TestCase):
+    def test_exact_local_mac_does_not_claim_solar_or_integration(self):
+        i=ipaddress.IPv4Interface("192.168.6.181/24")
+        rows=[{"dst":"192.168.6.180","lladdr":"88:a6:8d:44:e6:ce","state":["REACHABLE"]},{"dst":"192.168.7.180","lladdr":"88:a6:8d:44:e6:ce","state":["REACHABLE"]},{"dst":"192.168.6.182","lladdr":"00:22:33:44:55:66","state":["REACHABLE"]}]
+        result=discovery.matching_neighbors(rows,[i],"88:a6:8d:44:e6:ce")
+        self.assertEqual(len(result),1);self.assertEqual(result[0]["host"],"192.168.6.180");self.assertEqual(result[0]["status"],"network_only");self.assertFalse(result[0]["integrated"]);self.assertNotIn("loggerSerial",result[0]);self.assertNotIn("connector",result[0])
+    def test_failed_neighbors_own_address_and_large_subnets_rejected(self):
+        row={"dst":"192.168.6.180","lladdr":"88:a6:8d:44:e6:ce","state":["FAILED"]};i=ipaddress.IPv4Interface("192.168.6.181/24")
+        self.assertEqual(discovery.matching_neighbors([row],[i],row["lladdr"]),[])
+        row["state"]=["REACHABLE"];self.assertEqual(discovery.matching_neighbors([row],[ipaddress.IPv4Interface("192.168.6.180/24")],row["lladdr"]),[])
+        self.assertEqual(discovery.matching_neighbors([row],[ipaddress.IPv4Interface("192.168.6.181/16")],row["lladdr"]),[])
+    def test_rejects_target_injection_and_marks_conflicting_addresses_ambiguous(self):
+        for mac in ("../x","88:a6:8d:44:e6:ce; reboot","ff:ff:ff:ff:ff:ff",{}):
+            with self.assertRaises(ValueError):discovery.normalized_target_mac(mac)
+        rows=[{"dst":ip,"lladdr":"88:a6:8d:44:e6:ce","state":["REACHABLE"]} for ip in ["192.168.6.180","192.168.6.182"]]
+        self.assertTrue(all(d["status"]=="ambiguous" for d in discovery.matching_neighbors(rows,[ipaddress.IPv4Interface("192.168.6.181/24")],"88:a6:8d:44:e6:ce")))
