@@ -22,6 +22,10 @@ class WifiTests(unittest.TestCase):
   call=Mock(side_effect=[INFO,{'accesspoints':[{'ssid':'Showroom','signal':30,'auth':'wpa-psk','mac':'PRIVATE'},{'ssid':'Showroom','signal':85,'auth':'wpa-psk'},{'ssid':'Open','signal':99,'auth':'open'}]}])
   result=wifi.command({'operation':'scan','ownerScope':'a'*64,'interface':'wlan0'},call)
   self.assertEqual(len(result['networks']),2);self.assertEqual(result['networks'][1]['signal'],85);self.assertFalse(result['networks'][0]['supported']);self.assertNotIn('PRIVATE',str(result))
+ def test_real_supervisor_scan_without_auth_keeps_infrastructure_selectable(self):
+  call=Mock(side_effect=[INFO,{'accesspoints':[{'mode':'infrastructure','ssid':'Real Network','frequency':2412,'signal':80,'mac':'PRIVATE'},{'mode':'adhoc','ssid':'Peer','signal':70}]}])
+  result=wifi.command({'operation':'scan','ownerScope':'a'*64,'interface':'wlan0'},call)
+  self.assertTrue(result['networks'][0]['supported']);self.assertFalse(result['networks'][1]['supported']);self.assertNotIn('PRIVATE',str(result))
  def test_connect_changes_only_wifi_and_dhcp(self):
   call=Mock(side_effect=[INFO,{},INFO]);result=wifi.command(BASE,call)
   args,kw=call.call_args_list[1];self.assertEqual(args[0],'/network/interface/wlan0/update');self.assertEqual(kw['payload']['ipv4'],{'method':'auto'});self.assertEqual(kw['payload']['wifi']['psk'],BASE['password']);self.assertNotIn(BASE['password'],str(result))

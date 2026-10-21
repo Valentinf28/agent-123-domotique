@@ -65,7 +65,10 @@ def command(payload, supervisor):
             signal = ap.get("signal", 0)
             signal = max(0, min(100, int(signal))) if isinstance(signal, (int, float)) else 0
             auth = ap.get("auth")
-            network = {"ssid": ssid, "signal": signal, "supported": auth == "wpa-psk"}
+            # Supervisor access-point scans omit auth. Infrastructure SSIDs remain
+            # selectable for a WPA-PSK attempt; the live connection confirms success.
+            selectable = auth == "wpa-psk" or (auth is None and ap.get("mode") == "infrastructure")
+            network = {"ssid": ssid, "signal": signal, "supported": selectable}
             if ssid not in networks or networks[ssid]["signal"] < signal:
                 networks[ssid] = network
         return {**view, "networks": sorted(networks.values(), key=lambda n: -n["signal"])[:100]}
