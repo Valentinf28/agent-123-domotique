@@ -1,3 +1,8 @@
+# 0.6.29
+
+- Configure the box Wi-Fi from the owner portal while preserving Ethernet.
+- Validate network scope and redact credentials; confirm connection using live interface state.
+
 # 0.6.28
 
 - Reprend les pièces enregistrées par la connexion TaHoma depuis les registres natifs.

@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.28"
+AGENT_VERSION = "0.6.29"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1882,7 +1882,7 @@ def close_ha_tunnel(upstream) -> None:
 
 def queued_command_result(supervisor_token: str, command: dict[str, Any]) -> dict[str, Any]:
     """Reset commands are direct-session only and never durable-heartbeat jobs."""
-    if command.get("action") in ("installation.reset", "installation.update", "commissioning.activate_ddzy422", "commissioning.tuya", "commissioning.shelly", "commissioning.equipment", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.overkiz"):
+    if command.get("action") in ("commissioning.wifi", "installation.reset", "installation.update", "commissioning.activate_ddzy422", "commissioning.tuya", "commissioning.shelly", "commissioning.equipment", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.overkiz"):
         return {"ok": False, "error": "Cette opération nécessite une session directe."}
     return relay_command(supervisor_token, command)
 
@@ -1977,6 +1977,19 @@ def relay_command(
                 result = configure_equipment(payload, call_equipment, registry=equipment_registry)
             except Exception:
                 raise RuntimeError("La connexion n’a pas abouti. Actualisez avant de reprendre.") from None
+        elif action == "commissioning.wifi":
+            from wifi_setup import command as wifi_command
+            def supervisor_wifi(path, **kwargs):
+                response = request_json("http://supervisor" + path, token=supervisor_token, **kwargs)
+                if not isinstance(response, dict) or response.get("result") != "ok" or not isinstance(response.get("data"), dict):
+                    raise RuntimeError("Configuration Wi-Fi indisponible sur cette box.")
+                return response["data"]
+            try:
+                result = wifi_command(payload, supervisor_wifi)
+            except ValueError:
+                raise
+            except Exception:
+                raise RuntimeError("La connexion Wi-Fi n’est pas confirmée. Gardez le câble Ethernet branché et actualisez l’état.") from None
         elif action == "commissioning.shelly":
             from shelly_setup import configure as configure_shelly
             def call_shelly(path, **kwargs):
@@ -3292,7 +3305,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             from installation_update import Update, heartbeat_status
             update_status = heartbeat_status(AGENT_VERSION)
             if update_status:

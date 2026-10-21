@@ -7,6 +7,7 @@ COPY local_identity.py /opt/agent/local_identity.py
 COPY factory_activation.py /opt/agent/factory_activation.py
 COPY factory_stage.py /opt/agent/factory_stage.py
 COPY agent.py /opt/agent/agent.py
+COPY wifi_setup.py /opt/agent/wifi_setup.py
 RUN virtualenv --system-site-packages /opt/tuya-sdk && /opt/tuya-sdk/bin/pip install --no-cache-dir tuya-device-sharing-sdk==0.2.15 PyNaCl==1.6.2
 ENV PATH="/opt/tuya-sdk/bin:$PATH"
 
