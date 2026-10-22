@@ -1,0 +1,3 @@
+DOMAIN = 'labox_ddzy422'
+POLL_SECONDS = 5
+STALE_SECONDS = 90

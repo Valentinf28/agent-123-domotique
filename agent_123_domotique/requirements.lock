@@ -1,0 +1,15 @@
+# Versions qualified together; package image and runtime import tests are required.
+certifi==2026.10.19
+cffi==2.1.1
+charset-normalizer==3.5.2
+cryptography==50.0.2
+idna==3.20
+paho-mqtt==2.1.0
+pillow==13.0.0
+pycparser==3.11
+PyNaCl==1.6.2
+PyYAML==6.0.3
+requests==2.34.2
+tuya-device-sharing-sdk==0.2.15
+urllib3==2.8.0
+websocket-client==1.9.2

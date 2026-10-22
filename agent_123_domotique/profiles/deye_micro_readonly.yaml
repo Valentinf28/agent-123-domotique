@@ -1,0 +1,73 @@
+# Read-only Deye M100G4/M200G4 AC measurements, physically validated 2026-10-14.
+# Only sensors; no controls/write functions. AC power is production to sum.
+info:
+  manufacturer: Deye
+  model: M100G4 / M200G4
+default:
+  update_interval: 5
+  digits: 3
+parameters:
+- group: Identity
+  update_interval: 3600
+  items:
+  - name: Device Serial Number
+    rule: 5
+    registers: [3, 4, 5, 6, 7]
+  - name: Rated Power
+    class: power
+    state_class: measurement
+    uom: W
+    scale: 0.1
+    rule: 4
+    registers: [16, 17]
+    validation:
+      min: 0
+      max: 4000
+- group: Production
+  items:
+  - name: Power
+    class: power
+    state_class: measurement
+    uom: W
+    scale: 0.1
+    rule: 3
+    registers: [86, 87]
+    validation:
+      min: 0
+      max: 4000
+  - name: Today Production
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 1
+    registers: [60]
+  - name: Total Production
+    class: energy
+    state_class: total_increasing
+    uom: kWh
+    scale: 0.1
+    rule: 3
+    registers: [63, 64]
+  - name: Grid Voltage
+    class: voltage
+    state_class: measurement
+    uom: V
+    scale: 0.1
+    rule: 1
+    registers: [73]
+  - name: Grid Frequency
+    class: frequency
+    state_class: measurement
+    uom: Hz
+    scale: 0.01
+    rule: 1
+    registers: [79]
+  - name: Temperature
+    class: temperature
+    state_class: measurement
+    uom: °C
+    scale: 0.01
+    rule: 1
+    offset: 1000
+    registers: [90]

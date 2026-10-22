@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import base64
 import math
 import os
+import re
 import secrets
 import ssl
 import threading
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -21,13 +24,38 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.0"
+AGENT_VERSION = "0.6.34"
+
+def grid_automation_sources(payload):
+    sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
+    multiplier = payload.get("gridPowerMultiplier", 1)
+    if (not isinstance(sources, list) or len(sources) not in (1, 3)
+            or any(not isinstance(value, str) for value in sources)
+            or len(set(sources)) != len(sources)
+            or isinstance(multiplier, bool) or multiplier not in (-1, 1)):
+        raise ValueError("Configuration du compteur réseau invalide")
+    for entity_id in sources:
+        parts = entity_id.split(".", 1)
+        if (len(parts) != 2 or parts[0] != "sensor" or not parts[1]
+                or not all(char in "abcdefghijklmnopqrstuvwxyz0123456789_" for char in parts[1])
+                or entity_id == "sensor.home_configured_grid_power"):
+            raise ValueError("Voie du compteur réseau invalide")
+    terms = ["((states('" + entity + "') | float(0)) * (1000 if "
+             "(state_attr('" + entity + "', 'unit_of_measurement') | default('', true) | lower) == 'kw' else 1))"
+             for entity in sources]
+    expression = "((" + " + ".join(terms) + ") * " + str(multiplier) + ")"
+    return sources, expression
+
+
 HA_TUNNELS: dict[str, websocket.WebSocket] = {}
+HEARTBEAT_WAKE_EVENT = threading.Event()
 RELAY_IDLE_TIMEOUT_SECONDS = 30
 RELAY_PONG_TIMEOUT_SECONDS = 15
 
 OPTIONS_PATH = Path("/data/options.json")
 STATE_PATH = Path("/data/agent-state.json")
+LOCAL_CONFIGURATION_PATH = Path("/data/local-configuration.json")
+LOCAL_CONFIGURATION_PUBLISHED_AT = 0.0
 PV_PEAK_STATE_PATH = Path("/data/pv-peak-state.json")
 POOL_CAMERA_STATE_PATH = Path("/data/pool-camera-state.json")
 SUPERVISOR_API = "http://supervisor/core/api"
@@ -86,6 +114,10 @@ FAST_ENTITY_PREFIXES = (
     "switch.1p7k_",
 )
 SAFE_ATTRIBUTE_KEYS = (
+    "supported_features",
+    "current_position",
+    "assumed_state",
+    "device_class",
     "unit_of_measurement",
     "current_temperature",
     "temperature",
@@ -561,10 +593,21 @@ def read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
 
 
 def write_state(state: dict[str, Any]) -> None:
+    from factory_stage import retired_identity
+    if retired_identity(state, STATE_PATH.parent):
+        raise RuntimeError("L’ancienne identité de cette box a été retirée.")
     temporary = STATE_PATH.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state), encoding="utf-8")
-    os.chmod(temporary, 0o600)
+    with temporary.open("w", encoding="utf-8") as file:
+        os.chmod(temporary, 0o600)
+        json.dump(state, file)
+        file.flush()
+        os.fsync(file.fileno())
     temporary.replace(STATE_PATH)
+    descriptor = os.open(STATE_PATH.parent, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def home_assistant_ws_command(
@@ -572,6 +615,11 @@ def home_assistant_ws_command(
     command: dict[str, Any],
     timeout: int = 20,
 ) -> dict[str, Any]:
+    from installation_reset import blocks_mutations
+    if blocks_mutations() and command.get("type") not in (
+        "config/entity_registry/list", "config/device_registry/list", "config/area_registry/list",
+        "energy/solar_forecast", "network", "manifest/get", "auth/current_user"):
+        raise RuntimeError("La remise à zéro suspend temporairement les modifications.")
     socket = websocket.create_connection("ws://supervisor/core/websocket", timeout=timeout)
     try:
         auth_required = json.loads(socket.recv())
@@ -599,6 +647,7 @@ def home_assistant_ws_command(
 def registry_metadata_from_results(
     entity_result: Any,
     device_result: Any,
+    area_result: Any = None,
 ) -> dict[str, dict[str, Any]]:
     """Joint les registres HA sans exposer de secret ni d'adresse locale."""
     entities = entity_result.get("result") if isinstance(entity_result, dict) else entity_result
@@ -612,6 +661,10 @@ def registry_metadata_from_results(
         for device in devices
         if isinstance(device, dict) and device.get("id")
     }
+    areas = area_result.get("result") if isinstance(area_result, dict) else area_result
+    area_names = {area.get("area_id"): area.get("name") for area in (areas or [])
+                  if isinstance(area, dict) and isinstance(area.get("area_id"), str)
+                  and isinstance(area.get("name"), str)} if isinstance(areas, list) else {}
     metadata: dict[str, dict[str, Any]] = {}
     for entity in entities:
         if not isinstance(entity, dict) or not entity.get("entity_id"):
@@ -625,6 +678,20 @@ def registry_metadata_from_results(
             values["original_name"] = original_name[:180]
         device = devices_by_id.get(str(entity.get("device_id")), {})
         if isinstance(device, dict):
+            area_name = area_names.get(entity.get("area_id") or device.get("area_id"))
+            if isinstance(area_name, str) and area_name.strip():
+                values["area_name"] = area_name.strip()[:180]
+            # Only merge the native low-speed entity when its exact Overkiz identity
+            # points to one primary cover on the same registered physical device.
+            unique_id = entity.get("unique_id")
+            if platform == "overkiz" and str(entity["entity_id"]).startswith("cover.") and isinstance(unique_id, str) and unique_id.endswith("_low_speed") and entity.get("device_id"):
+                primary = [other for other in entities if isinstance(other, dict)
+                           and other.get("platform") == "overkiz"
+                           and other.get("device_id") == entity.get("device_id")
+                           and other.get("unique_id") == unique_id[:-10]
+                           and re.fullmatch(r"cover\.[a-z0-9_]+", str(other.get("entity_id", "")))]
+                if len(primary) == 1:
+                    values["overkiz_primary_entity"] = primary[0]["entity_id"]
             device_name = device.get("name_by_user") or device.get("name")
             if isinstance(device_name, str) and device_name:
                 values["device_name"] = device_name[:180]
@@ -655,7 +722,11 @@ def home_assistant_registry_metadata(supervisor_token: str) -> dict[str, dict[st
             {"type": "config/device_registry/list"},
             timeout=12,
         )
-        REGISTRY_METADATA_CACHE = registry_metadata_from_results(entities, devices)
+        try:
+            areas = home_assistant_ws_command(supervisor_token, {"type": "config/area_registry/list"}, timeout=12)
+        except Exception:
+            areas = []
+        REGISTRY_METADATA_CACHE = registry_metadata_from_results(entities, devices, areas)
         REGISTRY_METADATA_FETCHED_AT = time.monotonic()
     except Exception as error:
         log(f"Métadonnées du registre Home Assistant indisponibles ({error})")
@@ -672,6 +743,24 @@ def apply_dashboard(
     return False
 
 
+class NoAuthenticatedRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Do not include a destination or response body in the error/log.
+        raise RuntimeError("Redirection de la requête authentifiée refusée")
+
+
+def validate_json_url(url):
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        valid = (parsed.scheme == "https" and bool(parsed.hostname)
+                 or parsed.scheme == "http" and parsed.hostname == "supervisor" and parsed.port in (None, 80))
+        if not valid or parsed.username or parsed.password or parsed.fragment:
+            raise ValueError()
+        parsed.port  # Reject malformed ports before creating a request.
+    except (ValueError, TypeError):
+        raise ValueError("Destination HTTPS ou service interne requis") from None
+
+
 def request_json(
     url: str,
     *,
@@ -679,11 +768,23 @@ def request_json(
     token: str | None = None,
     payload: dict[str, Any] | None = None,
     timeout: int = 15,
+    _factory_cleanup: bool = False,
 ) -> dict[str, Any] | list[Any]:
+    # A reset owns HA writes across relay commands and background maintenance.
+    # Its worker alone may perform the backed-up, journaled removal sequence.
+    if (method.upper() != "GET" and url.startswith(SUPERVISOR_API)
+            and not (method.upper() == "POST" and url.startswith(SUPERVISOR_API + "/states/") and not url.startswith(SUPERVISOR_API + "/states/sensor.home_local_configuration"))
+            and threading.current_thread().name not in ("installation-reset", "installation-update")):
+        from installation_reset import blocks_mutations
+        if blocks_mutations():
+            from factory_stage import permits_cleanup_request
+            if not (_factory_cleanup and permits_cleanup_request(url[len(SUPERVISOR_API):], method)):
+                raise RuntimeError("La remise à zéro suspend temporairement les modifications.")
+    validate_json_url(url)
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.27",
+        "User-Agent": "Agent-123-Domotique/" + AGENT_VERSION,
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -691,7 +792,8 @@ def request_json(
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     context = ssl.create_default_context()
-    with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
+    opener = urllib.request.build_opener(NoAuthenticatedRedirect, urllib.request.HTTPSHandler(context=context))
+    with opener.open(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -995,14 +1097,24 @@ def period_energy_inventory(
 
 
 def enroll(portal_url: str, code: str) -> dict[str, Any]:
+    state = read_json(STATE_PATH, {})
+    if state.get("token"):
+        return state  # An established identity is never replaced by a new code.
+    context = hashlib.sha256((portal_url.rstrip("/") + "\n" + code).encode()).hexdigest()
+    pending = state.get("pending_enrollment")
+    if not isinstance(pending, dict) or pending.get("context") != context:
+        pending = {"context": context, "token": secrets.token_hex(32)}
+        state["pending_enrollment"] = pending
+        write_state(state)  # Persist before sending; a timeout or restart must reuse this secret.
     result = request_json(
         f"{portal_url}/agent/enroll",
         method="POST",
-        payload={"code": code, "label": "Box Home Assistant"},
+        payload={"code": code, "label": "Box Home Assistant", "enrollmentToken": pending["token"]},
     )
-    if not isinstance(result, dict) or not result.get("token"):
+    if not isinstance(result, dict) or not result.get("token") or not result.get("agentId"):
         raise RuntimeError("Réponse d'enrôlement invalide")
-    state = {"agent_id": result["agentId"], "token": result["token"]}
+    state.pop("pending_enrollment", None)
+    state.update({"agent_id": result["agentId"], "token": result["token"]})
     write_state(state)
     log("Box associée au portail")
     return state
@@ -1017,6 +1129,10 @@ def home_assistant_summary(
     states = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
     if not isinstance(config, dict) or not isinstance(states, list):
         raise RuntimeError("Réponse Home Assistant invalide")
+    from live_energy_states import live_energy_states
+    states = live_energy_states(states, lambda template: request_json(
+        f"{SUPERVISOR_API}/template", method="POST", token=supervisor_token,
+        payload={"template": template}))
     maintain_daily_pv_peak(supervisor_token, config, states)
     available = sum(
         1 for state in states
@@ -1028,16 +1144,21 @@ def home_assistant_summary(
         if not isinstance(state, dict):
             continue
         entity_id = str(state.get("entity_id", ""))
-        if not full_inventory and not entity_id.startswith(FAST_ENTITY_PREFIXES):
-            continue
         attributes = state.get("attributes")
         if not isinstance(attributes, dict):
             attributes = {}
+        electrical_measurement = entity_id.startswith("sensor.") and attributes.get("device_class") in {
+            "power", "energy", "current", "voltage", "frequency", "power_factor"
+        }
+        if not full_inventory and entity_id != "sensor.home_local_configuration" and not entity_id.startswith(FAST_ENTITY_PREFIXES) and not electrical_measurement:
+            continue
         safe_attributes = {
             key: attributes[key]
             for key in SAFE_ATTRIBUTE_KEYS
             if key in attributes
         }
+        if entity_id == "sensor.1_2_3_home_local_identity":
+            safe_attributes.update({key: attributes[key] for key in ("public_key", "protocol", "urls") if key in attributes})
         safe_attributes.update(registry_metadata.get(entity_id, {}))
         inventory.append({
             "entityId": entity_id,
@@ -1045,6 +1166,8 @@ def home_assistant_summary(
             "domain": entity_id.split(".", 1)[0] if "." in entity_id else "",
             "state": str(state.get("state", "")),
             "deviceClass": attributes.get("device_class"),
+            "lastReported": state.get("last_reported"),
+            "lastUpdated": state.get("last_updated"),
             "attributes": safe_attributes,
         })
     if full_inventory:
@@ -1764,21 +1887,244 @@ def _refresh_solar_forecast_inventory(
         return SOLAR_FORECAST_CACHE
 
 
+def close_ha_tunnel(upstream) -> None:
+    """Wake the dedicated reader before disposing of its socket.
+
+    WebSocket.close() reads the close reply itself. Concurrently calling it
+    while forward() is blocked in recv() can stall the entire relay command
+    loop on the frame reader lock, despite close's nominal timeout.
+    """
+    try:
+        upstream.abort()
+    except Exception:
+        pass
+    try:
+        upstream.shutdown()
+    except Exception:
+        pass
+
+
+def queued_command_result(supervisor_token: str, command: dict[str, Any]) -> dict[str, Any]:
+    """Reset commands are direct-session only and never durable-heartbeat jobs."""
+    if command.get("action") in ("commissioning.wifi", "installation.reset", "installation.update", "commissioning.activate_ddzy422", "commissioning.tuya", "commissioning.shelly", "commissioning.equipment", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.overkiz"):
+        return {"ok": False, "error": "Cette opération nécessite une session directe."}
+    return relay_command(supervisor_token, command)
+
+
 def relay_command(
     supervisor_token: str,
     message: dict[str, Any],
     relay_send=None,
 ) -> dict[str, Any]:
+    global REGISTRY_METADATA_FETCHED_AT
     command_id = str(message.get("id", ""))
     action = str(message.get("action", ""))
     payload = message.get("payload")
     if not isinstance(payload, dict):
         payload = {}
     try:
-        if action == "ha.states":
+        from installation_reset import Reset, blocks_mutations, verify_supervisor_archive
+        if blocks_mutations() and action not in ("installation.reset", "installation.update", "ha.states", "ha.config"):
+            raise RuntimeError("La remise à zéro est en cours. Les commandes sont temporairement suspendues.")
+        if action == "installation.reset":
+            def call_reset(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            def supervisor_reset(path, **kwargs):
+                response = request_json("http://supervisor" + path, token=supervisor_token, **kwargs)
+                if not isinstance(response, dict) or response.get("result") != "ok" or not isinstance(response.get("data"), dict):
+                    raise RuntimeError("La sauvegarde de cette box est indisponible.")
+                return response["data"]
+            reset = Reset(call_reset, supervisor_reset, lambda slug: verify_supervisor_archive(slug, supervisor_token),
+                           authorize=lambda: home_assistant_ws_command(supervisor_token, {"type": "auth/current_user"}))
+            if payload.get("operation") in ("factory_prepare", "factory_commit", "factory_status"):
+                from factory_stage import command as factory_stage_command
+                def supervisor_factory(path, **kwargs):
+                    response = request_json("http://supervisor" + path, token=supervisor_token, **kwargs)
+                    if not isinstance(response, dict) or response.get("result") != "ok":
+                        raise RuntimeError("Préparation atelier non confirmée.")
+                    return response.get("data") or {}
+                def call_factory(path, **kwargs):
+                    return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, _factory_cleanup=True, **kwargs)
+                result = factory_stage_command(payload, reset, supervisor_factory, call_factory)
+            else:
+                result = reset.command(payload)
+            if result.get("state") in ("backing_up", "removing", "partial", "backup_uncertain"):
+                for tunnel_id in list(HA_TUNNELS):
+                    upstream = HA_TUNNELS.pop(tunnel_id, None)
+                    if upstream: close_ha_tunnel(upstream)
+        elif action == "installation.update":
+            from installation_update import Update, native_catalog_refresh
+            def call_update(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            def supervisor_update(path, **kwargs):
+                response = request_json("http://supervisor" + path, token=supervisor_token, **kwargs)
+                if not isinstance(response, dict) or response.get("result") != "ok" or not isinstance(response.get("data"), dict):
+                    raise RuntimeError("Le service de mise à jour de cette box est indisponible.")
+                return response["data"]
+            result = Update(call_update, supervisor_update, lambda slug: verify_supervisor_archive(slug, supervisor_token),
+                registry=lambda: home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"}).get("result"),
+                runtime_version=AGENT_VERSION, refresh_catalog=lambda entity: native_catalog_refresh(call_update, entity), authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"})).command(payload)
+        elif action == "commissioning.overkiz":
+            from overkiz_setup import configure as configure_overkiz
+            def call_overkiz(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            try:
+                result = configure_overkiz(payload, call_overkiz)
+            except Exception:
+                raise RuntimeError("La connexion Somfy doit être vérifiée. Reprenez la même session ou demandez de l’aide.") from None
+        elif action in ("commissioning.ev_discover", "commissioning.lektrico"):
+            if action == "commissioning.ev_discover":
+                from ev_discovery import discover as setup
+            else:
+                from lektrico_setup import configure as setup
+            def call_ev(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            def ev_registry(command):
+                response = home_assistant_ws_command(supervisor_token, command)
+                if not isinstance(response, dict) or response.get("success") is False:
+                    raise RuntimeError("La recherche native n’a pas répondu.")
+                return response.get("result") if "result" in response else response
+            try:
+                result = setup(payload, call_ev, registry=ev_registry)
+            except Exception:
+                raise RuntimeError("La connexion de la borne n’a pas abouti. Recherchez à nouveau avant de reprendre.") from None
+        elif action == "commissioning.equipment":
+            from equipment_setup import configure as configure_equipment
+            def call_equipment(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            def equipment_registry(command):
+                response = home_assistant_ws_command(supervisor_token, command)
+                if not isinstance(response, dict) or response.get("success") is False:
+                    raise RuntimeError("La connexion native n’a pas répondu.")
+                return response.get("result") if "result" in response else response
+            try:
+                result = configure_equipment(payload, call_equipment, registry=equipment_registry)
+            except Exception:
+                raise RuntimeError("La connexion n’a pas abouti. Actualisez avant de reprendre.") from None
+        elif action == "commissioning.wifi":
+            from wifi_setup import command as wifi_command
+            def supervisor_wifi(path, **kwargs):
+                response = request_json("http://supervisor" + path, token=supervisor_token, **kwargs)
+                if not isinstance(response, dict) or response.get("result") != "ok" or not isinstance(response.get("data"), dict):
+                    raise RuntimeError("Configuration Wi-Fi indisponible sur cette box.")
+                return response["data"]
+            try:
+                result = wifi_command(payload, supervisor_wifi)
+            except ValueError:
+                raise
+            except Exception:
+                raise RuntimeError("La connexion Wi-Fi n’est pas confirmée. Gardez le câble Ethernet branché et actualisez l’état.") from None
+        elif action == "commissioning.shelly":
+            from shelly_setup import configure as configure_shelly
+            def call_shelly(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            def shelly_registry(command):
+                result = home_assistant_ws_command(supervisor_token, command)
+                return result.get("result") if isinstance(result, dict) and "result" in result else result
+            try:
+                from shelly_lan import scan as scan_shelly, identify as identify_shelly
+                from network_discovery import current_adapters, local_interfaces
+                network = shelly_registry({'type':'network'})
+                adapters = network.get('adapters',[]) if isinstance(network,dict) else []
+                result = configure_shelly(payload, call_shelly, registry=shelly_registry,
+                    lan=lambda: scan_shelly(adapters),
+                    identify=lambda host: identify_shelly(host, local_interfaces(current_adapters(adapters)),timeout=2))
+            except Exception:
+                raise RuntimeError("La connexion locale n’a pas abouti. Actualisez la recherche avant de reprendre.") from None
+        elif action == "commissioning.tuya":
+            from tuya_setup import configure as configure_tuya
+            from tuya_homes import read_homes
+            def call_tuya(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            def tuya_registry(command):
+                result = home_assistant_ws_command(supervisor_token, command)
+                return result.get("result") if isinstance(result, dict) and "result" in result else result
+            try:
+                result = configure_tuya(payload, call_tuya, registry=tuya_registry, homes_reader=read_homes)
+            except Exception:
+                raise RuntimeError("La connexion Tuya n’a pas abouti. Reprenez la même étape ou demandez de l’aide.") from None
+        elif action == "ha.states":
             result = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
         elif action == "ha.config":
             result = request_json(f"{SUPERVISOR_API}/config", token=supervisor_token)
+        elif action == "commissioning.install_ddzy422":
+            from ddzy422_setup import install, verify_bundle
+            result = install()
+            # Existing files do not prove that HA has loaded this integration.
+            try:
+                manifest = home_assistant_ws_command(supervisor_token, {"type": "manifest/get", "integration": "labox_ddzy422"})
+                if manifest.get("domain") == "labox_ddzy422" and manifest.get("version") == verify_bundle()["version"]:
+                    result["restartRequired"] = False
+            except Exception:
+                pass
+        elif action == "commissioning.verify_local_solar":
+            from local_solar_measurements import inspect, readiness
+            owner_scope = payload.get("ownerScope")
+            if not isinstance(owner_scope, str) or len(owner_scope) != 64 or any(c not in "0123456789abcdef" for c in owner_scope):
+                raise ValueError("L’accès propriétaire doit être vérifié.")
+            def call_verify_local_solar(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            if payload.get("operation") == "status":
+                result = readiness(call_verify_local_solar, lambda domain: home_assistant_ws_command(supervisor_token, {"type":"manifest/get", "integration":domain}))
+            elif payload.get("operation") == "verify":
+                registry = home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"})
+                result = inspect(payload.get("entryId"), payload.get("model"), call_verify_local_solar, registry.get("result"))
+            else:
+                raise ValueError("Cette vérification solaire est invalide.")
+        elif action == "commissioning.activate_ddzy422":
+            from ddzy422_activation import activate
+            try:
+                manifest = home_assistant_ws_command(supervisor_token, {"type": "manifest/get", "integration": "labox_ddzy422"})
+            except Exception:
+                manifest = None
+            def call_ddzy_activation(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            result = activate(payload, call_ddzy_activation, loaded_manifest=manifest,
+                authorize=lambda: home_assistant_ws_command(supervisor_token, {"type": "auth/current_user"}))
+        elif action in ("commissioning.configure_ddzy422", "commissioning.configure_deye_micro"):
+            if action == "commissioning.configure_ddzy422":
+                from ddzy422_setup import configure
+            else:
+                from micro_setup import configure
+            network = home_assistant_ws_command(supervisor_token, {"type": "network"})
+            def call_local_solar(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            result = configure(payload, network.get("adapters", []), call_local_solar)
+        elif action == "commissioning.configure_location":
+            from site_location import configure as configure_location
+            result = configure_location(payload, lambda command: home_assistant_ws_command(supervisor_token, command))
+        elif action == "commissioning.activate_solarman":
+            from solar_activation import activate
+            def call_activation(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            result = activate(call_activation, loaded_manifest=home_assistant_ws_command(
+                supervisor_token, {"type": "manifest/get", "integration": "solarman"}))
+        elif action == "commissioning.verify_deye":
+            from solar_measurements import inspect_measurements, measurement_template
+            registry = home_assistant_ws_command(supervisor_token, {"type": "config/entity_registry/list"})
+            result = inspect_measurements(
+                payload.get("entryId"), payload.get("inverterSerial"),
+                request_json(f"{SUPERVISOR_API}/config/config_entries/entry?domain=solarman", token=supervisor_token),
+                registry.get("result"),
+                request_json(f"{SUPERVISOR_API}/template", method="POST", token=supervisor_token,
+                             payload={"template": measurement_template(payload.get("entryId"), registry.get("result"))}),
+            )
+        elif action == "commissioning.configure_deye":
+            from solar_setup import configure
+            network = home_assistant_ws_command(supervisor_token, {"type": "network"})
+            def call_solar(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            result = configure(payload, network.get("adapters", []), call_solar)
+        elif action == "commissioning.install_solarman":
+            from connector_install import install_solarman
+            result = install_solarman()
+        elif action == "commissioning.discover_solar":
+            from network_discovery import discover_solarman
+            # Network boundaries originate from the box, not a remote caller.
+            network = home_assistant_ws_command(supervisor_token, {"type": "network"})
+            result = discover_solarman(network.get("adapters", []), target_mac=payload.get("targetMac"))
+            from solar_recovery import diagnostics
+            result['warnings'].extend(diagnostics(network.get('adapters', [])))
         elif action == "ha.services.call":
             domain = str(payload.get("domain", "")).strip()
             service = str(payload.get("service", "")).strip()
@@ -2074,8 +2420,9 @@ def relay_command(
             if not isinstance(fault_entity_ids, list):
                 raise ValueError("Liste des défauts invalide")
 
+            grid_sources, grid_expression = grid_automation_sources(payload)
             required_entities = {
-                grid_power_entity_id: "sensor",
+                **{entity: "sensor" for entity in grid_sources},
                 charger_state_entity_id: "sensor",
                 charger_current_entity_id: "sensor",
                 charger_voltage_entity_id: "sensor",
@@ -2198,6 +2545,37 @@ def relay_command(
                 + str(minimum_amps) + " }}"
             )
 
+            old_grid_expression = "states('" + grid_power_entity_id + "') | float(0)"
+            start_threshold_template = start_threshold_template.replace(old_grid_expression, grid_expression)
+            target_current_template = target_current_template.replace(old_grid_expression, grid_expression)
+            insufficient_surplus_template = insufficient_surplus_template.replace(old_grid_expression, grid_expression)
+            sufficient_surplus_template = sufficient_surplus_template.replace(old_grid_expression, grid_expression)
+
+            # Never calculate a charging setpoint from unavailable or stale measurements.
+            watched_measurements = [*grid_sources, charger_voltage_entity_id,
+                                    charger_current_entity_id]
+            watched_measurements += [value for value in (battery_power_entity_id, battery_level_entity_id) if value]
+            readings_ready = " and ".join(
+                "(is_number(states('" + entity + "')) and "
+                "0 <= as_timestamp(now()) - as_timestamp("
+                "states['" + entity + "'].last_reported | default(states['" + entity + "'].last_updated), 0) <= 180)"
+                for entity in watched_measurements
+            )
+            required_units = {charger_voltage_entity_id: "V", charger_current_entity_id: "A"}
+            if battery_power_entity_id: required_units[battery_power_entity_id] = "W"
+            if battery_level_entity_id: required_units[battery_level_entity_id] = "%"
+            readings_ready += " and " + " and ".join(
+                "state_attr('" + entity + "', 'unit_of_measurement') == '" + unit + "'"
+                for entity, unit in required_units.items()
+            )
+            readings_ready += " and " + " and ".join(
+                "(state_attr('" + entity + "', 'unit_of_measurement') | default('', true) | lower) in ['w', 'kw']"
+                for entity in grid_sources
+            )
+            start_threshold_template = start_threshold_template.replace("{{ ", "{{ (" + readings_ready + ") and ", 1)
+            sufficient_surplus_template = sufficient_surplus_template.replace("{{ ", "{{ (" + readings_ready + ") and ", 1)
+            available_template = available_template.replace("{{ ", "{{ (" + readings_ready + ") and ", 1)
+
             inverter_export_automation = deye_vehicle_export_automation(payload, states)
 
             automation_payload = {
@@ -2229,9 +2607,8 @@ def relay_command(
                         "id": "arret_surplus",
                     },
                     {
-                        "platform": "numeric_state",
-                        "entity_id": [grid_power_entity_id],
-                        "above": 700,
+                        "platform": "template",
+                        "value_template": "{{ (" + readings_ready + ") and " + grid_expression + " > 700 }}",
                         "for": {"hours": 0, "minutes": 1, "seconds": 0},
                         "id": "arret_import",
                     },
@@ -2251,6 +2628,11 @@ def relay_command(
                 "condition": [],
                 "action": [{
                     "choose": [
+                        {
+                            "conditions": [{"condition": "state", "entity_id": charger_state_entity_id, "state": "charging"},
+                                           {"condition": "template", "value_template": "{{ not (" + readings_ready + ") }}"}],
+                            "sequence": [{"service": "button.press", "target": {"entity_id": stop_button_entity_id}}],
+                        },
                         {
                             "conditions": [
                                 {
@@ -2473,7 +2855,7 @@ def relay_command(
                     raise ValueError("Période d'historique trop longue")
             start = urllib.parse.quote(raw_start, safe=":TZ+-")
             entity_id = urllib.parse.quote(raw_entity_id, safe="._")
-            query = f"filter_entity_id={entity_id}&minimal_response&no_attributes"
+            query = f"filter_entity_id={entity_id}&minimal_response"
             if raw_end:
                 end = urllib.parse.quote(raw_end, safe=":TZ+-")
                 query += f"&end_time={end}"
@@ -2555,11 +2937,9 @@ def relay_command(
                     log(f"Tunnel Lovelace {tunnel_id[:8]} fermé ({error})")
                     relay_send({"type": "tunnel.closed", "tunnelId": tunnel_id})
                 finally:
-                    HA_TUNNELS.pop(tunnel_id, None)
-                    try:
-                        upstream.close()
-                    except Exception:
-                        pass
+                    if HA_TUNNELS.get(tunnel_id) is upstream:
+                        HA_TUNNELS.pop(tunnel_id, None)
+                    close_ha_tunnel(upstream)
 
             threading.Thread(target=forward, daemon=True).start()
             result = {"opened": True}
@@ -2568,23 +2948,34 @@ def relay_command(
             upstream = HA_TUNNELS.get(tunnel_id)
             if not upstream:
                 raise ValueError("Tunnel fermé")
+            if blocks_mutations():
+                raise RuntimeError("La remise à zéro suspend temporairement les commandes.")
             upstream.send(str(payload.get("data", "")))
             result = {"sent": True}
         elif action == "ha.ws.close":
             tunnel_id = str(payload.get("tunnelId", ""))
             upstream = HA_TUNNELS.pop(tunnel_id, None)
             if upstream:
-                upstream.close()
+                close_ha_tunnel(upstream)
             result = {"closed": True}
         else:
             raise ValueError("Commande non autorisée")
+        if action in ("commissioning.configure_deye", "commissioning.configure_deye_micro", "commissioning.configure_ddzy422") or (action == "commissioning.shelly" and payload.get("operation") in ("connect", "credentials", "key")):
+            # Native setup/options may add measurements. Keep the normal full
+            # inventory cadence but refresh their registry identity next time.
+            REGISTRY_METADATA_FETCHED_AT = 0.0
         return {"type": "command.result", "id": command_id, "ok": True, "result": result}
     except Exception as error:
+        message = str(error)[:240]
+        if action.startswith("commissioning."):
+            status = error.code if isinstance(error, urllib.error.HTTPError) else getattr(error, "status_code", None)
+            if status in (502, 503, 504) or isinstance(error, (TimeoutError, urllib.error.URLError, ConnectionError)):
+                message = "Le service de la box est momentanément indisponible. Attendez son retour puis réessayez cette étape."
         return {
             "type": "command.result",
             "id": command_id,
             "ok": False,
-            "error": str(error)[:240],
+            "error": message,
         }
 
 
@@ -2593,6 +2984,7 @@ def relay_connected_session(
     house_id: str,
     relay_token: str,
     supervisor_token: str,
+    stop: threading.Event | None = None,
 ) -> None:
     """Run one authenticated relay session and fail fast on a zombie link."""
     send_lock = threading.Lock()
@@ -2611,14 +3003,17 @@ def relay_connected_session(
         raise RuntimeError("Authentification du relais refusée")
     log("Liaison sécurisée VPS active")
 
-    # A control-frame ping only proves that bytes were queued locally. Require
-    # an application-level pong so a half-open TCP connection cannot leave the
-    # process alive while the house remains permanently offline.
+    # A control-frame ping only proves that bytes were queued locally.  It does
+    # not prove that the remote VPS answered.  Require an application-level
+    # pong so a half-open TCP connection cannot leave the agent alive but
+    # permanently offline.
     awaiting_pong = False
     socket.settimeout(RELAY_IDLE_TIMEOUT_SECONDS)
-    while True:
+    while not (stop and stop.is_set()):
         try:
             message = json.loads(socket.recv())
+            if stop and stop.is_set():
+                return
         except websocket.WebSocketTimeoutException:
             if awaiting_pong:
                 raise RuntimeError("Le relais ne répond plus au contrôle de liaison")
@@ -2627,23 +3022,30 @@ def relay_connected_session(
             socket.settimeout(RELAY_PONG_TIMEOUT_SECONDS)
             continue
 
-        # Any valid inbound message proves the connection is alive. The pong
-        # is normally first, but a queued command is equally conclusive.
+        # Any valid inbound message proves the connection is alive.  The pong
+        # is normally the first one, but a queued command is equally valid.
         awaiting_pong = False
         socket.settimeout(RELAY_IDLE_TIMEOUT_SECONDS)
         if message.get("type") == "pong":
+            continue
+        if message == {"type": "heartbeat.wake"}:
+            HEARTBEAT_WAKE_EVENT.set()
             continue
         if message.get("type") == "command":
             relay_send(relay_command(supervisor_token, message, relay_send))
 
 
-def relay_forever(relay_url: str, house_id: str, relay_token: str, supervisor_token: str) -> None:
+def relay_forever(relay_url: str, house_id: str, relay_token: str, supervisor_token: str, stop: threading.Event | None = None) -> None:
+    target = urllib.parse.urlsplit(relay_url)
+    if target.scheme != "wss" or not target.hostname or target.username or target.password or target.query or target.fragment:
+        raise ValueError("La liaison distante doit utiliser WSS")
+    stop = stop or threading.Event()
     delay = 2
-    while True:
+    while not stop.is_set():
         socket: websocket.WebSocket | None = None
         try:
             socket = websocket.create_connection(relay_url, timeout=30)
-            relay_connected_session(socket, house_id, relay_token, supervisor_token)
+            relay_connected_session(socket, house_id, relay_token, supervisor_token, stop)
             delay = 2
         except Exception as error:
             log(f"Relais indisponible ({error}), reconnexion dans {delay}s")
@@ -2653,7 +3055,7 @@ def relay_forever(relay_url: str, house_id: str, relay_token: str, supervisor_to
                     socket.close()
                 except Exception:
                     pass
-        time.sleep(delay)
+        stop.wait(delay)
         delay = min(delay * 2, 60)
 
 
@@ -2669,6 +3071,213 @@ def heartbeat(portal_url: str, agent_token: str, summary: dict[str, Any]) -> dic
     return result
 
 
+def fetch_relay_configuration(portal_url: str, agent_token: str) -> dict[str, str]:
+    """Fetch only this enrolled box's relay identity; never follow a redirect."""
+    parsed = urllib.parse.urlsplit(portal_url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise RuntimeError("Le rattachement automatique nécessite un portail HTTPS")
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            raise RuntimeError("Redirection du portail refusée")
+
+    request = urllib.request.Request(
+        portal_url.rstrip("/") + "/agent/configuration",
+        headers={"Authorization": "Bearer " + agent_token, "Accept": "application/json"},
+    )
+    with urllib.request.build_opener(NoRedirect).open(request, timeout=10) as response:
+        result = json.loads(response.read(16384))
+    relay = result.get("relay") if isinstance(result, dict) else None
+    if not isinstance(relay, dict):
+        raise RuntimeError("Configuration de liaison invalide")
+    url, house, token = (relay.get(key) for key in ("url", "houseId", "token"))
+    if not all(isinstance(value, str) and value for value in (url, house, token)):
+        raise RuntimeError("Configuration de liaison incomplète")
+    target = urllib.parse.urlsplit(url)
+    if target.scheme != "wss" or not target.hostname or target.username or target.password or target.query or target.fragment:
+        raise RuntimeError("La liaison distante doit être chiffrée")
+    if len(house) > 160 or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-" for c in house):
+        raise RuntimeError("Identité de liaison invalide")
+    if len(token) != 64 or any(c not in "0123456789abcdef" for c in token):
+        raise RuntimeError("Clé de liaison invalide")
+    return {"url": url, "houseId": house, "token": token}
+
+
+def restore_identity(portal_url: str, encoded: str) -> dict[str, Any]:
+    """Import an existing identity only into an empty agent, after checking its house."""
+    state = read_json(STATE_PATH, {})
+    if not encoded:
+        return state
+    if len(encoded) > 2048:
+        raise RuntimeError("Identité de reprise invalide")
+    try:
+        identity = json.loads(encoded)
+        agent_id, token, house_id = (identity[key] for key in ("agent_id", "token", "house_id"))
+        if not isinstance(agent_id, str) or not agent_id.startswith("box_") or len(agent_id) > 100:
+            raise ValueError()
+        if not isinstance(token, str) or len(token) != 64 or any(c not in "0123456789abcdef" for c in token):
+            raise ValueError()
+        if not isinstance(house_id, str) or not house_id.startswith("installation_") or len(house_id) > 100:
+            raise ValueError()
+    except (ValueError, TypeError, KeyError):
+        raise RuntimeError("Identité de reprise invalide") from None
+    if state.get("token"):
+        if state.get("token") != token or state.get("agent_id") != agent_id:
+            raise RuntimeError("Une identité existe déjà ; reprise refusée")
+        return state
+    if state:
+        raise RuntimeError("Une association est déjà en cours ; reprise refusée")
+    configuration = fetch_relay_configuration(portal_url, token)
+    if configuration["houseId"] != house_id:
+        raise RuntimeError("Cette identité appartient à une autre installation")
+    state = {"agent_id": agent_id, "token": token}
+    write_state(state)
+    log("Identité existante reprise ; aucun nouvel enrôlement")
+    return state
+
+
+def prepare_backups_forever(portal_url: str, supervisor_token: str) -> None:
+    """Independent retries must not delay energy inventory or remote access."""
+    from backup_setup import configure, fetch_configuration
+    previous = None
+    while True:
+        status = "waiting"
+        try:
+            identity = read_json(STATE_PATH, {})
+            token = identity.get("token")
+            if token:
+                configuration = fetch_configuration(portal_url, str(token))
+                if read_json(STATE_PATH, {}).get("token") != token:
+                    time.sleep(60)
+                    continue
+                if configuration.get("state") == "inactive":
+                    status = "inactive"
+                else:
+                    result = configure(configuration, lambda path, **kwargs: request_json(
+                        SUPERVISOR_API + path, token=supervisor_token, timeout=15, **kwargs))
+                    status = result["state"]
+        except Exception:
+            # HTTP bodies may contain credentials: never log exception details.
+            status = "waiting"
+        if status != previous:
+            log({"waiting": "Destination de sauvegarde en attente ; nouvel essai automatique",
+                 "inactive": "Sauvegarde distante non activée par l’abonnement",
+                 "destination_pending": "Destination de sauvegarde créée ; vérification en cours",
+                 "destination_ready": "Destination de sauvegarde prête ; première archive à vérifier"}[status])
+            previous = status
+        time.sleep(60 if status in {"waiting", "destination_pending"} else 300)
+
+def validate_local_energy(value, supply):
+    """Validate the stored contract, without claiming sensor identity/freshness.
+
+    The local reader still validates this configuration against live inventory
+    before calculating a balance. Storing settings never executes a command.
+    """
+    required = {"version", "confirmed", "scope", "name", "supply", "productionMode",
+                "production", "grid", "gridDirection", "batteryMode", "battery", "batteryDirection"}
+    if not isinstance(value, dict) or not required <= set(value) or set(value) - required - {"hybrid"}:
+        raise ValueError("Contrat de suivi énergétique invalide")
+    if (type(value["version"]) is not int or value["version"] != 1 or value["confirmed"] is not True
+            or value["scope"] not in ("site", "section") or not isinstance(value["name"], str)
+            or not value["name"].strip() or len(value["name"]) > 100
+            or value["supply"] not in ("single", "three")
+            or value["scope"] == "site" and value["supply"] != supply
+            or value["productionMode"] not in ("devices", "site_total")
+            or value["gridDirection"] not in ("import_positive", "export_positive")
+            or value["batteryMode"] not in ("none", "separate_ac", "unknown", "coupled_dc")
+            or value["batteryDirection"] not in ("charge_positive", "discharge_positive")):
+        raise ValueError("Paramètres de suivi énergétique invalides")
+    def ids(name, minimum, maximum):
+        items = value[name]
+        if (not isinstance(items, list) or not minimum <= len(items) <= maximum
+                or any(not isinstance(x, str) or not re.fullmatch(r"sensor\.[a-z0-9_]{1,180}", x) for x in items)):
+            raise ValueError("Capteurs de suivi énergétique invalides")
+        return items
+    production = ids("production", 1, 100)
+    grid = ids("grid", 1, 3)
+    battery = ids("battery", 1, 1) if value["batteryMode"] == "separate_ac" else ids("battery", 0, 0)
+    if (len(grid) not in (1, 3 if value["supply"] == "three" else 1)
+            or value["productionMode"] == "site_total" and len(production) != 1):
+        raise ValueError("Périmètre de suivi énergétique invalide")
+    hybrid = value.get("hybrid", [])
+    if (not isinstance(hybrid, list) or len(hybrid) > 100
+            or hybrid and value["productionMode"] != "devices"
+            or value["batteryMode"] == "coupled_dc" and not hybrid):
+        raise ValueError("Mesure hybride invalide")
+    seen = set()
+    ac = []
+    for pair in hybrid:
+        if not isinstance(pair, dict) or set(pair) != {"production", "ac"}:
+            raise ValueError("Mesure hybride invalide")
+        match = re.fullmatch(r"sensor\.1_2_3_home_deye_([0-9]+)_pv_power", str(pair["production"]))
+        if (not match or pair["production"] not in production or pair["production"] in seen
+                or pair["ac"] != "sensor.1_2_3_home_deye_" + match[1] + "_power"):
+            raise ValueError("Identité de mesure hybride invalide")
+        seen.add(pair["production"])
+        ac.append(pair["ac"])
+    all_ids = production + grid + battery + ac
+    if len(set(all_ids)) != len(all_ids):
+        raise ValueError("Capteur compté plusieurs fois")
+
+
+def store_local_configuration(value, agent_id):
+    # The portal response is bound to this authenticated box. Never restore a
+    # configuration retained from a different enrollment.
+    if (not isinstance(value, dict) or value.get("version") != 1
+            or not agent_id or value.get("agentId") != agent_id
+            or not isinstance(value.get("installationId"), str)
+            or not value["installationId"]
+            or not isinstance(value.get("configuration"), dict)
+            or not isinstance(value.get("revision"), str)
+            or len(value["revision"]) != 64
+            or any(char not in "0123456789abcdef" for char in value["revision"])):
+        raise ValueError("Configuration locale invalide")
+    allowed = {"electricalSupply", "equipmentRoles", "waterHeating", "devices", "automations", "energyMetering", "houseName"}
+    if set(value["configuration"]) - allowed:
+        raise ValueError("Champs de configuration locale inconnus")
+    configuration = value["configuration"]
+    if "energyMetering" in configuration:
+        validate_local_energy(configuration["energyMetering"], configuration.get("electricalSupply"))
+    if "houseName" in configuration and (not isinstance(configuration["houseName"], str) or not 2 <= len(configuration["houseName"].strip()) <= 100):
+        raise ValueError("Nom de maison invalide")
+    document = {key:value[key] for key in ("version", "agentId", "installationId", "revision", "configuration")}
+    encoded = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode()) > 262144:
+        raise ValueError("Configuration locale trop volumineuse")
+    if read_json(LOCAL_CONFIGURATION_PATH, {}) == document:
+        return False
+    LOCAL_CONFIGURATION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    name = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=LOCAL_CONFIGURATION_PATH.parent, delete=False) as stream:
+            name = stream.name
+            os.chmod(name, 0o600)
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(name, LOCAL_CONFIGURATION_PATH)
+    finally:
+        if name and os.path.exists(name): os.unlink(name)
+    return True
+
+
+def publish_local_configuration(supervisor_token, agent_id, force=False):
+    global LOCAL_CONFIGURATION_PUBLISHED_AT
+    if not force and time.monotonic() - LOCAL_CONFIGURATION_PUBLISHED_AT < 60:
+        return
+    value = read_json(LOCAL_CONFIGURATION_PATH, {})
+    if not agent_id or value.get("agentId") != agent_id or value.get("version") != 1:
+        return
+    request_json(f"{SUPERVISOR_API}/states/sensor.home_local_configuration",
+                 method="POST", token=supervisor_token,
+                 payload={"state":value["revision"], "attributes":{
+                     "friendly_name":"Configuration locale 1.2.3 Home",
+                     "version":1,"installation_id":value["installationId"],
+                     "configuration":value["configuration"],
+                 }})
+    LOCAL_CONFIGURATION_PUBLISHED_AT = time.monotonic()
+
+
 def main() -> None:
     options = read_json(OPTIONS_PATH, {})
     portal_url = str(options.get("portal_url", "")).rstrip("/")
@@ -2680,8 +3289,34 @@ def main() -> None:
     supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
     if not supervisor_token:
         raise SystemExit("Accès interne à Home Assistant indisponible")
-    if not enrollment_code and not (relay_url and relay_house_id and relay_token):
+    from factory_activation import configured as factory_configured, poll as factory_poll
+    state = restore_identity(portal_url, str(options.get("restore_identity", "")))
+    factory_ready = factory_configured(options) if not state.get("token") else False
+    if not factory_ready and not enrollment_code and not state.get("token") and not (relay_url and relay_house_id and relay_token):
         raise SystemExit("Configuration incomplète : code d'installation ou liaison VPS requis")
+
+    if portal_url:
+        threading.Thread(target=prepare_backups_forever, args=(portal_url, supervisor_token), daemon=True).start()
+
+    def local_identity_forever():
+        from local_identity import serve
+        def call(path, **kwargs):
+            return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+        while True:
+            try:
+                def registry(command):
+                    result = home_assistant_ws_command(supervisor_token, command)
+                    return result.get('result') if isinstance(result, dict) and 'result' in result else result
+                serve(call, registry=registry, agent_id=lambda: read_json(STATE_PATH, {}).get('agent_id'))
+            except Exception:
+                log("Identification locale en attente ; nouvel essai dans une minute")
+                time.sleep(60)
+    threading.Thread(target=local_identity_forever, daemon=True).start()
+
+    from solar_state_wakeup import watch_forever as watch_solar_states
+    threading.Thread(target=watch_solar_states, args=(supervisor_token, HEARTBEAT_WAKE_EVENT,
+        lambda: home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"}),
+        lambda *args, **kwargs: websocket.create_connection(*args, **kwargs)), daemon=True).start()
 
     pool_camera_enabled = option_enabled(options.get("pool_camera_enabled", False))
     log(
@@ -2701,7 +3336,22 @@ def main() -> None:
         ).start()
         log(f"Lecture caméra piscine activée · {pool_camera_url}")
 
-    state = read_json(STATE_PATH, {})
+    def recover_solar_forever():
+        from solar_recovery import recover
+        while True:
+            time.sleep(300)
+            try:
+                def call(path, **kwargs):
+                    return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+                changed = recover(call, lambda command: home_assistant_ws_command(supervisor_token, command))
+                if changed:
+                    log("Connexion solaire retrouvée après changement d’adresse réseau")
+            except Exception:
+                log("Recherche de reconnexion solaire différée ; nouvel essai dans cinq minutes")
+    threading.Thread(target=recover_solar_forever, daemon=True).start()
+
+    automatic_relay_stop = None
+    last_relay_attempt = 0.0
     last_full_inventory_at = 0.0
     if relay_url and relay_house_id and relay_token:
         threading.Thread(
@@ -2711,15 +3361,27 @@ def main() -> None:
         ).start()
     else:
         log("Liaison VPS non configurée")
-    if not enrollment_code:
+    if not factory_ready and not enrollment_code and not state.get("token"):
         log("Portail technicien non enrôlé ; liaison VPS uniquement")
         while True:
             time.sleep(300)
     while True:
+        HEARTBEAT_WAKE_EVENT.clear()
         cycle_started_at = time.monotonic()
+        fast_follow_up = False
         try:
             if not state.get("token"):
-                state = enroll(portal_url, enrollment_code)
+                if factory_ready:
+                    state = factory_poll(options, lambda: read_json(STATE_PATH, {}), write_state, request_json)
+                    if not state.get("token"):
+                        time.sleep(10)
+                        continue
+                else:
+                    state = enroll(portal_url, enrollment_code)
+            try:
+                publish_local_configuration(supervisor_token, state.get("agent_id"))
+            except Exception:
+                log("Configuration locale en attente de republication")
             full_inventory = (
                 last_full_inventory_at == 0.0 or
                 time.monotonic() - last_full_inventory_at >= FULL_INVENTORY_SECONDS
@@ -2728,10 +3390,59 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            command_results = state.pop("command_results", [])
+            summary["capabilities"] = ["commissioning.discover_solar.mac", "commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            from installation_update import Update, heartbeat_status
+            update_status = heartbeat_status(AGENT_VERSION)
+            if update_status:
+                def call_update_observe(path, **kwargs):
+                    return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, timeout=3, **kwargs)
+                def supervisor_update_observe(path, **kwargs):
+                    response = request_json("http://supervisor" + path, token=supervisor_token, timeout=3, **kwargs)
+                    if not isinstance(response, dict) or response.get("result") != "ok" or not isinstance(response.get("data"), dict):
+                        raise RuntimeError("La version native de cette box reste à vérifier.")
+                    return response["data"]
+                observer = Update(call_update_observe, supervisor_update_observe, lambda slug: None,
+                    registry=lambda: home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"}, timeout=3).get("result"),
+                    runtime_version=AGENT_VERSION)
+                update_status = observer.observe_heartbeat()
+                if update_status: summary["updateStatus"] = update_status
+            command_results = state.get("command_results", [])
             if command_results:
                 summary["commandResults"] = command_results
             heartbeat_result = heartbeat(portal_url, str(state["token"]), summary)
+            if command_results:
+                state.pop("command_results", None)
+                write_state(state)
+
+            if 'localMobile' in heartbeat_result:
+                try:
+                    from local_mobile import store_grants, FILE
+                    if heartbeat_result['localMobile'] is None:
+                        FILE.unlink(missing_ok=True)
+                    else:
+                        store_grants(heartbeat_result['localMobile'], state.get('agent_id'))
+                except Exception:
+                    log('Synchronisation de l’accès local en attente')
+            local_configuration = heartbeat_result.get("localConfiguration")
+            if local_configuration is not None:
+                try:
+                    changed = store_local_configuration(local_configuration, state.get("agent_id"))
+                    if changed: publish_local_configuration(supervisor_token, state.get("agent_id"), force=True)
+                except Exception:
+                    log("Synchronisation des réglages locaux en attente ; dernière copie conservée")
+            if not (relay_url and relay_house_id and relay_token) and automatic_relay_stop is None and (last_relay_attempt == 0.0 or time.monotonic() - last_relay_attempt >= 60):
+                last_relay_attempt = time.monotonic()
+                try:
+                    configuration = fetch_relay_configuration(portal_url, str(state["token"]))
+                    automatic_relay_stop = threading.Event()
+                    threading.Thread(
+                        target=relay_forever,
+                        args=(configuration["url"], configuration["houseId"], configuration["token"], supervisor_token, automatic_relay_stop),
+                        daemon=True,
+                    ).start()
+                except Exception:
+                    # Do not log credentials or let a relay outage stop inventory.
+                    log("Liaison distante en attente ; nouvel essai dans une minute")
             if full_inventory:
                 last_full_inventory_at = time.monotonic()
             interval = max(5, min(300, int(heartbeat_result.get("nextHeartbeatSeconds", 5))))
@@ -2741,11 +3452,12 @@ def main() -> None:
                 for command in commands[:20]:
                     if not isinstance(command, dict):
                         continue
-                    result = relay_command(supervisor_token, command)
+                    result = queued_command_result(supervisor_token, command)
                     results.append({
                         "id": str(command.get("id", "")),
                         "ok": bool(result.get("ok")),
                         "error": str(result.get("error", ""))[:240],
+                        **({"result": result.get("result")} if command.get("action") in {"commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.activate_solarman", "commissioning.verify_deye"} and result.get("ok") else {}),
                     })
                 if results:
                     state["command_results"] = results
@@ -2757,9 +3469,15 @@ def main() -> None:
                 f"Connecté · Home Assistant {summary['haVersion']} · "
                 f"{summary['inventoryCount']} entités"
             )
+            # Read fresh states and report persisted results immediately after execution.
+            # A failed heartbeat keeps the normal retry interval and the durable results.
+            fast_follow_up = bool(state.get("command_results"))
         except urllib.error.HTTPError as error:
             if error.code == 401 and state.get("token"):
                 log("Identité de box refusée ; nouvel enrôlement requis")
+                if automatic_relay_stop is not None:
+                    automatic_relay_stop.set()
+                    automatic_relay_stop = None
                 state = {}
                 try:
                     STATE_PATH.unlink()
@@ -2772,7 +3490,7 @@ def main() -> None:
         except Exception as error:
             log(f"Erreur inattendue ({type(error).__name__}: {error}), nouvelle tentative")
         cycle_duration = time.monotonic() - cycle_started_at
-        time.sleep(max(0.2, interval - cycle_duration))
+        HEARTBEAT_WAKE_EVENT.wait(0.2 if fast_follow_up else max(0.2, interval - cycle_duration))
 
 
 if __name__ == "__main__":

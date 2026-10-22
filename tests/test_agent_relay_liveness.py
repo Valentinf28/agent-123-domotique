@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
 
 AGENT_PATH = Path(__file__).parents[1] / "agent_123_domotique" / "agent.py"
@@ -45,6 +46,16 @@ class FakeSocket:
 
 
 class RelayLivenessTests(unittest.TestCase):
+    def test_heartbeat_wake_interrupts_wait_without_dispatching_a_device_command(self):
+        socket = FakeSocket()
+        socket.responses = [json.dumps({'type':'authenticated'}),json.dumps({'type':'heartbeat.wake'}),RuntimeError('stop fixture')]
+        agent.HEARTBEAT_WAKE_EVENT.clear()
+        with patch.object(agent.websocket,'WebSocketTimeoutException',RelayTimeout,create=True),patch.object(agent,'relay_command') as dispatch:
+            with self.assertRaisesRegex(RuntimeError,'stop fixture'):agent.relay_connected_session(socket,'house','token','supervisor')
+        self.assertTrue(agent.HEARTBEAT_WAKE_EVENT.wait(0));dispatch.assert_not_called()
+        self.assertEqual(len(socket.sent),1)
+        agent.HEARTBEAT_WAKE_EVENT.clear()
+
     def test_reconnects_when_ping_receives_no_pong(self):
         socket = FakeSocket()
         previous_timeout = getattr(agent.websocket, "WebSocketTimeoutException", None)
