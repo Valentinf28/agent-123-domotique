@@ -1,0 +1,47 @@
+name: Qualify the complete add-on
+on:
+  push:
+    branches: [main, codex/automatic-box-relay]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ['3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -r agent_123_domotique/requirements.lock
+      - run: python scripts/package_manifest.py --check
+      - run: python tests/run_isolated.py
+  package:
+    needs: unit
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - name: Build the complete package
+        run: docker buildx build --platform linux/${{ matrix.arch }} --load -t labox:qualification ./agent_123_domotique
+      - name: Import every runtime module and verify every packaged source
+        run: docker run --platform linux/${{ matrix.arch }} --rm --network none --read-only --tmpfs /tmp -e PYTHONDONTWRITEBYTECODE=1 --entrypoint python3 labox:qualification /opt/agent/release_smoke.py
+      - name: Record qualified image and packages
+        run: |
+          docker image inspect labox:qualification > image-${{ matrix.arch }}.json
+          docker run --platform linux/${{ matrix.arch }} --rm --network none --entrypoint sh labox:qualification -c 'apk info -vv; python3 -m pip freeze' > packages-${{ matrix.arch }}.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: package-proof-${{ matrix.arch }}
+          path: |
+            image-${{ matrix.arch }}.json
+            packages-${{ matrix.arch }}.txt

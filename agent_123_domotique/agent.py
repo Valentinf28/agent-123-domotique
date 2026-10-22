@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.33"
+AGENT_VERSION = "0.6.34"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -743,6 +743,24 @@ def apply_dashboard(
     return False
 
 
+class NoAuthenticatedRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Do not include a destination or response body in the error/log.
+        raise RuntimeError("Redirection de la requête authentifiée refusée")
+
+
+def validate_json_url(url):
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        valid = (parsed.scheme == "https" and bool(parsed.hostname)
+                 or parsed.scheme == "http" and parsed.hostname == "supervisor" and parsed.port in (None, 80))
+        if not valid or parsed.username or parsed.password or parsed.fragment:
+            raise ValueError()
+        parsed.port  # Reject malformed ports before creating a request.
+    except (ValueError, TypeError):
+        raise ValueError("Destination HTTPS ou service interne requis") from None
+
+
 def request_json(
     url: str,
     *,
@@ -762,10 +780,11 @@ def request_json(
             from factory_stage import permits_cleanup_request
             if not (_factory_cleanup and permits_cleanup_request(url[len(SUPERVISOR_API):], method)):
                 raise RuntimeError("La remise à zéro suspend temporairement les modifications.")
+    validate_json_url(url)
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Agent-123-Domotique/0.5.27",
+        "User-Agent": "Agent-123-Domotique/" + AGENT_VERSION,
     }
     if payload is not None:
         headers["Content-Type"] = "application/json"
@@ -773,7 +792,8 @@ def request_json(
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     context = ssl.create_default_context()
-    with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
+    opener = urllib.request.build_opener(NoAuthenticatedRedirect, urllib.request.HTTPSHandler(context=context))
+    with opener.open(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -3016,6 +3036,9 @@ def relay_connected_session(
 
 
 def relay_forever(relay_url: str, house_id: str, relay_token: str, supervisor_token: str, stop: threading.Event | None = None) -> None:
+    target = urllib.parse.urlsplit(relay_url)
+    if target.scheme != "wss" or not target.hostname or target.username or target.password or target.query or target.fragment:
+        raise ValueError("La liaison distante doit utiliser WSS")
     stop = stop or threading.Event()
     delay = 2
     while not stop.is_set():
@@ -3144,6 +3167,59 @@ def prepare_backups_forever(portal_url: str, supervisor_token: str) -> None:
             previous = status
         time.sleep(60 if status in {"waiting", "destination_pending"} else 300)
 
+def validate_local_energy(value, supply):
+    """Validate the stored contract, without claiming sensor identity/freshness.
+
+    The local reader still validates this configuration against live inventory
+    before calculating a balance. Storing settings never executes a command.
+    """
+    required = {"version", "confirmed", "scope", "name", "supply", "productionMode",
+                "production", "grid", "gridDirection", "batteryMode", "battery", "batteryDirection"}
+    if not isinstance(value, dict) or not required <= set(value) or set(value) - required - {"hybrid"}:
+        raise ValueError("Contrat de suivi énergétique invalide")
+    if (type(value["version"]) is not int or value["version"] != 1 or value["confirmed"] is not True
+            or value["scope"] not in ("site", "section") or not isinstance(value["name"], str)
+            or not value["name"].strip() or len(value["name"]) > 100
+            or value["supply"] not in ("single", "three")
+            or value["scope"] == "site" and value["supply"] != supply
+            or value["productionMode"] not in ("devices", "site_total")
+            or value["gridDirection"] not in ("import_positive", "export_positive")
+            or value["batteryMode"] not in ("none", "separate_ac", "unknown", "coupled_dc")
+            or value["batteryDirection"] not in ("charge_positive", "discharge_positive")):
+        raise ValueError("Paramètres de suivi énergétique invalides")
+    def ids(name, minimum, maximum):
+        items = value[name]
+        if (not isinstance(items, list) or not minimum <= len(items) <= maximum
+                or any(not isinstance(x, str) or not re.fullmatch(r"sensor\.[a-z0-9_]{1,180}", x) for x in items)):
+            raise ValueError("Capteurs de suivi énergétique invalides")
+        return items
+    production = ids("production", 1, 100)
+    grid = ids("grid", 1, 3)
+    battery = ids("battery", 1, 1) if value["batteryMode"] == "separate_ac" else ids("battery", 0, 0)
+    if (len(grid) not in (1, 3 if value["supply"] == "three" else 1)
+            or value["productionMode"] == "site_total" and len(production) != 1):
+        raise ValueError("Périmètre de suivi énergétique invalide")
+    hybrid = value.get("hybrid", [])
+    if (not isinstance(hybrid, list) or len(hybrid) > 100
+            or hybrid and value["productionMode"] != "devices"
+            or value["batteryMode"] == "coupled_dc" and not hybrid):
+        raise ValueError("Mesure hybride invalide")
+    seen = set()
+    ac = []
+    for pair in hybrid:
+        if not isinstance(pair, dict) or set(pair) != {"production", "ac"}:
+            raise ValueError("Mesure hybride invalide")
+        match = re.fullmatch(r"sensor\.1_2_3_home_deye_([0-9]+)_pv_power", str(pair["production"]))
+        if (not match or pair["production"] not in production or pair["production"] in seen
+                or pair["ac"] != "sensor.1_2_3_home_deye_" + match[1] + "_power"):
+            raise ValueError("Identité de mesure hybride invalide")
+        seen.add(pair["production"])
+        ac.append(pair["ac"])
+    all_ids = production + grid + battery + ac
+    if len(set(all_ids)) != len(all_ids):
+        raise ValueError("Capteur compté plusieurs fois")
+
+
 def store_local_configuration(value, agent_id):
     # The portal response is bound to this authenticated box. Never restore a
     # configuration retained from a different enrollment.
@@ -3156,9 +3232,14 @@ def store_local_configuration(value, agent_id):
             or len(value["revision"]) != 64
             or any(char not in "0123456789abcdef" for char in value["revision"])):
         raise ValueError("Configuration locale invalide")
-    allowed = {"electricalSupply", "equipmentRoles", "waterHeating", "devices", "automations"}
+    allowed = {"electricalSupply", "equipmentRoles", "waterHeating", "devices", "automations", "energyMetering", "houseName"}
     if set(value["configuration"]) - allowed:
         raise ValueError("Champs de configuration locale inconnus")
+    configuration = value["configuration"]
+    if "energyMetering" in configuration:
+        validate_local_energy(configuration["energyMetering"], configuration.get("electricalSupply"))
+    if "houseName" in configuration and (not isinstance(configuration["houseName"], str) or not 2 <= len(configuration["houseName"].strip()) <= 100):
+        raise ValueError("Nom de maison invalide")
     document = {key:value[key] for key in ("version", "agentId", "installationId", "revision", "configuration")}
     encoded = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
     if len(encoded.encode()) > 262144:

@@ -1,3 +1,10 @@
+# 0.6.34
+
+- Accepte et valide les réglages énergétiques et le nom de maison dans la copie locale.
+- Refuse les redirections authentifiées, les destinations externes HTTP et les relais non chiffrés.
+- Aligne la préparation atelier sur le portail de production.
+- Fige la base et les dépendances Python ; ajoute une recette du paquet et des contrôles automatisés sur les deux architectures.
+
 # 0.6.33
 
 - Inclut le module de lecture énergétique dans l’image et vérifie sa présence dans le paquet.

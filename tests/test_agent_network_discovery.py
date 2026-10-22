@@ -25,7 +25,7 @@ class AgentDiscoveryTests(unittest.TestCase):
                 "payload": {"host": "8.8.8.8", "adapters": [{"address": "8.8.8.8"}]},
             })
         network.assert_called_once_with("internal-token", {"type": "network"})
-        module.discover_solarman.assert_called_once_with(adapters)
+        module.discover_solarman.assert_called_once_with(adapters, target_mac=None)
         self.assertTrue(result["ok"])
         self.assertEqual(result["result"]["scope"], "solar_loggers")
         recovery.diagnostics.assert_called_once_with(adapters)

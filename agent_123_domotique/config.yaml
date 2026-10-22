@@ -1,10 +1,10 @@
 name: "Agent 1.2.3 Domotique"
 description: "Prépare, diagnostique et rattache cette maison au portail technicien."
-version: "0.6.33"
+version: "0.6.34"
 slug: "agent_123_domotique"
 url: "https://123panneaux-solaires.fr"
 init: false
-stage: experimental
+stage: stable
 startup: application
 boot: auto
 homeassistant_api: true
@@ -19,7 +19,7 @@ arch:
   - aarch64
   - amd64
 options:
-  portal_url: "https://ma-maison-ha-gateway.valentin-ma-maison.workers.dev"
+  portal_url: "https://home.123panneaux-solaires.fr/api"
   factory_id: ""
   factory_token: ""
   enrollment_code: ""

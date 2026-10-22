@@ -1,4 +1,4 @@
-FROM ghcr.io/home-assistant/base:latest
+FROM ghcr.io/home-assistant/base@sha256:992dc6a5727b97a30da8dd259b489739299c324407557df540165e2f0dbb7763
 
 RUN apk add --no-cache python3 py3-websocket-client py3-pillow tzdata iproute2 py3-cryptography py3-virtualenv
 
@@ -9,7 +9,8 @@ COPY factory_stage.py /opt/agent/factory_stage.py
 COPY agent.py /opt/agent/agent.py
 COPY live_energy_states.py /opt/agent/live_energy_states.py
 COPY wifi_setup.py /opt/agent/wifi_setup.py
-RUN virtualenv --system-site-packages /opt/tuya-sdk && /opt/tuya-sdk/bin/pip install --no-cache-dir tuya-device-sharing-sdk==0.2.15 PyNaCl==1.6.2
+COPY requirements.lock /opt/agent/requirements.lock
+RUN virtualenv /opt/tuya-sdk && /opt/tuya-sdk/bin/pip install --no-cache-dir -r /opt/agent/requirements.lock && /opt/tuya-sdk/bin/pip check
 ENV PATH="/opt/tuya-sdk/bin:$PATH"
 
 COPY tuya_homes.py /opt/agent/tuya_homes.py
@@ -42,6 +43,9 @@ COPY solar_recovery.py /opt/agent/solar_recovery.py
 COPY solar_setup.py /opt/agent/solar_setup.py
 COPY site_location.py /opt/agent/site_location.py
 COPY solar_activation.py /opt/agent/solar_activation.py
+COPY config.yaml /opt/agent/config.yaml
+COPY release_smoke.py /opt/agent/release_smoke.py
+COPY package-manifest.json /opt/agent/package-manifest.json
 COPY run.sh /run.sh
 RUN chmod a+x /run.sh
 
