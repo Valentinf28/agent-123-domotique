@@ -21,7 +21,7 @@ class RecoveryTests(unittest.TestCase):
 class RecoveryFlowTests(unittest.TestCase):
  def test_updates_only_host_through_options_flow(self):
   import tempfile,json
-  from unittest.mock import Mock
+  from unittest.mock import Mock,patch
   from solar_recovery import recover
   with tempfile.TemporaryDirectory() as folder:
    root=Path(folder);(root/'custom_components/solarman').mkdir(parents=True);(root/'.storage').mkdir()
@@ -30,6 +30,7 @@ class RecoveryFlowTests(unittest.TestCase):
    (root/'.storage/core.config_entries').write_text(json.dumps({'data':{'entries':[{'domain':'solarman','entry_id':'entry','options':options}]}}))
    call=Mock(side_effect=[[{'entity_id':'sensor.logger_update_interval','state':'5','last_changed':'2020-01-01T00:00:00Z'},{'entity_id':'sensor.battery','state':'unavailable','last_changed':'2020-01-01T00:00:00Z'}],{'type':'form','step_id':'init','flow_id':'flow'},{'type':'create_entry'}])
    ws=Mock(side_effect=[{'result':[{'entity_id':'sensor.logger_update_interval','entity_category':'diagnostic','config_entry_id':'entry'},{'entity_id':'sensor.battery','config_entry_id':'entry'}]},{'adapters':A}])
-   self.assertEqual(recover(call,ws,config=root,discover=lambda _: {'devices':[D]}),[{'entryId':'entry','host':D['host']}])
+   with patch('solar_recovery.current_adapters',side_effect=lambda fallback:fallback):
+    self.assertEqual(recover(call,ws,config=root,discover=lambda _: {'devices':[D]}),[{'entryId':'entry','host':D['host']}])
    self.assertEqual(call.call_args.kwargs['payload'],{**options,'host':D['host']})
    self.assertEqual(json.loads((root/'.storage/core.config_entries').read_text())['data']['entries'][0]['options'],options)

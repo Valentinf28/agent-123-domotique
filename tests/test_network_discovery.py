@@ -13,6 +13,10 @@ spec.loader.exec_module(discovery)
 class DiscoveryTests(unittest.TestCase):
     def setUp(self):
         self.interface = ipaddress.IPv4Interface("192.168.6.115/24")
+        # Fixtures must not discover or scan the CI runner's real interfaces.
+        adapters = patch.object(discovery, 'current_adapters', side_effect=lambda fallback: fallback)
+        adapters.start()
+        self.addCleanup(adapters.stop)
 
     def test_logger_identity_and_found_does_not_mean_integrated(self):
         result = discovery.parse_reply(b"192.168.6.178,D42787140716,2974839220", "192.168.6.178", self.interface)
