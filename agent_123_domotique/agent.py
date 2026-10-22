@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.31"
+AGENT_VERSION = "0.6.32"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1109,6 +1109,10 @@ def home_assistant_summary(
     states = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
     if not isinstance(config, dict) or not isinstance(states, list):
         raise RuntimeError("Réponse Home Assistant invalide")
+    from live_energy_states import live_energy_states
+    states = live_energy_states(states, lambda template: request_json(
+        f"{SUPERVISOR_API}/template", method="POST", token=supervisor_token,
+        payload={"template": template}))
     maintain_daily_pv_peak(supervisor_token, config, states)
     available = sum(
         1 for state in states

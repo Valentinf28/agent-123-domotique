@@ -1,3 +1,7 @@
+# 0.6.32
+
+- Lecture des dates réelles des capteurs énergétiques Home Assistant pour conserver les valeurs stables (dont 0 W et le niveau de batterie). Aucun horodatage de réception substitué à une mesure.
+
 # 0.6.31
 
 - Resolve a requested MAC through bounded local neighbor discovery when the logger does not expose the SolarMAN data port. Report a network-only device without claiming solar compatibility.
