@@ -7,6 +7,10 @@ class LiveEnergyTest(unittest.TestCase):
  def setUp(self):
   self.old={'entity_id':'sensor.pv','state':'0','attributes':{'device_class':'power','unit_of_measurement':'W'},'last_reported':'2026-10-21T00:00:00+00:00'}
   self.fresh={**self.old,'last_reported':'2026-10-22T11:40:00+00:00','last_updated':self.old['last_reported']}
+ def test_module_is_in_the_runtime_image(self):
+  addon=Path(__file__).resolve().parents[1]/'agent_123_domotique'
+  self.assertIn('COPY live_energy_states.py /opt/agent/live_energy_states.py',(addon/'Dockerfile').read_text())
+  self.assertTrue((addon/'live_energy_states.py').is_file())
  def test_stable_zero_uses_real_report_date(self):
   result=live_energy_states([self.old],lambda t:json.dumps([self.fresh]))
   self.assertEqual(result[0],self.fresh);self.assertEqual(self.old['last_reported'],'2026-10-21T00:00:00+00:00')

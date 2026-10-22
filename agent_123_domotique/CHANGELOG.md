@@ -1,3 +1,7 @@
+# 0.6.33
+
+- Inclut le module de lecture énergétique dans l’image et vérifie sa présence dans le paquet.
+
 # 0.6.32
 
 - Lecture des dates réelles des capteurs énergétiques Home Assistant pour conserver les valeurs stables (dont 0 W et le niveau de batterie). Aucun horodatage de réception substitué à une mesure.
