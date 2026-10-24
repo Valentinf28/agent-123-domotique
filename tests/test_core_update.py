@@ -97,6 +97,16 @@ class Tests(unittest.TestCase):
     def test_post_update_entities_and_automations_checked(self):
         s=self.execute(self.prep());self.f.current='2026.10.4';self.f.states[0]['state']='unavailable';self.f.states[-1]['state']='off'
         self.f.now+=901;s=self.e.observe(s);self.assertEqual(s['state'],'attention_required');self.assertFalse(s['checks']['entities']);self.assertFalse(s['checks']['automations'])
+    def test_attention_reconciles_real_recovery_without_reinstall(self):
+        s=self.execute(self.prep());self.f.current='2026.10.4';self.f.states[0]['state']='unavailable'
+        self.f.now+=901;s=self.e.observe(s);self.assertEqual(s['state'],'attention_required')
+        self.f.states[0]['state']='off';s=self.e.observe(s);self.assertEqual(s['state'],'completed')
+        self.assertEqual(len([x for x in self.f.calls if x[1]=='/core/update']),1)
+        self.assertEqual(len([x for x in self.f.calls if x[1]=='/backups/new/full']),1)
+    def test_attention_heartbeat_runs_only_readonly_observation_for_submitted_install(self):
+        s=self.execute(self.prep());s['state']='attention_required';self.e.save(s);self.e.heartbeat()
+        self.assertEqual(len(self.queue),1)
+        self.queue.clear();s['installSubmitted']=False;self.e.save(s);self.e.heartbeat();self.assertEqual(self.queue,[])
     def test_backup_reuse_requires_same_owner_and_archive(self):
         prior={'state':'completed','ownerScope':O,'backupSlug':'recent','backupVerified':True,'backupArchive':{'sha256':'c'*64}}
         (self.data/'installation-update.json').write_text(json.dumps(prior));self.f.backups=[{'slug':'recent','date':datetime.fromtimestamp(self.f.now-120,timezone.utc).isoformat()}]

@@ -137,7 +137,7 @@ class CoreUpdate(Reset):
     def observe(self,s):
         if s.get('state') in ('preparing','backing_up') and str(self.path) not in _WORKERS:
             s.update(state='backup_uncertain' if s.get('backupSubmitted') else 'failed',error='L’opération a été interrompue et doit être vérifiée.');self.save(s)
-        if s.get('state')!='verifying':return s
+        if s.get('state') not in ('verifying','attention_required'):return s
         try:
             info=self.supervisor('/core/info');config=self.call('/config');s['observedVersion']=config.get('version')
             current=self.snapshot();before=s['inventory']
@@ -154,7 +154,7 @@ class CoreUpdate(Reset):
     def heartbeat(self):
         s=self.load()
         if not s:return None
-        if s.get('state')=='verifying' and str(self.path) not in _WORKERS:
+        if s.get('state') in ('verifying','attention_required') and s.get('installSubmitted') is True and str(self.path) not in _WORKERS:
             def inspect_once(identifier):
                 try:
                     with _MUTEX:
