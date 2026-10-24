@@ -1,0 +1,12 @@
+{
+  "files": {
+    ".dockerignore": "e55a4a9c8906445f936b73ce8e1d410663f8a45b0c9be7175df61adfff3b5298",
+    "Dockerfile": "7399dd8fc3f5af3dbac3a08bef2d852b844110e8a931e8fe557c010e85b06ce9",
+    "README.md": "7d8c3ba5814c65f0ae8e2b03aac0a3c42db371613f0f813a9b6b850e8a9c7d1a",
+    "apparmor.txt": "284ae79a3680eb654547454ede63648db730dd05b7a87fe6d8d09e29afcee23a",
+    "boot.py": "9b492a8efb0fa728d2302ee2a428a9ec6649b1002e34a27f5837e821a4807d2b",
+    "config.yaml": "66535bd331cf0ffebe68b17350025125763311f49fdc90916c4a2a2975e1bf1a",
+    "run.sh": "c4620d3166f51c05a0572d0b7778c947969a6e1afe97a99eba4b6ed7572ffc4e",
+    "worker.py": "da5998271adcb012c62fe863a63f161d7222c9d0b5fc48294b08eecd0790e5a4"
+  }
+}

@@ -1,0 +1,28 @@
+#include <tunables/global>
+profile labox_boot_prepare flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  file,
+  capability sys_admin,
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability fsetid,
+  capability setgid,
+  capability setuid,
+  capability kill,
+  signal,
+  deny network,
+  /init ix,
+  /bin/** ix,
+  /sbin/** ix,
+  /usr/bin/** ix,
+  /usr/sbin/** ix,
+  /package/** ix,
+  /command/** ix,
+  /run.sh ix,
+  mount fstype=vfat /dev/mmcblk*p* -> /tmp/labox-boot/,
+  mount fstype=vfat /dev/sd* -> /tmp/labox-boot/,
+  mount fstype=vfat /dev/nvme*p* -> /tmp/labox-boot/,
+  umount /tmp/labox-boot/,
+}
