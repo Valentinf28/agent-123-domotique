@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.34"
+AGENT_VERSION = "0.6.37"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -731,6 +731,42 @@ def home_assistant_registry_metadata(supervisor_token: str) -> dict[str, dict[st
     except Exception as error:
         log(f"Métadonnées du registre Home Assistant indisponibles ({error})")
     return REGISTRY_METADATA_CACHE
+
+
+
+def mobile_home_assistant_states(supervisor_token: str) -> list[dict[str, Any]]:
+    """Read actual HA reports and registry identity for the existing mobile rows."""
+    from live_energy_states import live_energy_states
+    states = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
+    if not isinstance(states, list):
+        raise RuntimeError("États Home Assistant indisponibles")
+    states = live_energy_states(states, lambda template: request_json(
+        f"{SUPERVISOR_API}/template", method="POST", token=supervisor_token,
+        payload={"template": template}))
+    try:
+        metadata = home_assistant_registry_metadata(supervisor_token)
+    except Exception:
+        metadata = {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    result = []
+    for row in states:
+        if not isinstance(row, dict):
+            continue
+        attributes = row.get("attributes")
+        attributes = attributes if isinstance(attributes, dict) else {}
+        # Only identity fields needed by the strict energy-meter validation.
+        # Never add entities, timestamps, permissions or inferred measurements.
+        identity = metadata.get(row.get("entity_id"), {}) if str(row.get("entity_id", "")).startswith("sensor.") and attributes.get("device_class") == "power" else {}
+        identity = {key: identity[key] for key in ("platform", "original_name", "model", "serial_number") if key in identity}
+        result.append({**row, "attributes": {**attributes, **identity}} if identity else row)
+    return result
+
+
+def mobile_home_assistant_call(supervisor_token: str, path: str, **kwargs):
+    if path == "/states" and kwargs.get("method", "GET") == "GET":
+        return mobile_home_assistant_states(supervisor_token)
+    return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
 
 
 def apply_dashboard(
@@ -2044,7 +2080,7 @@ def relay_command(
             except Exception:
                 raise RuntimeError("La connexion Tuya n’a pas abouti. Reprenez la même étape ou demandez de l’aide.") from None
         elif action == "ha.states":
-            result = request_json(f"{SUPERVISOR_API}/states", token=supervisor_token)
+            result = mobile_home_assistant_states(supervisor_token)
         elif action == "ha.config":
             result = request_json(f"{SUPERVISOR_API}/config", token=supervisor_token)
         elif action == "commissioning.install_ddzy422":
@@ -3301,7 +3337,7 @@ def main() -> None:
     def local_identity_forever():
         from local_identity import serve
         def call(path, **kwargs):
-            return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            return mobile_home_assistant_call(supervisor_token, path, **kwargs)
         while True:
             try:
                 def registry(command):
