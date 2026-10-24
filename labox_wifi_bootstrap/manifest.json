@@ -1,0 +1,22 @@
+{
+  "files": {
+    ".dockerignore": "e55a4a9c8906445f936b73ce8e1d410663f8a45b0c9be7175df61adfff3b5298",
+    "Dockerfile": "02c470aaf5aaf0bc31ca7b3563ebe5bf9b8f5435e5b05da97a540ddec6ab1566",
+    "README.md": "7b96782a58e82545947d7b160b98ec2a8567f19371bfa9e91642cfae9ef5f0a1",
+    "access_point.py": "88641692d5f0e35528717eec320bef8c5cd811aed962d5598b263cbf02935c01",
+    "config.yaml": "79e12b2af200587e7af1bf2da47c997db18945f95cb65bd59c9dea1d0e222c21",
+    "controller.py": "9119cb231d5c01aab827df60ef18e571f5ba9088f36097e32179acd75ecc7865",
+    "http_setup.py": "3e1d875ce99fe980cb03ae4f5130ad861cb81bf855071464c60f2501819bb0a4",
+    "model.py": "f2a6c6e1a7f7f0b76daab79ecd46fa3e16711d73d48e0575ecad1c2f222be4bb",
+    "network.py": "f50c500028cd78a714cf0c80bd8e627c85bce809a89455f5942c2a4c49561c48",
+    "preflight.py": "f56da02f891e7d3d9516690979b5c4dcbbd5cfc418686a7181dbd845e3ec6248",
+    "requirements.lock": "c58d74e0578bc6441e1f5159815c4cbba01481d9d32d82d8a9037af403cca545",
+    "run.sh": "011ee070f3829b836c541c0800dd5cf37a592fad59df15af58e8539c95bd0717",
+    "service.py": "986e6d7f9822586f080e4a731e37c7e7ce09f297ec94e6e4bfef0071fe6080ad",
+    "web/index.html": "a4844f5da64ecbd2fa7d974ad66de1335478980014cdcf256730132fbccdc721",
+    "web/setup.js": "49b1b8f35290f0020f4d14476da7b5eea8cf59acebfaff9f0998973ad4fc31f7",
+    "web/style.css": "2a60ad6c4afda2c23e25e263d88d6f7fdf0f4408f9578198394ce4b71cc455bd",
+    "workshop.py": "67b3f1903b6088760b3704ed49687df73116d47875097641e51e2a1cc4c47945"
+  },
+  "version": "0.1.0"
+}

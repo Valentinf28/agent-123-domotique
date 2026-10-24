@@ -1,8 +1,8 @@
 {
   "files": {
-    "agent.py": "d4e90305d2315ce987dfc80a724973cba921f7fdd7f7255cbd46246183f00944",
+    "agent.py": "ec81fc777a705317150072c21847fe606cf42be64826429ae64eb77de22613b8",
     "backup_setup.py": "7cb1a57529737b9be5647001f06b0a94a1e69053d5e349f85e8da68ca4ea43d4",
-    "config.yaml": "553099a318dceb86ee47f3a4f56e28df5d33c2f049567522bc9174451fc9ce50",
+    "config.yaml": "22c9be67107df49c4e87e0c783462318da4a23aa04f1ed4fe4a258fb23e83589",
     "connector_install.py": "4818eff3fd688b243eefab146290e3d0cc3e336333e558ad34c1e05caee6f482",
     "ddzy422_activation.py": "dba8499cd56b2a75897f7a4d215989532e10c7651def4c3916ca35b941bbb9f6",
     "ddzy422_setup.py": "47fc20754089881c0b804f4865873b3809852ef24fcefef67b0874b309cada47",
@@ -30,6 +30,7 @@
     "local_mobile.py": "87504997ce76b519350b18da83534f07a69cb11977402c4dc11e4e5efba167d1",
     "local_solar_measurements.py": "19407144631a57d37e23fcde2e703e6b26eb5a375d15fa52fe0185ec0741af20",
     "micro_setup.py": "353576d272ce52cfca0c6e3802124442ee45bfcd57288ee7a5e520f33c65bc5f",
+    "network_bootstrap_status.py": "1d04040f312eebde9341504dde11d392c5f12eb192a69bcb205fd65f35e4bf3c",
     "network_discovery.py": "92badcbe0546b67d23488d9b21f6b07ad83842b82271e70e65072baaf7567d1f",
     "overkiz_setup.py": "ce8a6e54006e559d3559ac243f64a836b3645eee5c96f5529a050eba7c74fb87",
     "pool_camera.py": "23e09b99b76177b3be050d337b2d5b57fe273069c006300ab1b063a0e64d0b02",
@@ -55,5 +56,5 @@
     "vendor/solarman-25.08.16.zip": "04fd37da1ba1cd3a590146a48602162ad5c7e0c319c80ca326369cd5a26da977",
     "wifi_setup.py": "da3ae91a1622391e0b326ff6ef74e9272572cfb05792a1599aa28e66f0beb4d0"
   },
-  "version": "0.6.34"
+  "version": "0.6.35"
 }

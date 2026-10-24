@@ -1,0 +1,5 @@
+ARG WIFI_TEST_IMAGE=labox-wifi-bootstrap:qualification
+FROM ${WIFI_TEST_IMAGE}
+RUN apk add --no-cache dbus
+COPY tests/runtime_wifi_dbus.py /runtime_wifi_dbus.py
+ENTRYPOINT ["/opt/wifi-venv/bin/python", "/runtime_wifi_dbus.py"]
