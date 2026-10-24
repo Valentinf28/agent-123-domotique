@@ -38,8 +38,10 @@ def export_busy(data=Path('/data')):
     try:
         if not root.exists():return False
         if root.is_symlink():return True
-        for index,path in enumerate(root.glob('*.json')):
-            if index>=1000:return True
+        # The owner-scoped key vault and terminal journals are retained.
+        # Stream entries instead of treating historical file count as busy;
+        # _read bounds each regular journal and never follows symlinks.
+        for path in root.glob('*.json'):
             if path.name.endswith('.key.json'):continue
             phase=_read(path).get('phase')
             if phase not in {'ready','cancelled_safe','expired_safe','failed_safe'}:return True

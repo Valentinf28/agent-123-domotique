@@ -34,6 +34,16 @@ class GuardTests(unittest.TestCase):
    with self.assertRaises(RuntimeError):assert_update_ready(self.read,self.data)
   for phase in ['ready','cancelled_safe','expired_safe','failed_safe']:
    p.write_text(json.dumps({'phase':phase}));self.assertFalse(export_busy(self.data));assert_update_ready(self.read,self.data)
+ def test_large_terminal_history_and_retained_keys_do_not_block_update(self):
+  folder=self.data/'native-backup-exports';folder.mkdir()
+  for i in range(1100):
+   (folder/(str(i)+'.json')).write_text(json.dumps({'phase':'ready' if i%2 else 'cancelled_safe'}))
+   (folder/(str(i)+'.key.json')).write_text('private fixture key retained')
+  self.assertFalse(export_busy(self.data));assert_update_ready(self.read,self.data)
+  active=folder/'active.json';active.write_text(json.dumps({'phase':'uploading'}))
+  self.assertTrue(export_busy(self.data))
+  with self.assertRaises(RuntimeError):assert_update_ready(self.read,self.data)
+  active.unlink();self.assertFalse(export_busy(self.data))
  def test_corrupt_journal_fails_closed(self):
   (self.data/'installation-update.json').write_text('not json');self.assertTrue(local_maintenance_busy(self.data))
 if __name__=='__main__':unittest.main()
