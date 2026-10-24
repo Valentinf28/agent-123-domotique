@@ -36,7 +36,7 @@ Les exports démo sont marqués **SPÉCIMEN / CODE FICTIF**. Le gabarit console 
 
 Les coordonnées de la maquette proviennent des publications de SAS 123 PANNEAUX SOLAIRES : 14 rue du Vieux Pont, 28380 Saint-Rémy-sur-Avre, France. Le fabricant qui met l'ensemble sur le marché sous sa marque assume les obligations applicables à l'ensemble ; les déclarations des composants ne valent pas à elles seules déclaration du produit final.
 
-Les références modèles `HOME-B01` et `HOME-C01` sont proposées pour la maquette. L'alimentation de l'appareil complet reste à renseigner : la recommandation 5 V / 3 A de la seule carte ODROID-M1S ne prouve pas les caractéristiques de la console assemblée. Le nom et l'adresse postale du fabricant sont prévus conformément à l'article 10 §7 de la directive RED, sous réserve de l'analyse réglementaire du produit réel.
+Les références modèles `LB-B01` et `LB-C01` sont proposées pour la maquette. L'alimentation de l'appareil complet reste à renseigner : la recommandation 5 V / 3 A de la seule carte ODROID-M1S ne prouve pas les caractéristiques de la console assemblée. Le nom et l'adresse postale du fabricant sont prévus conformément à l'article 10 §7 de la directive RED, sous réserve de l'analyse réglementaire du produit réel.
 
 Le CE reprend les tracés de l'EPS officiel de la Commission, sans déformation, hauteur 6 mm. La poubelle barrée et la barre de datation figurent sur la maquette ; sa reproduction doit être validée avant fabrication. `markingReviewed` reste `false` : ces fichiers ne constituent pas une évaluation ou une déclaration de conformité. Une configuration fabricant revue peut être fournie via `--maker`. Le générateur ne recherche ni ne crée un certificat CE.
 

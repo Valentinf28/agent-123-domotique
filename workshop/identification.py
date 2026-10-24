@@ -17,7 +17,7 @@ from fontTools.pens.boundsPen import BoundsPen
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent
-PRODUCTS = {'box': ('LA BOX', 'LB', 'HOME-B01'), 'console': ('CONSOLE', 'LC', 'HOME-C01')}
+PRODUCTS = {'box': ('LA BOX', 'LB', 'LB-B01'), 'console': ('CONSOLE', 'LC', 'LB-C01')}
 DEFAULT_MAKER = {
     'name': 'SAS 123 PANNEAUX SOLAIRES',
     'street': '14 rue du Vieux Pont',
@@ -158,7 +158,7 @@ class Drawing:
 
     def svg(self):
         return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{self.width}mm" height="{self.height}mm" viewBox="0 0 {self.width} {self.height}">'
-                '<title>Support privé de repérage et de configuration 1.2.3. Home</title>'+''.join(self.parts)+'</svg>')
+                '<title>Support privé de repérage et de configuration La Box</title>'+''.join(self.parts)+'</svg>')
 
     def save(self, folder, name):
         (folder/(name+'.svg')).write_text(self.svg())
@@ -168,9 +168,9 @@ class Drawing:
 def render_engraving(data, maker, font, bold, demo=False):
     d=Drawing(80,45,font,bold)
     d.brand(3,2.4,6)
-    d.text('1.2.3. HOME',11,7,3.3,True)
+    d.text('La Box',11,7,3.8,True)
     product,_,model=PRODUCTS[data['product']]
-    d.text(product,58,6.8,2.9,True,max_width=19)
+    d.text('BOX DOMOTIQUE' if data['product']=='box' else 'CONSOLE',54,6.8,2.5,True,max_width=23)
     d.text('Modèle '+model,3,11.3,2,max_width=74)
     d.line(3,13,77,13)
     d.text('N° DE SÉRIE',3,17,1.8,True)
@@ -190,7 +190,7 @@ def render_engraving(data, maker, font, bold, demo=False):
 
 def render_label(data, role, width, height, font, bold, demo=False):
     d=Drawing(width,height,font,bold,300)
-    title=PRODUCTS[data['product']][0]+' · '+('BOÎTIER CHÊNE' if role=='boitier-chene' else 'CARTE ODROID')
+    title=('LA BOX' if data['product']=='box' else 'LA BOX · CONSOLE')+' · '+('BOÎTIER CHÊNE' if role=='boitier-chene' else 'CARTE ODROID')
     d.text(title,2,4.4,2.2,True,max_width=width-4)
     d.text(reference(data),2,9.5,3.1,True,max_width=width-4)
     d.line(2,11,width-2,11)

@@ -47,6 +47,9 @@ class WorkshopTests(unittest.TestCase):
         self.assertIn(reference(identity()),drawing.texts)
         self.assertIn(identity()['wifiCode'],drawing.texts)
         self.assertNotIn(identity()['ssid'],' '.join(drawing.texts))
+        self.assertIn('La Box',drawing.texts)
+        self.assertNotIn('1.2.3. HOME',' '.join(drawing.texts))
+        self.assertIn('SAS 123 PANNEAUX SOLAIRES',drawing.texts)
 
     def test_complete_private_kit_dimensions_and_outlined_svg(self):
         target=self.root/'unit';facts=export_kit(identity(),target)
