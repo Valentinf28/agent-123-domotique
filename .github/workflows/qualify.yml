@@ -62,6 +62,6 @@ jobs:
       - run: docker buildx build --platform linux/${{ matrix.arch }} --load -t labox-wifi-bootstrap:qualification ./labox_wifi_bootstrap
       - name: Check the assembled optional module without host access
         run: docker run --platform linux/${{ matrix.arch }} --rm --network none --read-only --tmpfs /tmp --mount type=bind,src="$PWD/scripts/qualify_wifi_bootstrap.py",dst=/test.py,readonly --entrypoint /opt/wifi-venv/bin/python labox-wifi-bootstrap:qualification /test.py /opt/wifi
-      - run: docker buildx build --platform linux/${{ matrix.arch }} --load -f scripts/Dockerfile.wifi-test -t labox-wifi-bootstrap:dbus-test .
+      - run: docker build --builder default --platform linux/${{ matrix.arch }} -f scripts/Dockerfile.wifi-test -t labox-wifi-bootstrap:dbus-test .
       - name: Exercise rollback and success on a private D-Bus (no host bus, no radio)
         run: docker run --platform linux/${{ matrix.arch }} --rm --network none --read-only --tmpfs /tmp labox-wifi-bootstrap:dbus-test
