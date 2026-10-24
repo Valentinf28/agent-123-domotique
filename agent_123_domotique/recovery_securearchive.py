@@ -95,8 +95,17 @@ def _verify(stream, password, expected_slug, expected_addon, expected_addons, ex
     # Supervisor serializes folder names by replacing '/' with '_'.
     # Keep the native names in the proof; only map archive member names.
     if any(not isinstance(f,str) or f not in {'media','share','ssl','addons/local','apps/local'} for f in folders):raise ValueError()
+    # Supervisor v1 translates apps/local to addons/local in API metadata.
+    # Only these two exact documented names are equivalent; archive filenames
+    # and proof folders still use the actual raw archive metadata.
+    local_aliases={'addons/local','apps/local'}
+    if len(set(folders)&local_aliases)>1 or len(set(expected_folders)&local_aliases)>1:raise ValueError()
+    def canonical(folder):return 'apps/local' if folder in local_aliases else folder
+    native_by_canonical={canonical(folder):folder for folder in folders}
+    if not {canonical(folder) for folder in expected_folders}<=set(native_by_canonical):raise ValueError()
+    proven_expected_folders=[native_by_canonical[canonical(folder)] for folder in expected_folders]
     expected=set(addon_names)|{folder.replace('/', '_') for folder in folders}|{'homeassistant'}
-    if not expected<=components or not set(expected_addons)<=set(addon_names) or not set(expected_folders)<=set(folders):raise ValueError()
+    if not expected<=components or not set(expected_addons)<=set(addon_names):raise ValueError()
     # Detect a changed file between checksum and parser passes.
     stream.seek(0);after=hashlib.sha256()
     while chunk:=stream.read(BLOCK):after.update(chunk)
@@ -106,4 +115,4 @@ def _verify(stream, password, expected_slug, expected_addon, expected_addons, ex
             'plaintextWritten':False,'restorationPerformed':False,'restorationVerified':False,
             'format':'home-assistant-tar','backupId':expected_slug,'full':True,'encrypted':True,
             'homeassistant':True,'database':True,'expectedAddons':expected_addons,
-            'folders':folders,'expectedFolders':expected_folders,'keyState':'available'}
+            'folders':folders,'expectedFolders':proven_expected_folders,'keyState':'available'}
