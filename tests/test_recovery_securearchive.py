@@ -7,8 +7,9 @@ def verify_archive(stream,key,slug,addon):
 from securetar import SecureTarArchive
 KEY='fixture-key-not-a-real-secret-1234567890'
 ADDON='test_agent';SLUG='fixture1'
-def fixture(version=3,missing=None,metadata_change=None,content=b'fixture'*100,password=KEY):
+def fixture(version=3,missing=None,metadata_change=None,content=b'fixture'*100,password=KEY,apps_field=False):
  data=io.BytesIO();metadata={'slug':SLUG,'type':'full','protected':True,'homeassistant':{'exclude_database':False},'addons':[{'slug':ADDON}],'folders':['ssl','share','media']};metadata.update(metadata_change or {})
+ if apps_field:metadata['apps']=metadata.pop('addons')
  with SecureTarArchive(fileobj=data,mode='w',password=password,create_version=version) as archive:
   b=json.dumps(metadata).encode();m=tarfile.TarInfo('backup.json');m.size=len(b);archive.tar.addfile(m,io.BytesIO(b))
   for name in ['homeassistant',ADDON,*[folder.replace('/', '_') for folder in metadata['folders']],'supervisor']:
@@ -37,6 +38,24 @@ class SecureArchiveTests(unittest.TestCase):
    with self.subTest(local=local):
     result=_verify_archive(io.BytesIO(fixture(metadata_change={'folders':folders})),KEY,SLUG,ADDON,expected_addons=[ADDON],expected_folders=folders)
     self.assertIn(local,result['folders']);self.assertIn(local.replace('/','_'),result['components'])
+ def test_v1_api_local_folder_alias_resolves_to_actual_archive_proof(self):
+  for api,raw in [('addons/local','apps/local'),('apps/local','addons/local')]:
+   folders=['ssl','share','media',raw];expected=['ssl','share','media',api]
+   result=_verify_archive(io.BytesIO(fixture(metadata_change={'folders':folders},apps_field=True)),KEY,SLUG,ADDON,expected_addons=[ADDON],expected_folders=expected)
+   self.assertIn(raw,result['folders']);self.assertIn(raw,result['expectedFolders'])
+   self.assertTrue(set(result['expectedFolders'])<=set(result['folders']))
+   self.assertIn(raw.replace('/','_'),result['components'])
+   self.assertTrue(result['authenticated'])
+ def test_alias_does_not_accept_missing_native_member_or_ambiguous_metadata(self):
+  folders=['ssl','share','media','apps/local'];expected=['ssl','share','media','addons/local']
+  for raw,missing in [(folders,'apps_local'),(['ssl','share','media','apps/local','addons/local'],None),(['ssl','share','media'],None)]:
+   with self.subTest(folders=raw),self.assertRaises(ArchiveRejected):
+    _verify_archive(io.BytesIO(fixture(metadata_change={'folders':raw},missing=missing)),KEY,SLUG,ADDON,expected_addons=[ADDON],expected_folders=expected)
+  with self.assertRaises(ArchiveRejected):
+   _verify_archive(io.BytesIO(fixture(metadata_change={'folders':folders})),KEY+'wrong',SLUG,ADDON,expected_addons=[ADDON],expected_folders=expected)
+  for requested in [expected+['apps/local'],['ssl','share','media','local_apps'],['ssl','share','media','apps/config']]:
+   with self.subTest(expected=requested),self.assertRaises(ArchiveRejected):
+    _verify_archive(io.BytesIO(fixture(metadata_change={'folders':folders})),KEY,SLUG,ADDON,expected_addons=[ADDON],expected_folders=requested)
  def test_database_exclusion_rejected(self):
   with self.assertRaises(ArchiveRejected):verify_archive(io.BytesIO(fixture(metadata_change={'homeassistant':{'exclude_database':True}})),KEY,SLUG,ADDON)
  def test_legacy_not_claimed_authenticated(self):
