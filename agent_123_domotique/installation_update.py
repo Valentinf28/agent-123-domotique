@@ -50,11 +50,12 @@ def native_catalog_refresh(call, entity_id):
 
 class Update(Reset):
     backup_name='La Box avant mise à jour '
-    def __init__(self,call,supervisor,verify_archive,*,registry,runtime_version,refresh_catalog=None,**kwargs):
+    def __init__(self,call,supervisor,verify_archive,*,registry,runtime_version,refresh_catalog=None,verify_recovery_archive=None,**kwargs):
         super().__init__(call,supervisor,verify_archive,**kwargs)
         self.path=self.data/'installation-update.json'
         self.registry,self.runtime_version=registry,runtime_version
         self.refresh_catalog=refresh_catalog
+        self.verify_recovery_archive=verify_recovery_archive
 
     def public(self,state):
         if not state or state.get('state')=='recovered':return {'state':'idle','observedVersion':self.runtime_version}
@@ -63,6 +64,7 @@ class Update(Reset):
         return {k:state[k] for k in keys if k in state}
 
     def require_exclusive(self):
+        if self.backup_guard:self.backup_guard()
         reset=self.data/'installation-reset.json'
         if reset.exists() and json.loads(reset.read_text()).get('state') in ('backing_up','removing','partial','backup_uncertain'):
             raise RuntimeError('Terminez la remise à zéro avant de mettre à jour cette box.')

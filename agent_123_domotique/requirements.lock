@@ -13,3 +13,4 @@ requests==2.34.2
 tuya-device-sharing-sdk==0.2.15
 urllib3==2.8.0
 websocket-client==1.9.2
+securetar==2026.10.0

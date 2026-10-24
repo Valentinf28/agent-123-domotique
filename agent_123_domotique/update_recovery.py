@@ -92,7 +92,20 @@ def command(engine, payload, state):
                 or not -30 <= engine.clock()-date <= 3600
                 or not any(a.get('slug') == actual['slug'] for a in addons)):
             raise RuntimeError('Une sauvegarde complète récente incluant cet agent est nécessaire.')
-        proof = engine.verify_archive(slug)
+        if info.get('protected') is True:
+            verifier = getattr(engine, 'verify_recovery_archive', None)
+            if not callable(verifier):
+                raise RuntimeError('Cette archive chiffrée nécessite une vérification native complète.')
+            proof = verifier(slug, payload['ownerScope'], actual['slug'])
+            if (not isinstance(proof, dict) or proof.get('authenticated') is not True
+                    or proof.get('cipherVersion') != 3 or proof.get('newBackup') is not True
+                    or proof.get('backupId') != slug or proof.get('ownerScope') != payload['ownerScope']
+                    or not isinstance(proof.get('sha256'), str)
+                    or not re.fullmatch(r'[a-f0-9]{64}', proof['sha256'])
+                    or not isinstance(proof.get('bytes'), int) or proof['bytes'] <= 1024):
+                raise RuntimeError('La preuve native de cette nouvelle archive chiffrée est incomplète.')
+        else:
+            proof = engine.verify_archive(slug)
         if not isinstance(proof, dict) or proof.get('verified') is not True or actual['slug'] not in proof.get('addons', []):
             raise RuntimeError('Le contenu réel de la sauvegarde n’a pas été vérifié.')
         latest = engine.load()

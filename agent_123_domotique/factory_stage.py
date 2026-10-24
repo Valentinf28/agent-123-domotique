@@ -11,7 +11,16 @@ def save(path,value):
     try:os.fsync(fd)
     finally:os.close(fd)
 
-def command(payload,reset,supervisor,call,*,data=Path('/data'),restart=True,now=None):
+def command(payload,reset,supervisor,call,*,data=Path('/data'),restart=True,now=None,backup_guard=None):
+    if payload.get('operation')=='factory_status':
+        return _command(payload,reset,supervisor,call,data=data,restart=restart,now=now)
+    descriptor=os.open(Path(data)/'installation-maintenance.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
+    with os.fdopen(descriptor,'r+') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        if backup_guard:backup_guard()
+        return _command(payload,reset,supervisor,call,data=data,restart=restart,now=now)
+
+def _command(payload,reset,supervisor,call,*,data=Path('/data'),restart=True,now=None):
     data=Path(data);now=time.time() if now is None else now;path=data/'factory-stage.json';operation=payload.get('operation')
     if operation not in ('factory_prepare','factory_commit','factory_status') or not isinstance(payload.get('ownerScope'),str) or not re.fullmatch('[a-f0-9]{64}',payload['ownerScope']):raise ValueError('Préparation atelier non autorisée.')
     if not re.fullmatch(UUID,str(payload.get('operationId',''))):raise ValueError('Préparation atelier invalide.')
@@ -70,7 +79,7 @@ def command(payload,reset,supervisor,call,*,data=Path('/data'),restart=True,now=
         try:call('/states/sensor.home_local_configuration',method='DELETE')
         except Exception:pass  # This display state is not a credential; /data cleanup remains authoritative.
         # The complete backup retains old customer state. The live addon starts with only a new unit identity.
-        keep={'options.json','factory-stage.json','factory-stage.lock'}
+        keep={'options.json','factory-stage.json','factory-stage.lock','installation-maintenance.lock'}
         for file in data.iterdir():
             if file.name in keep:continue
             if file.is_symlink():raise RuntimeError('Un fichier de données doit être vérifié.')

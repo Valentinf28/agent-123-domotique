@@ -34,6 +34,12 @@ COPY backup_setup.py /opt/agent/backup_setup.py
 COPY installation_reset.py /opt/agent/installation_reset.py
 COPY installation_update.py /opt/agent/installation_update.py
 COPY update_recovery.py /opt/agent/update_recovery.py
+COPY native_backup_guard.py /opt/agent/native_backup_guard.py
+COPY native_backup_runtime.py /opt/agent/native_backup_runtime.py
+COPY native_backup_export.py /opt/agent/native_backup_export.py
+COPY native_backup_transport.py /opt/agent/native_backup_transport.py
+COPY recovery_securearchive.py /opt/agent/recovery_securearchive.py
+COPY recovery_archive_binding.py /opt/agent/recovery_archive_binding.py
 COPY ddzy422_setup.py /opt/agent/ddzy422_setup.py
 COPY ddzy422_activation.py /opt/agent/ddzy422_activation.py
 COPY micro_setup.py /opt/agent/micro_setup.py
