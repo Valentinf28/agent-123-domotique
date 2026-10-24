@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.47"
+AGENT_VERSION = "0.6.48"
 BACKUP_RUNTIME = None
 BACKUP_GUARD = None
 BACKUP_SYSTEM_ACTION = None

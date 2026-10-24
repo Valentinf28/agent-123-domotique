@@ -1,3 +1,7 @@
+## 0.6.48
+
+- Poursuivre les contrôles en lecture seule après un résultat à vérifier : le retour réel des équipements peut terminer la maintenance sans relancer l’installation ni une sauvegarde. La diffusion reste suspendue pour examen opérateur.
+
 ## 0.6.47
 
 - Ne pas confondre le document technique transitoire de configuration avec un équipement manquant après une mise à jour du système. Les contrôles des vrais capteurs et automatismes restent obligatoires.
