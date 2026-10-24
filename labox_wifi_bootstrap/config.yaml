@@ -1,0 +1,24 @@
+name: "La Box · Première connexion Wi-Fi"
+description: "Configuration locale du Wi-Fi des box neuves préparées en atelier."
+version: "0.1.1"
+slug: labox_wifi_bootstrap
+arch: [aarch64, amd64]
+init: false
+stage: experimental
+startup: services
+boot: auto
+host_network: true
+host_dbus: true
+privileged: [NET_ADMIN, NET_RAW]
+map:
+  - type: homeassistant_config
+    path: /homeassistant_config
+    read_only: true
+options:
+  armed: false
+  factory_context: ""
+  wifi_mac: ""
+schema:
+  armed: bool
+  factory_context: str
+  wifi_mac: str

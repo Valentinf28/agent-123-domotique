@@ -1,3 +1,9 @@
+# 0.6.35
+
+- Publie un état local non secret pour le module facultatif de première connexion Wi-Fi.
+- Conserve la preuve d’installation jusqu’au prochain changement d’identité usine ; une perte d’authentification ne réarme pas le point d’accès.
+- Le module expérimental séparé reste désarmé par défaut et nécessite une qualification matérielle avant livraison.
+
 # 0.6.34
 
 - Accepte et valide les réglages énergétiques et le nom de maison dans la copie locale.

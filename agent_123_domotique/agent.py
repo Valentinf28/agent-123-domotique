@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.34"
+AGENT_VERSION = "0.6.35"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -3292,6 +3292,8 @@ def main() -> None:
     from factory_activation import configured as factory_configured, poll as factory_poll
     state = restore_identity(portal_url, str(options.get("restore_identity", "")))
     factory_ready = factory_configured(options) if not state.get("token") else False
+    from network_bootstrap_status import publish as publish_bootstrap_status
+    publish_bootstrap_status(options, state)
     if not factory_ready and not enrollment_code and not state.get("token") and not (relay_url and relay_house_id and relay_token):
         raise SystemExit("Configuration incomplète : code d'installation ou liaison VPS requis")
 
@@ -3370,6 +3372,7 @@ def main() -> None:
         cycle_started_at = time.monotonic()
         fast_follow_up = False
         try:
+            publish_bootstrap_status(options, state)
             if not state.get("token"):
                 if factory_ready:
                     state = factory_poll(options, lambda: read_json(STATE_PATH, {}), write_state, request_json)
@@ -3378,6 +3381,7 @@ def main() -> None:
                         continue
                 else:
                     state = enroll(portal_url, enrollment_code)
+            publish_bootstrap_status(options, state)
             try:
                 publish_local_configuration(supervisor_token, state.get("agent_id"))
             except Exception:

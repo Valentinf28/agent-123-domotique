@@ -50,3 +50,5 @@ COPY run.sh /run.sh
 RUN chmod a+x /run.sh
 
 CMD ["/run.sh"]
+
+COPY network_bootstrap_status.py /opt/agent/network_bootstrap_status.py
