@@ -57,7 +57,7 @@ class Update(Reset):
         self.refresh_catalog=refresh_catalog
 
     def public(self,state):
-        if not state:return {'state':'idle','observedVersion':self.runtime_version}
+        if not state or state.get('state')=='recovered':return {'state':'idle','observedVersion':self.runtime_version}
         keys=('operationId','consentId','targetVersion','releaseCommit','previewHash','expiresAt','state',
               'backupVerified','backupSlug','installedVersion','observedVersion','entityId','error','installSubmitted','installRefusedVerified','nativeInstalledVersion','errorCode')
         return {k:state[k] for k in keys if k in state}
@@ -220,6 +220,12 @@ class Update(Reset):
             self.save(state)
         finally:
             with _MUTEX:_WORKERS.pop(str(self.path),None)
+
+    def recover_command(self,payload):
+        owner=payload.get('ownerScope')
+        if not isinstance(owner,str) or not re.fullmatch('[a-f0-9]{64}',owner):raise ValueError('Le propriétaire doit être vérifié.')
+        from update_recovery import command as recover_update
+        with _MUTEX:return recover_update(self,payload,self.load())
 
     def command(self,payload):
         owner=payload.get('ownerScope');operation=payload.get('operation')

@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.37"
+AGENT_VERSION = "0.6.39"
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1942,7 +1942,7 @@ def close_ha_tunnel(upstream) -> None:
 
 def queued_command_result(supervisor_token: str, command: dict[str, Any]) -> dict[str, Any]:
     """Reset commands are direct-session only and never durable-heartbeat jobs."""
-    if command.get("action") in ("commissioning.wifi", "installation.reset", "installation.update", "commissioning.activate_ddzy422", "commissioning.tuya", "commissioning.shelly", "commissioning.equipment", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.overkiz"):
+    if command.get("action") in ("commissioning.wifi", "installation.reset", "installation.update", "installation.update.recovery", "commissioning.activate_ddzy422", "commissioning.tuya", "commissioning.shelly", "commissioning.equipment", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.overkiz"):
         return {"ok": False, "error": "Cette opération nécessite une session directe."}
     return relay_command(supervisor_token, command)
 
@@ -1988,7 +1988,7 @@ def relay_command(
                 for tunnel_id in list(HA_TUNNELS):
                     upstream = HA_TUNNELS.pop(tunnel_id, None)
                     if upstream: close_ha_tunnel(upstream)
-        elif action == "installation.update":
+        elif action in ("installation.update", "installation.update.recovery"):
             from installation_update import Update, native_catalog_refresh
             def call_update(path, **kwargs):
                 return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
@@ -1997,9 +1997,10 @@ def relay_command(
                 if not isinstance(response, dict) or response.get("result") != "ok" or not isinstance(response.get("data"), dict):
                     raise RuntimeError("Le service de mise à jour de cette box est indisponible.")
                 return response["data"]
-            result = Update(call_update, supervisor_update, lambda slug: verify_supervisor_archive(slug, supervisor_token),
+            update_engine = Update(call_update, supervisor_update, lambda slug: verify_supervisor_archive(slug, supervisor_token),
                 registry=lambda: home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"}).get("result"),
-                runtime_version=AGENT_VERSION, refresh_catalog=lambda entity: native_catalog_refresh(call_update, entity), authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"})).command(payload)
+                runtime_version=AGENT_VERSION, refresh_catalog=lambda entity: native_catalog_refresh(call_update, entity), authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"}))
+            result = update_engine.recover_command(payload) if action == "installation.update.recovery" else update_engine.command(payload)
         elif action == "commissioning.overkiz":
             from overkiz_setup import configure as configure_overkiz
             def call_overkiz(path, **kwargs):
@@ -2176,66 +2177,22 @@ def relay_command(
                 payload=service_data,
                 timeout=60,
             )
+        elif action == "ha.automation.read":
+            from automation_edit import read as read_automation
+            result = read_automation(payload,
+                lambda path, **kwargs: request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, timeout=60, **kwargs),
+                lambda command: home_assistant_ws_command(supervisor_token, command))
+        elif action == "ha.automation.update":
+            from automation_edit import update as update_automation
+            result = update_automation(payload,
+                lambda path, **kwargs: request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, timeout=60, **kwargs),
+                lambda command: home_assistant_ws_command(supervisor_token, command),
+                operation_id=command_id)
         elif action == "ha.automation.create":
-            name = str(payload.get("name", "")).strip()
-            trigger_time = str(payload.get("time", "")).strip()
-            entity_id = str(payload.get("entityId", "")).strip()
-            domain = str(payload.get("domain", "")).strip()
-            service = str(payload.get("service", "")).strip()
-            entity_parts = entity_id.split(".", 1)
-            allowed_services = {
-                "light": {"turn_on", "turn_off"},
-                "switch": {"turn_on", "turn_off"},
-                "fan": {"turn_on", "turn_off"},
-                "climate": {"turn_on", "turn_off"},
-                "lock": {"lock", "unlock"},
-                "cover": {"open_cover", "close_cover"},
-                "input_boolean": {"turn_on", "turn_off"},
-            }
-            if len(name) < 3 or len(name) > 80:
-                raise ValueError("Nom d’automatisation invalide")
-            try:
-                datetime.strptime(trigger_time, "%H:%M")
-            except ValueError as error:
-                raise ValueError("Horaire invalide") from error
-            if (
-                len(entity_parts) != 2
-                or entity_parts[0] != domain
-                or not all(part.replace("_", "").isalnum() for part in entity_parts)
-                or service not in allowed_services.get(domain, set())
-            ):
-                raise ValueError("Action d’automatisation refusée")
-            automation_id = (
-                f"ma_maison_{int(time.time())}_{secrets.token_hex(3)}"
-            )
-            result = request_json(
-                f"{SUPERVISOR_API}/config/automation/config/{automation_id}",
-                method="POST",
-                token=supervisor_token,
-                payload={
-                    "id": automation_id,
-                    "alias": f"1.2.3 Home · {name}",
-                    "description": "Créée depuis le portail Ma Maison",
-                    "trigger": [{
-                        "platform": "time",
-                        "at": f"{trigger_time}:00",
-                    }],
-                    "condition": [],
-                    "action": [{
-                        "service": f"{domain}.{service}",
-                        "target": {"entity_id": entity_id},
-                    }],
-                    "mode": "single",
-                },
-                timeout=60,
-            )
-            request_json(
-                f"{SUPERVISOR_API}/services/automation/reload",
-                method="POST",
-                token=supervisor_token,
-                payload={},
-                timeout=60,
-            )
+            from automation_edit import create as create_automation
+            result = create_automation(payload,
+                lambda path, **kwargs: request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, timeout=60, **kwargs),
+                operation_id=command_id)
         elif action == "ha.water_heater.solar_plan":
             automation_id = str(payload.get("automationId", "")).strip()
             name = str(payload.get("name", "ECS solaire intelligent")).strip()
@@ -2829,47 +2786,10 @@ def relay_command(
                 timeout=60,
             )
         elif action == "ha.automation.delete":
-            entity_id = str(payload.get("entityId", "")).strip()
-            parts = entity_id.split(".", 1)
-            if (
-                len(parts) != 2
-                or parts[0] != "automation"
-                or not all(part.replace("_", "").isalnum() for part in parts)
-            ):
-                raise ValueError("Automatisation invalide")
-            listed = home_assistant_ws_command(
-                supervisor_token,
-                {"type": "config/automation/list"},
-            ).get("result", [])
-            automation = next(
-                (
-                    item for item in listed
-                    if isinstance(item, dict)
-                    and item.get("entity_id") == entity_id
-                    and str(item.get("alias", "")).startswith("1.2.3 Home")
-                ),
-                None,
-            )
-            automation_id = str(automation.get("id", "")) if automation else ""
-            if not automation_id or not all(
-                char.isalnum() or char in {"_", "-"}
-                for char in automation_id
-            ):
-                raise ValueError("Automatisation introuvable")
-            result = request_json(
-                f"{SUPERVISOR_API}/config/automation/config/"
-                f"{urllib.parse.quote(automation_id, safe='_-')}",
-                method="DELETE",
-                token=supervisor_token,
-                timeout=60,
-            )
-            request_json(
-                f"{SUPERVISOR_API}/services/automation/reload",
-                method="POST",
-                token=supervisor_token,
-                payload={},
-                timeout=60,
-            )
+            from automation_edit import delete as delete_automation
+            result = delete_automation(payload,
+                lambda path, **kwargs: request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, timeout=60, **kwargs),
+                lambda command: home_assistant_ws_command(supervisor_token, command), operation_id=command_id)
         elif action == "ha.history":
             raw_start = str(payload.get("start", "")).strip()
             raw_end = str(payload.get("end", "")).strip()
@@ -3426,7 +3346,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["commissioning.discover_solar.mac", "commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["installation.update.recovery_v1", "automation_update_v1", "automation_schedule_v1", "commissioning.discover_solar.mac", "commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             from installation_update import Update, heartbeat_status
             update_status = heartbeat_status(AGENT_VERSION)
             if update_status:
