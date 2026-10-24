@@ -621,7 +621,7 @@ def home_assistant_ws_command(
     from installation_reset import blocks_mutations
     if blocks_mutations() and command.get("type") not in (
         "config/entity_registry/list", "config/device_registry/list", "config/area_registry/list",
-        "energy/solar_forecast", "network", "manifest/get", "auth/current_user"):
+        "energy/solar_forecast", "network", "manifest/get", "auth/current_user", "backup/info"):
         raise RuntimeError("La remise à zéro suspend temporairement les modifications.")
     socket = websocket.create_connection("ws://supervisor/core/websocket", timeout=timeout)
     try:

@@ -111,6 +111,12 @@ class Tests(unittest.TestCase):
         with self.assertRaises(RuntimeError):self.prep()
     def test_inspection_does_not_write_or_update(self):
         v=self.e.command({'operation':'inspect','ownerScope':O});self.assertEqual(v['state'],'inspected');self.assertFalse(self.e.path.exists());self.assertFalse([x for x in self.f.calls if x[2].get('method')=='POST'])
+    def test_native_backup_read_remains_allowed_during_maintenance(self):
+        import agent
+        from unittest.mock import Mock
+        socket=Mock();socket.recv.side_effect=[json.dumps({'type':'auth_required'}),json.dumps({'type':'auth_ok'}),json.dumps({'id':1234,'type':'result','success':True,'result':{'state':'idle'}})]
+        with patch('installation_reset.blocks_mutations',return_value=True),patch.object(agent.websocket,'create_connection',return_value=socket),patch.object(agent.time,'time',return_value=1.234):
+            self.assertEqual(agent.home_assistant_ws_command('fixture',{'type':'backup/info'}),{'state':'idle'})
     def test_payload_cannot_request_arbitrary_supervisor_calls(self):
         with self.assertRaises(ValueError):self.e.command({'operation':'inspect','ownerScope':O,'url':'/host/reboot'})
 if __name__=='__main__':unittest.main()
