@@ -112,6 +112,22 @@ class NativeFlowTests(unittest.TestCase):
   with tempfile.TemporaryDirectory()as directory:
    f=Fixture('hue');f.registry=lambda msg:{'resources':{'component.hue.config.step.user.description':'Appuyez sur le bouton de {name}.'}}if msg['type']=='frontend/get_translations'else[]
    self.assertEqual(f.start(Path(directory))['flow']['description'],'Appuyez sur le bouton de votre appareil.')
+ def test_missing_application_credentials_open_the_native_credential_journey(self):
+  with tempfile.TemporaryDirectory()as directory:
+   f=Fixture('netatmo');root=Path(directory);f.flow={'type':'abort','handler':'netatmo','reason':'missing_credentials'}
+   calls=[]
+   def registry(message):
+    calls.append(message)
+    if message['type']=='application_credentials/config':return {'domains':['netatmo']}
+    if message['type']=='application_credentials/create':
+     f.flow={'type':'form','handler':'netatmo','flow_id':'flow_fixture','step_id':'pick_implementation','data_schema':[]};return {'client_secret':'PRIVATE-SECRET'}
+    return []
+   f.registry=registry;view=f.start(root);self.assertEqual(view['flow']['step'],'application_credentials');self.assertEqual(view['flow']['fields'][1]['kind'],'secret')
+   self.assertEqual(f.run(root,'flow_resume')['flow']['step'],'application_credentials')
+   self.assertRaises(ValueError,f.run,root,'flow_advance',flowId='application_credentials',step='application_credentials',cloudConsent=True,values={'client_id':'id','client_secret':'PRIVATE-SECRET','domain':'other'})
+   result=f.run(root,'flow_advance',flowId='application_credentials',step='application_credentials',cloudConsent=True,values={'client_id':'id','client_secret':'PRIVATE-SECRET'})
+   self.assertEqual(result['flow']['step'],'pick_implementation');self.assertEqual(sum(x['type']=='application_credentials/create'for x in calls),1)
+   self.assertNotIn('PRIVATE-SECRET',json.dumps(result));self.assertNotIn('PRIVATE-SECRET',(root/'native-integration-flows.json').read_text())
  def test_only_external_https_authorization_urls_are_exposed(self):
   for url in ('http://vendor.example','javascript:alert(1)','https://127.0.0.1','https://user:password@vendor.example','https://supervisor.local'):self.assertIsNone(authorization_url(url))
   self.assertEqual(authorization_url('https://auth.vendor.example/authorize?state=opaque'),'https://auth.vendor.example/authorize?state=opaque')
