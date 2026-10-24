@@ -1,3 +1,8 @@
+# 0.6.44
+
+- Propose les identifiants d’application fabricant lorsqu’ils sont demandés par le parcours natif, avec conservation uniquement dans Home Assistant.
+- Préserve le rattachement à la session et refuse les reprises automatiques après un résultat incertain.
+
 # 0.6.43
 
 - Connexion native guidée depuis le portail pour les intégrations du catalogue, y compris Midea / SmartHome et HomeKit Device.

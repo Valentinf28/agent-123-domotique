@@ -1,9 +1,9 @@
 {
   "files": {
-    "agent.py": "5bab44c06d6ff1a8e379f414c4099090e1688d2f22b609e59a22504e1b369eba",
+    "agent.py": "548037752d00c37b1bc8301056b23d4d9a85654b823bf6247a28449190daf1df",
     "automation_edit.py": "82e5999b55b295aa141a50697f7715a6263b5750175f34eeb82d4bff946eab97",
     "backup_setup.py": "7cb1a57529737b9be5647001f06b0a94a1e69053d5e349f85e8da68ca4ea43d4",
-    "config.yaml": "9ce6a96dcd22ee1678a4857c6db2577266c28ae66d9745ec435807646f15052c",
+    "config.yaml": "c77dbd5dd483e74b2939752385ee014a8f3c6e288cea5f58df479727085a0591",
     "connector_install.py": "4818eff3fd688b243eefab146290e3d0cc3e336333e558ad34c1e05caee6f482",
     "ddzy422_activation.py": "dba8499cd56b2a75897f7a4d215989532e10c7651def4c3916ca35b941bbb9f6",
     "ddzy422_setup.py": "47fc20754089881c0b804f4865873b3809852ef24fcefef67b0874b309cada47",
@@ -14,7 +14,7 @@
     "factory_stage.py": "419ed83770f2efdf50828892898176c9993c100151c0316471ad05953a71589b",
     "installation_reset.py": "606c6d732b5fecade6481f90978594d1e7aa9dcf554ed70022dc848a9229aa09",
     "installation_update.py": "c6be122888f3182401e28e52bf57f88d541bd1c3ef23ec014ad9d82479f02166",
-    "integration_flow.py": "691c1f1230243dc6e4903ca7a990c68568ad18d55d8e59cdbf7c3d5840d4e669",
+    "integration_flow.py": "84573d473a7f5aa1d93e9048250b8776bec3721edf9b7a89c2cc9d4f304f8e4a",
     "integrations/ddzy422-bundle.json": "df4d7820c57a1fc10dd4dff4ec8edc170432822dd0bb419aaa727a6ebb18d05d",
     "integrations/ddzy422-legacy-010.json": "034e0d3d2120dcd2b1be83a895da6678598ea9859e2e3bcbf99ea04185f394bd",
     "integrations/labox_ddzy422/PROTOCOL.md": "ee5d382782f8302f15f9b66767de8ae23547ac07168a6788e97e15cc6ba1761b",
@@ -64,5 +64,5 @@
     "vendor/solarman-25.08.16.zip": "04fd37da1ba1cd3a590146a48602162ad5c7e0c319c80ca326369cd5a26da977",
     "wifi_setup.py": "da3ae91a1622391e0b326ff6ef74e9272572cfb05792a1599aa28e66f0beb4d0"
   },
-  "version": "0.6.43"
+  "version": "0.6.44"
 }

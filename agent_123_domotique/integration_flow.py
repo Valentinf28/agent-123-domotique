@@ -139,7 +139,7 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
     operation=payload.get('operation');domain=payload.get('connector');owner=payload.get('ownerScope');session=payload.get('session')
     fields={'flow_start':{'session','cloudConsent'},'flow_resume':{'session'},'flow_advance':{'session','flowId','step','values','cloudConsent'},'flow_cancel':{'session'},'flow_authorize':{'session','flowId','state','code'}}
     if operation not in fields or set(payload)!={'operation','connector','ownerScope'}|fields[operation]or domain not in DOMAINS or not isinstance(owner,str)or not OWNER.fullmatch(owner)or not isinstance(session,str)or not UUID.fullmatch(session):raise ValueError('Parcours de connexion invalide.')
-    cloud=domain in('netatmo','tado','home_connect','melcloud','panasonic_cc','smartthings','ring','overkiz','midea','tuya','wallbox','melcloud_home')
+    cloud=domain in('netatmo','tado','home_connect','melcloud','panasonic_cc','smartthings','ring','overkiz','midea','tuya','wallbox','melcloud_home','growatt_server','solaredge')
     if operation in('flow_start','flow_advance')and(type(payload.get('cloudConsent'))is not bool or cloud and payload['cloudConsent']is not True):raise ValueError('Autorisez la connexion initiale au compte du fabricant.')
     data=Path(data);data.mkdir(exist_ok=True);path=data/'native-integration-flows.json'
     fd=os.open(data/'native-integration-flows.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
@@ -152,6 +152,8 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
         def view(flow):
             native=active_entries(call)
             return {'connector':domain,'status':'ready','entries':[e for e in native if e['domain']==domain],'devices':device_list(native,call,registry,domain),'discoveries':[],'pairingReady':any(e['domain']==domain and e['state']=='loaded'and not e['disabled']for e in native),'flow':flow}
+        def credentials_form():
+            return {'flowId':'application_credentials','step':'application_credentials','kind':'form','fields':[{'name':'client_id','label':'Identifiant d’application du fabricant','kind':'text','required':True,'options':[]},{'name':'client_secret','label':'Secret de l’application du fabricant','kind':'secret','required':True,'options':[]}],'choices':[],'retry':False,'title':'Autoriser cette application','description':'Ce fabricant demande les identifiants de son application développeur, distincts de votre mot de passe personnel. Ils seront conservés uniquement par Home Assistant sur votre box, comme dans son parcours natif. Suivez les prérequis indiqués par ce fabricant avant de continuer.'}
         def observe(reply):
             flow=public_flow(reply,domain)
             # Native French instructions include physical pairing confirmations.
@@ -176,7 +178,11 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
                 created=reply.get('result',{});eid=created.get('entry_id')if isinstance(created,dict)else None
                 if not eid or not any(e['entryId']==eid and e['domain']==domain for e in active_entries(call)):raise RuntimeError('L’intégration créée n’est pas encore vérifiable. Actualisez sans recommencer.')
                 journal.pop(domain,None);save()
-            elif flow['kind']=='abort':journal.pop(domain,None);save()
+            elif flow['kind']=='abort':
+                supported=registry({'type':'application_credentials/config'})if flow.get('reason')=='missing_credentials'else{}
+                if flow.get('reason')=='missing_credentials'and isinstance(supported,dict)and domain in supported.get('domains',[]):
+                    state.update(phase='credentials',step='application_credentials',flowId='application_credentials');save();return view(credentials_form())
+                journal.pop(domain,None);save()
             else:
                 if not flow['flowId']:raise RuntimeError('La session de l’intégration n’est pas vérifiable.')
                 state.update(flowId=flow['flowId'],step=flow['step'],phase='ready');save()
@@ -194,6 +200,9 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
                 match=re.match(r'^(\d{4})\.(\d{1,2})\.',version)
                 if not match or tuple(map(int,match.groups()))<(2026,8):return view({'flowId':'','step':'','kind':'abort','fields':[],'choices':[],'retry':False,'reason':'requires_home_assistant_2026_8'})
             if state:
+                if state.get('phase')=='credentials'and state.get('ownerScope')==owner and state.get('session')==session:
+                    if clock()>=state['expiresAt']:raise RuntimeError('La connexion a expiré. Annulez avant de recommencer.')
+                    return view(credentials_form())
                 flow=owned_flow()
                 if clock()>=state['expiresAt']:raise RuntimeError('La connexion a expiré. Annulez-la avant de recommencer.')
                 if state.get('phase')=='submitted'and flow.get('step_id')==state.get('step'):raise RuntimeError('Un envoi reste à vérifier. Annulez avant de recommencer ; les identifiants ne seront pas renvoyés.')
@@ -208,6 +217,20 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
                 # Unknown outcome: retain the lease rather than replaying a login.
                 raise RuntimeError('Le démarrage de cette intégration reste à vérifier. Aucun nouvel essai automatique n’a été lancé.')from None
             return observe(reply)
+        if state and state.get('phase')=='credentials':
+            if state.get('ownerScope')!=owner or state.get('session')!=session:raise RuntimeError('Reprenez la connexion dans la session qui l’a ouverte.')
+            if operation=='flow_cancel':
+                journal.pop(domain,None);save();return view({'flowId':'','step':'','kind':'cancelled','fields':[],'choices':[],'retry':False})
+            if clock()>=state['expiresAt']:raise RuntimeError('La connexion a expiré. Annulez avant de recommencer.')
+            if operation=='flow_resume':return view(credentials_form())
+            if operation!='flow_advance'or payload['flowId']!='application_credentials'or payload['step']!='application_credentials'or payload['cloudConsent']is not True:raise ValueError('Autorisez uniquement les identifiants d’application demandés.')
+            values=payload['values']
+            if not isinstance(values,dict)or set(values)!={'client_id','client_secret'}or any(not isinstance(v,str)or not 1<=len(v.strip())<=4096 for v in values.values()):raise ValueError('Renseignez les deux identifiants fournis par le fabricant.')
+            # HA is the sole persistent secret store. A lost create response must
+            # never cause automatic resubmission or modification of another app.
+            state.update(phase='starting',flowId=None);save()
+            registry({'type':'application_credentials/create','domain':domain,'client_id':values['client_id'],'client_secret':values['client_secret'],'name':'La Box'})
+            return observe(call('/config/config_entries/flow',method='POST',payload={'handler':domain,'show_advanced_options':False}))
         if operation=='flow_cancel'and state and state.get('ownerScope')==owner and state.get('session')==session and not state.get('flowId'):
             # A lost initial response contains no credential submission. Explicit
             # cancellation releases our lease; it never removes an HA entry.
