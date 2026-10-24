@@ -35,7 +35,7 @@ class Fake:
         if p=='/backups':return {'backups':copy.deepcopy(self.backups)}
         if p.startswith('/backups/') and p.endswith('/info'):
             slug=p.split('/')[2];b=next(b for b in self.backups if b['slug']==slug)
-            return {**b,'type':'full','homeassistant':True,'homeassistant_exclude_database':False,'size':1,'addons':[{'slug':'own'}]}
+            return {**b,'type':'full','homeassistant':self.current,'homeassistant_exclude_database':False,'size':1,'addons':[{'slug':'own'}]}
         if p=='/addons/self/info':return {'slug':'own'}
         if p=='/backups/new/full':
             b={'slug':'newbackup','name':kw['payload']['name'],'date':datetime.fromtimestamp(self.now,timezone.utc).isoformat()};self.backups.append(b);return {'slug':'newbackup'}
@@ -92,6 +92,16 @@ class Tests(unittest.TestCase):
         prior={'state':'completed','ownerScope':O,'backupSlug':'recent','backupVerified':True,'backupArchive':{'sha256':'c'*64}}
         (self.data/'installation-update.json').write_text(json.dumps(prior));self.f.backups=[{'slug':'recent','date':datetime.fromtimestamp(self.f.now-120,timezone.utc).isoformat()}]
         s=self.execute(self.prep('recent'));self.assertEqual(s['state'],'verifying');self.assertTrue(s['backupVerified']);self.assertFalse([x for x in self.f.calls if x[1]=='/backups/new/full'])
+    def test_reused_backup_must_contain_the_current_core_version(self):
+        prior={'state':'completed','ownerScope':O,'backupSlug':'recent','backupVerified':True,'backupArchive':{'sha256':'c'*64}}
+        (self.data/'installation-update.json').write_text(json.dumps(prior));self.f.backups=[{'slug':'recent','date':datetime.fromtimestamp(self.f.now-120,timezone.utc).isoformat()}]
+        original=self.f.supervisor
+        def altered(path,**kw):
+            result=original(path,**kw)
+            if path=='/backups/recent/info':result['homeassistant']='2026.6.3'
+            return result
+        self.e.supervisor=altered
+        self.assertEqual(self.execute(self.prep('recent'))['state'],'failed')
     def test_arbitrary_backup_cannot_bypass_capacity(self):
         s=self.execute(self.prep('arbitrary'));self.assertEqual(s['state'],'failed');self.assertFalse([x for x in self.f.calls if x[1]=='/core/update'])
     def test_interrupted_backup_not_repeated(self):

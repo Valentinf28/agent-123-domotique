@@ -81,7 +81,7 @@ class CoreUpdate(Reset):
         if prior.get('state')!='completed' or prior.get('ownerScope')!=state['ownerScope'] or prior.get('backupSlug')!=slug or prior.get('backupVerified') is not True:raise RuntimeError('Cette sauvegarde doit être créée et vérifiée pour cette installation.')
         info=self.supervisor('/backups/'+slug+'/info')
         stamp=datetime.fromisoformat(info.get('date','').replace('Z','+00:00')).timestamp()
-        if not 0<=self.clock()-stamp<=6*3600 or info.get('type')!='full' or info.get('homeassistant_exclude_database') is not False:raise RuntimeError('Cette sauvegarde est trop ancienne ou incomplète.')
+        if not 0<=self.clock()-stamp<=6*3600 or info.get('type')!='full' or info.get('homeassistant')!=state['installedVersion'] or info.get('homeassistant_exclude_database') is not False:raise RuntimeError('Cette sauvegarde est trop ancienne ou incomplète.')
         proof=self.verify_archive(slug)
         if proof.get('verified') is not True or proof.get('sha256')!=prior.get('backupArchive',{}).get('sha256'):raise RuntimeError('L’archive de sauvegarde a changé.')
         state.update(backupSlug=slug,backupVerified=True,backupArchive=proof);self.save(state)
