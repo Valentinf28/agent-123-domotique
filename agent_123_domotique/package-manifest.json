@@ -1,10 +1,11 @@
 {
   "files": {
-    "agent.py": "548037752d00c37b1bc8301056b23d4d9a85654b823bf6247a28449190daf1df",
+    "agent.py": "6d725851b29129d24bad3cd40115ef47683b922881617b90290d1631c863f7ae",
     "automation_edit.py": "82e5999b55b295aa141a50697f7715a6263b5750175f34eeb82d4bff946eab97",
     "backup_setup.py": "7cb1a57529737b9be5647001f06b0a94a1e69053d5e349f85e8da68ca4ea43d4",
-    "config.yaml": "c77dbd5dd483e74b2939752385ee014a8f3c6e288cea5f58df479727085a0591",
+    "config.yaml": "23e6da19304515267ebeb8ec6612e9df1aac7dbabfc47f295b8c6c7869b5a90a",
     "connector_install.py": "4818eff3fd688b243eefab146290e3d0cc3e336333e558ad34c1e05caee6f482",
+    "core_update.py": "c62291678afc1de94127566da3493f0a63dd73fd87c15da60f619dad0e53214d",
     "ddzy422_activation.py": "dba8499cd56b2a75897f7a4d215989532e10c7651def4c3916ca35b941bbb9f6",
     "ddzy422_setup.py": "47fc20754089881c0b804f4865873b3809852ef24fcefef67b0874b309cada47",
     "deye_topology.py": "a1e93ad6613cc195d2fb1840c848af3535fd2f8e6a1c05943b79ee1f8e2f3768",
@@ -12,8 +13,8 @@
     "ev_discovery.py": "73b8ea13810ef60e3c6ffd0d9665711e93c68f2be9729bda5500c767158ba476",
     "factory_activation.py": "49a3a7c3b8165df9fc0c47deb31bd5725c723006a9d97dfd014374bb1c5e0c74",
     "factory_stage.py": "419ed83770f2efdf50828892898176c9993c100151c0316471ad05953a71589b",
-    "installation_reset.py": "606c6d732b5fecade6481f90978594d1e7aa9dcf554ed70022dc848a9229aa09",
-    "installation_update.py": "c6be122888f3182401e28e52bf57f88d541bd1c3ef23ec014ad9d82479f02166",
+    "installation_reset.py": "aeeca6e3e9b0c898925e8802e171d05d120e9815e1343a64ee51a119ec08568c",
+    "installation_update.py": "b32e2d18e9f345254896835a311f4f5a0243f3d180bff860dd9a1dde258621fe",
     "integration_flow.py": "84573d473a7f5aa1d93e9048250b8776bec3721edf9b7a89c2cc9d4f304f8e4a",
     "integrations/ddzy422-bundle.json": "df4d7820c57a1fc10dd4dff4ec8edc170432822dd0bb419aaa727a6ebb18d05d",
     "integrations/ddzy422-legacy-010.json": "034e0d3d2120dcd2b1be83a895da6678598ea9859e2e3bcbf99ea04185f394bd",
@@ -33,7 +34,7 @@
     "local_solar_measurements.py": "19407144631a57d37e23fcde2e703e6b26eb5a375d15fa52fe0185ec0741af20",
     "micro_setup.py": "353576d272ce52cfca0c6e3802124442ee45bfcd57288ee7a5e520f33c65bc5f",
     "native_backup_export.py": "a857e6ce29747615d79cede33ec46586236d9218ab6f86d696a8ce80f8aa3510",
-    "native_backup_guard.py": "f01069809fe095f36fe2a670273b8b21f6f1ecb3ad9a6a8062fe4b71e7f635c4",
+    "native_backup_guard.py": "2d804dea60770b069c5e0ee9786dfd595cf0bcdaf10f1340f8f33ae3a6985d22",
     "native_backup_runtime.py": "6ec4682a785f3cea99aee66b9c5505fb83c1f64096a949a0e104afbbada13a8b",
     "native_backup_transport.py": "0757dfabadf8a8bacdf7f28a628ee584fe2395a966cea793c43ccaf01c1c6c0e",
     "network_discovery.py": "92badcbe0546b67d23488d9b21f6b07ad83842b82271e70e65072baaf7567d1f",
@@ -64,5 +65,5 @@
     "vendor/solarman-25.08.16.zip": "04fd37da1ba1cd3a590146a48602162ad5c7e0c319c80ca326369cd5a26da977",
     "wifi_setup.py": "da3ae91a1622391e0b326ff6ef74e9272572cfb05792a1599aa28e66f0beb4d0"
   },
-  "version": "0.6.44"
+  "version": "0.6.45"
 }

@@ -1,3 +1,9 @@
+# 0.6.45
+
+- Prépare et installe à distance une version stable précise de Home Assistant Core, après confirmation du propriétaire et vérification réelle d’une sauvegarde complète.
+- Contrôle l’espace disponible, les intégrations, les automatismes et la disponibilité des équipements avant et après redémarrage.
+- Conserve un journal lié au propriétaire ; ne rejoue jamais une installation incertaine et bloque les interventions concurrentes.
+
 # 0.6.44
 
 - Propose les identifiants d’application fabricant lorsqu’ils sont demandés par le parcours natif, avec conservation uniquement dans Home Assistant.
