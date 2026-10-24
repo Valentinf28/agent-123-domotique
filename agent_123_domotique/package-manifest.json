@@ -1,19 +1,20 @@
 {
   "files": {
-    "agent.py": "dfc29f4966ecab3420c82f9e3b08a9c937d9ba32bea19fa04604c64de898bb13",
+    "agent.py": "5bab44c06d6ff1a8e379f414c4099090e1688d2f22b609e59a22504e1b369eba",
     "automation_edit.py": "82e5999b55b295aa141a50697f7715a6263b5750175f34eeb82d4bff946eab97",
     "backup_setup.py": "7cb1a57529737b9be5647001f06b0a94a1e69053d5e349f85e8da68ca4ea43d4",
-    "config.yaml": "8383343c6688ffb37325f90ffd6954bd465d715348d15aaee8799d95dca5fd35",
+    "config.yaml": "9ce6a96dcd22ee1678a4857c6db2577266c28ae66d9745ec435807646f15052c",
     "connector_install.py": "4818eff3fd688b243eefab146290e3d0cc3e336333e558ad34c1e05caee6f482",
     "ddzy422_activation.py": "dba8499cd56b2a75897f7a4d215989532e10c7651def4c3916ca35b941bbb9f6",
     "ddzy422_setup.py": "47fc20754089881c0b804f4865873b3809852ef24fcefef67b0874b309cada47",
     "deye_topology.py": "a1e93ad6613cc195d2fb1840c848af3535fd2f8e6a1c05943b79ee1f8e2f3768",
-    "equipment_setup.py": "fe63d6b410d76bfa1a7402f2b88c50eb1f64044874b6dfe959ce79f55df7ba39",
+    "equipment_setup.py": "606c871378ea5fea0231f777388ba9051671d1cbf6dbc3cf8ee8693d2c350c0c",
     "ev_discovery.py": "73b8ea13810ef60e3c6ffd0d9665711e93c68f2be9729bda5500c767158ba476",
     "factory_activation.py": "49a3a7c3b8165df9fc0c47deb31bd5725c723006a9d97dfd014374bb1c5e0c74",
     "factory_stage.py": "419ed83770f2efdf50828892898176c9993c100151c0316471ad05953a71589b",
     "installation_reset.py": "606c6d732b5fecade6481f90978594d1e7aa9dcf554ed70022dc848a9229aa09",
     "installation_update.py": "c6be122888f3182401e28e52bf57f88d541bd1c3ef23ec014ad9d82479f02166",
+    "integration_flow.py": "691c1f1230243dc6e4903ca7a990c68568ad18d55d8e59cdbf7c3d5840d4e669",
     "integrations/ddzy422-bundle.json": "df4d7820c57a1fc10dd4dff4ec8edc170432822dd0bb419aaa727a6ebb18d05d",
     "integrations/ddzy422-legacy-010.json": "034e0d3d2120dcd2b1be83a895da6678598ea9859e2e3bcbf99ea04185f394bd",
     "integrations/labox_ddzy422/PROTOCOL.md": "ee5d382782f8302f15f9b66767de8ae23547ac07168a6788e97e15cc6ba1761b",
@@ -63,5 +64,5 @@
     "vendor/solarman-25.08.16.zip": "04fd37da1ba1cd3a590146a48602162ad5c7e0c319c80ca326369cd5a26da977",
     "wifi_setup.py": "da3ae91a1622391e0b326ff6ef74e9272572cfb05792a1599aa28e66f0beb4d0"
   },
-  "version": "0.6.42"
+  "version": "0.6.43"
 }

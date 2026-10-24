@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.42"
+AGENT_VERSION = "0.6.43"
 BACKUP_RUNTIME = None
 BACKUP_GUARD = None
 BACKUP_SYSTEM_ACTION = None
@@ -2046,6 +2046,17 @@ def relay_command(
         elif action == "commissioning.equipment":
             from equipment_setup import configure as configure_equipment
             def call_equipment(path, **kwargs):
+                if kwargs.pop("_configuration_callback", False):
+                    # Fixed internal OAuth callback, never a supplied host/URL.
+                    # HA verifies its signed state before resuming the native flow.
+                    from installation_reset import blocks_mutations
+                    if blocks_mutations() or not path.startswith("/auth/external/callback?") or kwargs:
+                        raise RuntimeError("Autorisation suspendue. Reprenez la connexion.")
+                    opener = urllib.request.build_opener(NoAuthenticatedRedirect)
+                    request = urllib.request.Request(HOME_ASSISTANT_FRONTEND + path, headers={"Accept": "text/html"})
+                    with opener.open(request, timeout=15) as response:
+                        response.read(8192)
+                    return {"callbackAccepted": True}
                 return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
             def equipment_registry(command):
                 response = home_assistant_ws_command(supervisor_token, command)
@@ -3393,7 +3404,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["installation.update.recovery_v1", "automation_update_v1", "automation_schedule_v1", "commissioning.discover_solar.mac", "commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["native_config_flow_v1","installation.update.recovery_v1", "automation_update_v1", "automation_schedule_v1", "commissioning.discover_solar.mac", "commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             if BACKUP_RUNTIME:
                 summary["capabilities"].append("backup_export_v1")
             from installation_update import Update, heartbeat_status

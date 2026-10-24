@@ -20,6 +20,7 @@ COPY shelly_setup.py /opt/agent/shelly_setup.py
 COPY lektrico_setup.py /opt/agent/lektrico_setup.py
 COPY ev_discovery.py /opt/agent/ev_discovery.py
 COPY equipment_setup.py /opt/agent/equipment_setup.py
+COPY integration_flow.py /opt/agent/integration_flow.py
 COPY tuya_setup.py /opt/agent/tuya_setup.py
 COPY overkiz_setup.py /opt/agent/overkiz_setup.py
 COPY pool_camera.py /opt/agent/pool_camera.py

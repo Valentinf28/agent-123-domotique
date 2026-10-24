@@ -10,7 +10,7 @@ from pathlib import Path
 from shelly_setup import ID, OWNER, ENTITY
 
 ACTION='commissioning.equipment'
-DOMAINS={'hue':'Philips Hue','wiz':'WiZ','tplink':'TP-Link Tapo / Kasa','switchbot':'SwitchBot','reolink':'Reolink','enphase_envoy':'Enphase','zha':'Zigbee','matter':'Matter','netatmo':'Netatmo / Legrand','tado':'Tado','home_connect':'Bosch / Siemens'}
+DOMAINS={'hue':'Philips Hue','wiz':'WiZ','tplink':'TP-Link Tapo / Kasa','switchbot':'SwitchBot','reolink':'Reolink','enphase_envoy':'Enphase','zha':'Zigbee','matter':'Matter','netatmo':'Netatmo / Legrand','tado':'Tado','home_connect':'Bosch / Siemens','midea':'Midea / SmartHome','homekit_controller':'Appareil HomeKit','shelly':'Shelly','daikin':'Daikin','melcloud':'Mitsubishi Electric / MELCloud','panasonic_cc':'Panasonic Comfort Cloud','smartthings':'Samsung SmartThings','overkiz':'Somfy / Cozytouch / Hi Kumo','gree':'Gree','fronius':'Fronius','nuki':'Nuki','onvif':'ONVIF','ring':'Ring','tuya':'Smart Life / Tuya','huawei_solar':'Huawei Solar','goodwe':'GoodWe','growatt_server':'Growatt','sma':'SMA','solaredge':'SolarEdge','wallbox':'Wallbox / MyWallbox','tesla_wall_connector':'Tesla Wall Connector','openevse':'OpenEVSE','v2c':'V2C Trydan','melcloud_home':'MELCloud Home'}
 STEPS={'hue':{'link'},'wiz':{'discovery_confirm'},'tplink':{'discovery_confirm','discovery_auth_confirm','camera_auth_confirm'},'switchbot':{'confirm','password','encrypted_choose_method','encrypted_key','encrypted_auth'},'reolink':{'user'},'enphase_envoy':{'user'}}
 SOURCES={'hue':{'zeroconf','homekit'},'wiz':{'dhcp','integration_discovery'},'tplink':{'dhcp','integration_discovery'},'switchbot':{'bluetooth'},'reolink':{'dhcp'},'enphase_envoy':{'zeroconf'}}
 UUID=re.compile(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')
@@ -81,6 +81,9 @@ def local_host(flow):
  return None
 
 def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
+ if isinstance(payload,dict) and str(payload.get('operation','')).startswith('flow_'):
+  from integration_flow import configure as configure_flow
+  return configure_flow(payload,call,registry=registry,data=data,clock=clock)
  operation=payload.get('operation');domain=payload.get('connector');owner=payload.get('ownerScope','')
  fields={'status':set(),'open':{'session','flowId','fingerprint'},'submit':{'session','flowId','fingerprint','step','values','cloudConsent'},'pair':{'session','operationId','confirmed','code','networkAlreadyConnected'},'close_pairing':{'session'}}
  if operation not in fields or set(payload)!={'operation','connector','ownerScope'}|fields[operation] or domain not in DOMAINS or not isinstance(owner,str) or not OWNER.fullmatch(owner):raise ValueError('Étape de connexion invalide.')
