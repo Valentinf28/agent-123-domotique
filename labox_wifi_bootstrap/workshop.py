@@ -1,6 +1,8 @@
 """Run locally inside the prepared app. Explicit private QR label export only."""
 import argparse
 import html
+import json
+import re
 import os
 from pathlib import Path
 import qrcode
@@ -29,12 +31,28 @@ def label(data):
             + '</strong> et choisissez le Wi-Fi de votre maison.</p><p>Si le téléphone indique « Sans Internet », '
             'restez connecté le temps de la configuration. Le réseau de configuration s’arrêtera une fois la box connectée.</p></html>')
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Exporter l’étiquette privée de cette box, sans modifier le réseau.')
+def identification(data, product='box'):
+    """Allowlist for the offline workshop renderer. No factory/owner/technician secret."""
+    if data.get('phase') not in ('ready', 'hotspot') or product not in ('box', 'console'):
+        raise ValueError('Préparation atelier non valide.')
+    if not re.fullmatch(r'[a-f0-9]{64}', data.get('context', '')):
+        raise ValueError('Identité atelier absente.')
+    if not re.fullmatch(r'[A-HJ-NP-Z2-9]{8}', data.get('psk', '')):
+        raise ValueError('Cette identité conserve son ancien code : ne pas le modifier après étiquetage.')
+    return {'schema':'labox.workshop-identification.v1','product':product,
+            'factoryContext':data['context'],'ssid':data['ssid'],'wifiCode':data['psk']}
+
+def main():
+    parser = argparse.ArgumentParser(description='Exporter les supports privés de cette unité, sans modifier le réseau.')
     parser.add_argument('--state', default='/data/onboarding.json')
     parser.add_argument('--output', required=True)
+    parser.add_argument('--format', choices=['html','identification'], default='identification')
+    parser.add_argument('--product', choices=['box','console'], default='box')
     args = parser.parse_args()
-    value = label(read(args.state))
+    data = read(args.state)
+    value = label(data) if args.format == 'html' else json.dumps(identification(data,args.product),indent=2)+'\n'
     fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w') as f: f.write(value)
-    print('Étiquette privée créée. Ne pas la copier dans une image atelier ou un dépôt Git.')
+    print('Export privé créé. Le code reste celui configuré sur cet appareil.')
+
+if __name__ == '__main__': main()

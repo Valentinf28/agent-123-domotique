@@ -19,7 +19,7 @@ from model import Lifecycle, Refused, atomic, credentials, read
 from network import Network, profile, unwrap, ROOT as NM_ROOT, DEST
 from controller import Controller
 from http_setup import HTTP, ORIGIN
-from workshop import label, wifi_qr
+from workshop import label, wifi_qr, identification
 from network_bootstrap_status import publish
 from access_point import AccessPoint
 
@@ -39,11 +39,18 @@ class LifeTests(unittest.TestCase):
         self.assertNotEqual(self.life.data['psk'], other.data['psk'])
         self.assertNotEqual(self.life.data['ssid'], other.data['ssid'])
         self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
-        self.assertEqual(len(self.life.data['psk']), 20)
+        self.assertRegex(self.life.data['psk'], r'^[A-HJ-NP-Z2-9]{8}$')
+        self.assertTrue(any(c.isdigit() for c in self.life.data['psk']))
+        self.assertTrue(any(c.isalpha() for c in self.life.data['psk']))
 
     def test_credentials_stable_after_restart(self):
         restarted = Lifecycle(self.path); restarted.prepare(OPTIONS, MARKER)
         self.assertEqual(self.life.data, restarted.data)
+
+    def test_existing_engraved_code_is_never_regenerated(self):
+        self.life.save(psk='legacy-printed-code')
+        restarted = Lifecycle(self.path); restarted.prepare(OPTIONS, MARKER)
+        self.assertEqual(restarted.data['psk'], 'legacy-printed-code')
 
     def test_disarmed_does_not_prepare(self):
         new = Lifecycle(Path(self.tmp.name) / 'absent')
@@ -103,6 +110,16 @@ class LifeTests(unittest.TestCase):
         self.assertIn('<svg', text); self.assertIn('192.168.77.1:18424', text)
         self.life.save(phase='complete')
         with self.assertRaises(ValueError): label(self.life.data)
+
+    def test_workshop_export_excludes_other_secrets_and_does_not_change_state(self):
+        before = dict(self.life.data)
+        value = identification({**self.life.data, 'factory_token':'never-export', 'technician_code':'never-export'})
+        self.assertEqual(set(value), {'schema','product','factoryContext','ssid','wifiCode'})
+        self.assertEqual(value['wifiCode'], before['psk'])
+        self.assertEqual(value['ssid'], before['ssid'])
+        self.assertEqual(self.life.data, before)
+        self.assertRegex(value['ssid'], r'^LaBox-[A-F0-9]{8}$')
+        with self.assertRaises(ValueError): identification({**self.life.data,'phase':'retired'})
 
     def test_ap_and_candidate_profiles_scope(self):
         ap = unwrap(profile('id', OPTIONS['wifi_mac'], 'my wifi', 'password', hotspot=True))

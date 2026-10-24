@@ -13,6 +13,15 @@ NETWORK = ipaddress.ip_network('192.168.77.0/24')
 PORT = 18424
 WINDOW = 900
 
+CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+def new_wifi_code():
+    # Eight uppercase characters; omit O/0 and I/1 for engraving readability.
+    while True:
+        code = ''.join(secrets.choice(CODE_ALPHABET) for _ in range(8))
+        if any(c.isdigit() for c in code) and any(c.isalpha() for c in code):
+            return code
+
 class Refused(Exception):
     pass
 
@@ -71,7 +80,7 @@ class Lifecycle:
             raise Refused('nouvelle_preparation_atelier_requise')
         if not self.data:
             self.save(context=context, mac=options['wifi_mac'].upper(), phase='ready',
-                      ssid='LaBox-' + secrets.token_hex(3).upper(), psk=secrets.token_hex(10),
+                      ssid='LaBox-' + secrets.token_hex(4).upper(), psk=new_wifi_code(),
                       ap_uuid=str(uuid.uuid4()), deadline=0, error='')
         if self.data.get('mac') != options['wifi_mac'].upper():
             raise Refused('cle_wifi_differente')
