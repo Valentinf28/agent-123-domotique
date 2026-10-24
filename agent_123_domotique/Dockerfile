@@ -7,6 +7,7 @@ COPY local_identity.py /opt/agent/local_identity.py
 COPY factory_activation.py /opt/agent/factory_activation.py
 COPY factory_stage.py /opt/agent/factory_stage.py
 COPY agent.py /opt/agent/agent.py
+COPY automation_edit.py /opt/agent/automation_edit.py
 COPY live_energy_states.py /opt/agent/live_energy_states.py
 COPY wifi_setup.py /opt/agent/wifi_setup.py
 COPY requirements.lock /opt/agent/requirements.lock
@@ -32,6 +33,7 @@ COPY solar_measurements.py /opt/agent/solar_measurements.py
 COPY backup_setup.py /opt/agent/backup_setup.py
 COPY installation_reset.py /opt/agent/installation_reset.py
 COPY installation_update.py /opt/agent/installation_update.py
+COPY update_recovery.py /opt/agent/update_recovery.py
 COPY ddzy422_setup.py /opt/agent/ddzy422_setup.py
 COPY ddzy422_activation.py /opt/agent/ddzy422_activation.py
 COPY micro_setup.py /opt/agent/micro_setup.py

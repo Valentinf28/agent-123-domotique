@@ -1,8 +1,9 @@
 {
   "files": {
-    "agent.py": "a679064d0eb5dc27db386361efbb245a66b64b0f68af0dd96b1cdd390cbbd0b6",
+    "agent.py": "8cb09c083d54ffc9a6c9de383066abc596883eb5e639d27e7aeb050c083575c9",
+    "automation_edit.py": "82e5999b55b295aa141a50697f7715a6263b5750175f34eeb82d4bff946eab97",
     "backup_setup.py": "7cb1a57529737b9be5647001f06b0a94a1e69053d5e349f85e8da68ca4ea43d4",
-    "config.yaml": "4dfb4c382e42f507b95e2af73393a827962ff9fd96b576fe0710aa17915e384b",
+    "config.yaml": "5dec648705d5830fe1ab116f146ac6a059eb776e894a19eb1fe8d1d25ce9e179",
     "connector_install.py": "4818eff3fd688b243eefab146290e3d0cc3e336333e558ad34c1e05caee6f482",
     "ddzy422_activation.py": "dba8499cd56b2a75897f7a4d215989532e10c7651def4c3916ca35b941bbb9f6",
     "ddzy422_setup.py": "47fc20754089881c0b804f4865873b3809852ef24fcefef67b0874b309cada47",
@@ -12,7 +13,7 @@
     "factory_activation.py": "49a3a7c3b8165df9fc0c47deb31bd5725c723006a9d97dfd014374bb1c5e0c74",
     "factory_stage.py": "f8541e74f3ce5845bb2c29df7bcfbdeb6c57db614094d7afa6b2a97ad56d230f",
     "installation_reset.py": "02a680ef9a4d9a9c6fa6403762007df0139328d14cf844f4a91ff11a0c4cf95e",
-    "installation_update.py": "a2a54180f883dbf5f20b3f1425f1d4ebc5f7b3ed7fed0fadff3f497a5bab9b41",
+    "installation_update.py": "237dcc7ee9fdbc4d4797f619ad5ebe01b08ce2af833b160964cd5610c1a6bc7c",
     "integrations/ddzy422-bundle.json": "df4d7820c57a1fc10dd4dff4ec8edc170432822dd0bb419aaa727a6ebb18d05d",
     "integrations/ddzy422-legacy-010.json": "034e0d3d2120dcd2b1be83a895da6678598ea9859e2e3bcbf99ea04185f394bd",
     "integrations/labox_ddzy422/PROTOCOL.md": "ee5d382782f8302f15f9b66767de8ae23547ac07168a6788e97e15cc6ba1761b",
@@ -50,10 +51,11 @@
     "solar_state_wakeup.py": "c1eb122f59a233bdefe708c3df845b94148f56361f99a593be658306cd2362e1",
     "tuya_homes.py": "4f3a4a8c05402a215db068e28f948369fdd51d37d4614f98baf507b6b7b2d556",
     "tuya_setup.py": "dec57a9354745f0cf12bc67ab8758c15f29e42c25cae90db0485e090e99fef16",
+    "update_recovery.py": "304b0fef7fa97fbeb7706dd2cf373e794c1d04595102d6304cf1b9e737978ea1",
     "vendor/README.md": "81e12b7d3ff38ec5708a2ab1b2bde80eeea9717dd1573e147f47133bdd5d5373",
     "vendor/SOLARMAN-LICENSE": "97042f338a3225d0b2c20f1e40ba9dbc340a1ae508d1fa1032a03c52f94ddb97",
     "vendor/solarman-25.08.16.zip": "04fd37da1ba1cd3a590146a48602162ad5c7e0c319c80ca326369cd5a26da977",
     "wifi_setup.py": "da3ae91a1622391e0b326ff6ef74e9272572cfb05792a1599aa28e66f0beb4d0"
   },
-  "version": "0.6.37"
+  "version": "0.6.39"
 }
