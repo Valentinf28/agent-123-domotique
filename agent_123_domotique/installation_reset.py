@@ -314,7 +314,8 @@ def blocks_mutations(data=Path('/data')):
         except Exception: return True
     path = Path(data) / 'installation-reset.json'
     from installation_update import busy
-    if busy(data):return True
+    from core_update import busy as core_busy
+    if busy(data) or core_busy(data):return True
     if not path.exists(): return False
     try:
         return json.loads(path.read_text()).get('state') in ('backing_up', 'removing', 'partial', 'backup_uncertain')

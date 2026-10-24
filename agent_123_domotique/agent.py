@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.44"
+AGENT_VERSION = "0.6.45"
 BACKUP_RUNTIME = None
 BACKUP_GUARD = None
 BACKUP_SYSTEM_ACTION = None
@@ -621,7 +621,7 @@ def home_assistant_ws_command(
     from installation_reset import blocks_mutations
     if blocks_mutations() and command.get("type") not in (
         "config/entity_registry/list", "config/device_registry/list", "config/area_registry/list",
-        "energy/solar_forecast", "network", "manifest/get", "auth/current_user"):
+        "energy/solar_forecast", "network", "manifest/get", "auth/current_user", "backup/info"):
         raise RuntimeError("La remise à zéro suspend temporairement les modifications.")
     socket = websocket.create_connection("ws://supervisor/core/websocket", timeout=timeout)
     try:
@@ -1959,7 +1959,7 @@ def command_result_for_heartbeat(command: dict[str, Any], result: dict[str, Any]
 
 def queued_command_result(supervisor_token: str, command: dict[str, Any]) -> dict[str, Any]:
     """Reset commands are direct-session only and never durable-heartbeat jobs."""
-    if command.get("action") in ("commissioning.wifi", "installation.reset", "installation.update", "installation.update.recovery", "commissioning.activate_ddzy422", "commissioning.tuya", "commissioning.shelly", "commissioning.equipment", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.overkiz"):
+    if command.get("action") in ("installation.core_update", "commissioning.wifi", "installation.reset", "installation.update", "installation.update.recovery", "commissioning.activate_ddzy422", "commissioning.tuya", "commissioning.shelly", "commissioning.equipment", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.overkiz"):
         return {"ok": False, "error": "Cette opération nécessite une session directe."}
     return relay_command(supervisor_token, command)
 
@@ -1977,7 +1977,7 @@ def relay_command(
         payload = {}
     try:
         from installation_reset import Reset, blocks_mutations, verify_supervisor_archive
-        if blocks_mutations() and action not in ("installation.reset", "installation.update", "ha.states", "ha.config"):
+        if blocks_mutations() and action not in ("installation.reset", "installation.update", "installation.core_update", "ha.states", "ha.config"):
             raise RuntimeError("La remise à zéro est en cours. Les commandes sont temporairement suspendues.")
         if action == "installation.reset":
             def call_reset(path, **kwargs):
@@ -2005,6 +2005,18 @@ def relay_command(
                 for tunnel_id in list(HA_TUNNELS):
                     upstream = HA_TUNNELS.pop(tunnel_id, None)
                     if upstream: close_ha_tunnel(upstream)
+        elif action == "installation.core_update":
+            from core_update import CoreUpdate
+            def call_core(path, **kwargs):
+                return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, **kwargs)
+            def supervisor_core(path, **kwargs):
+                response = request_json("http://supervisor" + path, token=supervisor_token, **kwargs)
+                if not isinstance(response, dict) or response.get("result") != "ok" or not isinstance(response.get("data"), dict):
+                    raise RuntimeError("Le service système n’a pas confirmé l’opération.")
+                return response["data"]
+            engine = CoreUpdate(call_core, supervisor_core, lambda slug: verify_supervisor_archive(slug, supervisor_token),
+                registry=lambda: None, authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"}), backup_guard=BACKUP_GUARD)
+            result = engine.command(payload)
         elif action in ("installation.update", "installation.update.recovery"):
             from installation_update import Update, native_catalog_refresh
             def call_update(path, **kwargs):
@@ -3404,7 +3416,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["native_config_flow_v1","installation.update.recovery_v1", "automation_update_v1", "automation_schedule_v1", "commissioning.discover_solar.mac", "commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["installation.core_update_v1", "installation.core_update", "native_config_flow_v1","installation.update.recovery_v1", "automation_update_v1", "automation_schedule_v1", "commissioning.discover_solar.mac", "commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             if BACKUP_RUNTIME:
                 summary["capabilities"].append("backup_export_v1")
             from installation_update import Update, heartbeat_status
@@ -3422,6 +3434,19 @@ def main() -> None:
                     runtime_version=AGENT_VERSION)
                 update_status = observer.observe_heartbeat()
                 if update_status: summary["updateStatus"] = update_status
+            try:
+                from core_update import CoreUpdate
+                def core_observe_call(path, **kwargs):
+                    return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, timeout=4, **kwargs)
+                def core_observe_supervisor(path, **kwargs):
+                    response = request_json("http://supervisor" + path, token=supervisor_token, timeout=4, **kwargs)
+                    if response.get("result") != "ok": raise RuntimeError("Observation indisponible")
+                    return response["data"]
+                core_observer = CoreUpdate(core_observe_call, core_observe_supervisor, lambda slug: None, registry=lambda: None)
+                core_status = core_observer.heartbeat()
+                if core_status: summary["coreUpdateStatus"] = core_status
+            except Exception:
+                pass
             command_results = state.get("command_results", [])
             if command_results:
                 summary["commandResults"] = command_results

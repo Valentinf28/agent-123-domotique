@@ -64,6 +64,8 @@ class Update(Reset):
         return {k:state[k] for k in keys if k in state}
 
     def require_exclusive(self):
+        from core_update import busy as core_busy
+        if core_busy(self.data):raise RuntimeError("Terminez la mise à jour du système avant celle de l’agent.")
         if self.backup_guard:self.backup_guard()
         reset=self.data/'installation-reset.json'
         if reset.exists() and json.loads(reset.read_text()).get('state') in ('backing_up','removing','partial','backup_uncertain'):

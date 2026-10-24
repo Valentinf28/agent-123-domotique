@@ -30,7 +30,8 @@ def local_maintenance_busy(data=Path('/data'), read_update=None):
                     native=read_update(entity)
                     if not isinstance(native,dict) or native.get('entity_id')!=entity or native.get('state') not in ('on','off') or native.get('attributes',{}).get('in_progress') is not False:return True
                 if state in states or state not in terminal:return True
-        return False
+        from core_update import busy as core_busy
+        return core_busy(data)
     except Exception:return True
 
 def export_busy(data=Path('/data')):
