@@ -743,7 +743,12 @@ def mobile_home_assistant_states(supervisor_token: str) -> list[dict[str, Any]]:
     states = live_energy_states(states, lambda template: request_json(
         f"{SUPERVISOR_API}/template", method="POST", token=supervisor_token,
         payload={"template": template}))
-    metadata = home_assistant_registry_metadata(supervisor_token)
+    try:
+        metadata = home_assistant_registry_metadata(supervisor_token)
+    except Exception:
+        metadata = {}
+    if not isinstance(metadata, dict):
+        metadata = {}
     result = []
     for row in states:
         if not isinstance(row, dict):

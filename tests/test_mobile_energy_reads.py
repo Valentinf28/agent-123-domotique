@@ -47,6 +47,12 @@ class MobileEnergyReadTests(unittest.TestCase):
    return [copy.deepcopy(self.old)]
   with patch.object(agent,'request_json',side_effect=request),patch.object(agent,'home_assistant_registry_metadata',return_value={}):
    self.assertEqual(agent.mobile_home_assistant_states('fixture'),[self.old])
+ def test_registry_failure_preserves_all_readable_rows_without_inventing_identity(self):
+  for value in (RuntimeError('offline'),None):
+   with patch.object(agent,'request_json',side_effect=self.request),patch.object(agent,'home_assistant_registry_metadata',side_effect=value if isinstance(value,Exception) else None,return_value=value):
+    rows=agent.mobile_home_assistant_states('fixture')
+   self.assertEqual(len(rows),2);self.assertEqual(rows[0],self.fresh);self.assertEqual(rows[1],self.other)
+   self.assertNotIn('platform',rows[0]['attributes'])
  def test_non_read_paths_unchanged_and_bad_states_rejected(self):
   with self.context():
    self.assertEqual(agent.mobile_home_assistant_call('fixture','/services/light/turn_on',method='POST',payload={'entity_id':'light.test'}),{'forwarded':True})
