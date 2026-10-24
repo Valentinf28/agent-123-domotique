@@ -41,9 +41,10 @@ def _valid_uuid(value):
 
 
 class Reset:
-    def __init__(self, call, supervisor, verify_archive, *, authorize=None, data=Path('/data'), clock=time.time, sleep=time.sleep):
+    def __init__(self, call, supervisor, verify_archive, *, authorize=None, data=Path('/data'), clock=time.time, sleep=time.sleep, backup_guard=None):
         self.call, self.supervisor, self.verify_archive = call, supervisor, verify_archive
         self.authorize = authorize
+        self.backup_guard = backup_guard
         self.data, self.clock, self.sleep = Path(data), clock, sleep
         self.path = self.data / 'installation-reset.json'
 
@@ -191,6 +192,7 @@ class Reset:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 state = self.load()
                 if state.get('operationId') != operation_id: return
+                if self.backup_guard:self.backup_guard()
                 self.backup(state)
                 state = self.reconcile(state)
                 state['state'] = 'removing'; self.save(state)
@@ -237,6 +239,7 @@ class Reset:
         operation = payload.get('operation')
         if operation in ('prepare', 'execute'):
             from installation_update import busy
+            if self.backup_guard:self.backup_guard()
             if busy(self.data):raise RuntimeError('Terminez la mise à jour avant de recommencer l’installation.')
             self.require_admin()
         with _MUTEX:

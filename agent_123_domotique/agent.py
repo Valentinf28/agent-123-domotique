@@ -24,7 +24,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.39"
+AGENT_VERSION = "0.6.41"
+BACKUP_RUNTIME = None
+BACKUP_GUARD = None
+BACKUP_SYSTEM_ACTION = None
 
 def grid_automation_sources(payload):
     sources = payload.get("gridPowerEntityIds", [payload.get("gridPowerEntityId", "")])
@@ -1940,6 +1943,20 @@ def close_ha_tunnel(upstream) -> None:
         pass
 
 
+def command_result_for_heartbeat(command: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """Carry only reviewed result types through the durable command heartbeat."""
+    output = {"id": str(command.get("id", "")), "ok": bool(result.get("ok")),
+              "error": str(result.get("error", ""))[:240]}
+    actions = {"commissioning.configure_location", "commissioning.discover_solar",
+               "commissioning.install_solarman", "commissioning.configure_deye",
+               "commissioning.activate_solarman", "commissioning.verify_deye",
+               "ha.automation.create", "ha.automation.read", "ha.automation.update",
+               "ha.automation.delete"}
+    if result.get("ok") and command.get("action") in actions:
+        output["result"] = result.get("result")
+    return output
+
+
 def queued_command_result(supervisor_token: str, command: dict[str, Any]) -> dict[str, Any]:
     """Reset commands are direct-session only and never durable-heartbeat jobs."""
     if command.get("action") in ("commissioning.wifi", "installation.reset", "installation.update", "installation.update.recovery", "commissioning.activate_ddzy422", "commissioning.tuya", "commissioning.shelly", "commissioning.equipment", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.overkiz"):
@@ -1971,7 +1988,7 @@ def relay_command(
                     raise RuntimeError("La sauvegarde de cette box est indisponible.")
                 return response["data"]
             reset = Reset(call_reset, supervisor_reset, lambda slug: verify_supervisor_archive(slug, supervisor_token),
-                           authorize=lambda: home_assistant_ws_command(supervisor_token, {"type": "auth/current_user"}))
+                           authorize=lambda: home_assistant_ws_command(supervisor_token, {"type": "auth/current_user"}), backup_guard=BACKUP_GUARD)
             if payload.get("operation") in ("factory_prepare", "factory_commit", "factory_status"):
                 from factory_stage import command as factory_stage_command
                 def supervisor_factory(path, **kwargs):
@@ -1981,7 +1998,7 @@ def relay_command(
                     return response.get("data") or {}
                 def call_factory(path, **kwargs):
                     return request_json(f"{SUPERVISOR_API}{path}", token=supervisor_token, _factory_cleanup=True, **kwargs)
-                result = factory_stage_command(payload, reset, supervisor_factory, call_factory)
+                result = factory_stage_command(payload, reset, supervisor_factory, call_factory, backup_guard=BACKUP_GUARD)
             else:
                 result = reset.command(payload)
             if result.get("state") in ("backing_up", "removing", "partial", "backup_uncertain"):
@@ -1999,7 +2016,8 @@ def relay_command(
                 return response["data"]
             update_engine = Update(call_update, supervisor_update, lambda slug: verify_supervisor_archive(slug, supervisor_token),
                 registry=lambda: home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"}).get("result"),
-                runtime_version=AGENT_VERSION, refresh_catalog=lambda entity: native_catalog_refresh(call_update, entity), authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"}))
+                runtime_version=AGENT_VERSION, refresh_catalog=lambda entity: native_catalog_refresh(call_update, entity), authorize=lambda: home_assistant_ws_command(supervisor_token, {"type":"auth/current_user"}), backup_guard=BACKUP_GUARD,
+                verify_recovery_archive=BACKUP_RUNTIME.recovery_verifier if BACKUP_RUNTIME else None)
             result = update_engine.recover_command(payload) if action == "installation.update.recovery" else update_engine.command(payload)
         elif action == "commissioning.overkiz":
             from overkiz_setup import configure as configure_overkiz
@@ -2170,13 +2188,14 @@ def relay_command(
             service_data = payload.get("data")
             if not isinstance(service_data, dict):
                 service_data = {}
-            result = request_json(
-                f"{SUPERVISOR_API}/services/{domain}/{service}",
-                method="POST",
-                token=supervisor_token,
-                payload=service_data,
-                timeout=60,
-            )
+            from native_backup_guard import interrupts_backup
+            def call_service():
+                return request_json(f"{SUPERVISOR_API}/services/{domain}/{service}",
+                                    method="POST", payload=service_data, token=supervisor_token, timeout=60)
+            if BACKUP_SYSTEM_ACTION and interrupts_backup(domain, service):
+                with BACKUP_SYSTEM_ACTION(): result = call_service()
+            else:
+                result = call_service()
         elif action == "ha.automation.read":
             from automation_edit import read as read_automation
             result = read_automation(payload,
@@ -2846,10 +2865,14 @@ def relay_command(
                 headers=headers,
                 method=method,
             )
-            try:
-                response = urllib.request.urlopen(request, timeout=25)
-            except urllib.error.HTTPError as error:
-                response = error
+            def proxy_request():
+                try: return urllib.request.urlopen(request, timeout=25)
+                except urllib.error.HTTPError as error: return error
+            from native_backup_guard import interrupts_backup
+            target = re.fullmatch(r"/api/services/([a-z_]+)/([a-z_]+)", urllib.parse.urlsplit(path).path)
+            if BACKUP_SYSTEM_ACTION and method != "GET" and target and interrupts_backup(*target.groups()):
+                with BACKUP_SYSTEM_ACTION(): response = proxy_request()
+            else: response = proxy_request()
             raw = response.read()
             result = {
                 "status": response.status,
@@ -2906,7 +2929,15 @@ def relay_command(
                 raise ValueError("Tunnel fermé")
             if blocks_mutations():
                 raise RuntimeError("La remise à zéro suspend temporairement les commandes.")
-            upstream.send(str(payload.get("data", "")))
+            raw = str(payload.get("data", ""))
+            try: service_message = json.loads(raw)
+            except (ValueError, TypeError): service_message = {}
+            from native_backup_guard import interrupts_backup
+            if (BACKUP_SYSTEM_ACTION and isinstance(service_message, dict)
+                    and service_message.get("type") == "call_service"
+                    and interrupts_backup(service_message.get("domain"), service_message.get("service"))):
+                with BACKUP_SYSTEM_ACTION(): upstream.send(raw)
+            else: upstream.send(raw)
             result = {"sent": True}
         elif action == "ha.ws.close":
             tunnel_id = str(payload.get("tunnelId", ""))
@@ -3235,6 +3266,7 @@ def publish_local_configuration(supervisor_token, agent_id, force=False):
 
 
 def main() -> None:
+    global BACKUP_RUNTIME, BACKUP_GUARD, BACKUP_SYSTEM_ACTION
     options = read_json(OPTIONS_PATH, {})
     portal_url = str(options.get("portal_url", "")).rstrip("/")
     enrollment_code = str(options.get("enrollment_code", "")).strip().upper()
@@ -3247,6 +3279,21 @@ def main() -> None:
         raise SystemExit("Accès interne à Home Assistant indisponible")
     from factory_activation import configured as factory_configured, poll as factory_poll
     state = restore_identity(portal_url, str(options.get("restore_identity", "")))
+    from native_backup_guard import assert_update_ready, guarded_system_action
+    def read_native_backup():
+        return home_assistant_ws_command(supervisor_token, {"type":"backup/info"})
+    BACKUP_GUARD = lambda: assert_update_ready(read_native_backup)
+    BACKUP_SYSTEM_ACTION = lambda: guarded_system_action(read_native_backup)
+    if portal_url:
+        try:
+            from native_backup_runtime import NativeBackupRuntime
+            BACKUP_RUNTIME = NativeBackupRuntime(portal_url,
+                lambda: str(read_json(STATE_PATH, {}).get("token", "")),
+                lambda: supervisor_token, read_native_backup,
+                read_native_update=lambda entity: mobile_home_assistant_call(supervisor_token,"/states/"+entity), report=log)
+        except Exception:
+            BACKUP_RUNTIME = None
+            log("Copie locale indisponible ; autres fonctions conservées")
     factory_ready = factory_configured(options) if not state.get("token") else False
     if not factory_ready and not enrollment_code and not state.get("token") and not (relay_url and relay_house_id and relay_token):
         raise SystemExit("Configuration incomplète : code d'installation ou liaison VPS requis")
@@ -3347,6 +3394,8 @@ def main() -> None:
                 full_inventory=full_inventory,
             )
             summary["capabilities"] = ["installation.update.recovery_v1", "automation_update_v1", "automation_schedule_v1", "commissioning.discover_solar.mac", "commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            if BACKUP_RUNTIME:
+                summary["capabilities"].append("backup_export_v1")
             from installation_update import Update, heartbeat_status
             update_status = heartbeat_status(AGENT_VERSION)
             if update_status:
@@ -3366,6 +3415,9 @@ def main() -> None:
             if command_results:
                 summary["commandResults"] = command_results
             heartbeat_result = heartbeat(portal_url, str(state["token"]), summary)
+            if BACKUP_RUNTIME:
+                try: BACKUP_RUNTIME.submit(heartbeat_result.get("backupExport"))
+                except Exception: log("Copie locale en attente ; autres fonctions conservées")
             if command_results:
                 state.pop("command_results", None)
                 write_state(state)
@@ -3409,12 +3461,7 @@ def main() -> None:
                     if not isinstance(command, dict):
                         continue
                     result = queued_command_result(supervisor_token, command)
-                    results.append({
-                        "id": str(command.get("id", "")),
-                        "ok": bool(result.get("ok")),
-                        "error": str(result.get("error", ""))[:240],
-                        **({"result": result.get("result")} if command.get("action") in {"commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.activate_solarman", "commissioning.verify_deye"} and result.get("ok") else {}),
-                    })
+                    results.append(command_result_for_heartbeat(command, result))
                 if results:
                     state["command_results"] = results
                     write_state(state)
