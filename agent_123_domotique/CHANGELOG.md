@@ -1,3 +1,8 @@
+# 0.6.46
+
+- Distingue les intégrations déjà indisponibles des régressions après mise à jour, pour permettre leur revue et leur acceptation explicite dans le portail.
+- Les intégrations auparavant chargées et les équipements disponibles restent tous contrôlés après redémarrage.
+
 # 0.6.45
 
 - Prépare et installe à distance une version stable précise de Home Assistant Core, après confirmation du propriétaire et vérification réelle d’une sauvegarde complète.

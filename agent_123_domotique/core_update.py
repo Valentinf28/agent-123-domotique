@@ -43,7 +43,6 @@ class CoreUpdate(Reset):
         rows=self.call('/config/config_entries/entry');states=self.call('/states')
         if not isinstance(rows,list) or not isinstance(states,list):raise RuntimeError('Le bilan des équipements est indisponible.')
         entries=[{'id':e['entry_id'],'domain':e['domain'],'state':e['state']} for e in rows if not e.get('disabled_by')]
-        if any(e['state']!='loaded' for e in entries):raise RuntimeError('Une intégration est déjà en erreur. Faites-la vérifier avant la mise à jour.')
         domains=sorted({e['domain'] for e in entries})
         custom=[]
         for domain in domains:
@@ -53,7 +52,7 @@ class CoreUpdate(Reset):
         important=('climate.','switch.','sensor.','automation.','number.','select.','water_heater.')
         available=sorted(s['entity_id'] for s in states if s.get('entity_id','').startswith(important) and s.get('state') not in ('unavailable','unknown'))
         automations={s['entity_id']:s['state'] for s in states if s.get('entity_id','').startswith('automation.') and s.get('state') in ('on','off')}
-        return {'entries':sorted(entries,key=lambda e:e['id']),'domains':domains,'custom':custom,'available':available,'automations':automations}
+        return {'entries':sorted(entries,key=lambda e:e['id']),'domains':domains,'custom':custom,'available':available,'automations':automations,'existingFailures':[e for e in entries if e['state']!='loaded']}
 
     def inspect(self,target=None):
         self.require_admin();core=self.supervisor('/core/info');sup=self.supervisor('/supervisor/info');config=self.call('/config')
@@ -140,7 +139,7 @@ class CoreUpdate(Reset):
             info=self.supervisor('/core/info');config=self.call('/config');s['observedVersion']=config.get('version')
             current=self.snapshot();before=s['inventory']
             missing=sorted(set(before['available'])-set(current['available']))
-            checks={'version':info.get('version')==s['targetVersion']==config.get('version'),'running':config.get('state')=='RUNNING' and config.get('safe_mode') is not True,'integrations':{(e['id'],e['domain']) for e in before['entries']}<={(e['id'],e['domain']) for e in current['entries']},'automations':all(current['automations'].get(k)==v for k,v in before['automations'].items()),'entities':not missing}
+            checks={'version':info.get('version')==s['targetVersion']==config.get('version'),'running':config.get('state')=='RUNNING' and config.get('safe_mode') is not True,'integrations':{(e['id'],e['domain']) for e in before['entries'] if e['state']=='loaded'}<={(e['id'],e['domain']) for e in current['entries'] if e['state']=='loaded'},'automations':all(current['automations'].get(k)==v for k,v in before['automations'].items()),'entities':not missing}
             s['checks']=checks
             if all(checks.values()):s.update(state='completed',completedAt=int(self.clock()));s.pop('error',None)
             elif self.clock()-s['submittedAt']>900:s.update(state='attention_required',error='Le contrôle après mise à jour nécessite une intervention. Le déploiement est suspendu.')

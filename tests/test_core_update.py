@@ -62,8 +62,9 @@ class Tests(unittest.TestCase):
     def test_lost_install_response_is_never_replayed(self):
         self.f.fail_update=True;s=self.execute(self.prep());self.e.observe(s);self.assertEqual(len([x for x in self.f.calls if x[1]=='/core/update']),1)
         p={k:s[k] for k in ('operationId','consentId','releaseId','targetVersion')};p.update(operation='execute',ownerScope=O,confirmed=True,previewHash=s['previewHash']);self.e.command(p);self.assertFalse(self.queue)
-    def test_failed_integration_blocks_prepare(self):
-        self.f.entries[0]['state']='setup_error';self.assertEqual(self.prep()['state'],'failed');self.assertFalse([x for x in self.f.calls if x[1]=='/core/update'])
+    def test_preexisting_failure_is_reported_and_not_conflated_with_regression(self):
+        self.f.entries[0]['state']='setup_error';s=self.prep();self.assertEqual(s['state'],'prepared');self.assertEqual(s['inventory']['existingFailures'],[{'id':'e1','domain':'shelly','state':'setup_error'}])
+        s=self.execute(s);self.f.current='2026.10.4';self.assertEqual(self.e.observe(s)['state'],'completed')
     def test_changed_inventory_prevents_install(self):
         s=self.prep();self.f.states.pop();self.assertEqual(self.execute(s)['state'],'failed');self.assertFalse([x for x in self.f.calls if x[1]=='/core/update'])
     def test_configuration_check_failure(self):
