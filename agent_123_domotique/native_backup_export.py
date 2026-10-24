@@ -76,11 +76,14 @@ def read_key_input(data):
     if not isinstance(data, bytes) or len(data) > 16384:
         raise ExportRejected('INVALID_RECOVERY_KIT')
     try:
-        text = data.decode('utf8').strip()
+        text = data.decode('utf8').replace('\r\n', '\n').strip()
     except UnicodeError:
         raise ExportRejected('INVALID_RECOVERY_KIT') from None
     match = re.search(r'^(?:Encryption key|Clé de chiffrement|Native backup password):\s*(.+)$', text, re.M | re.I)
-    password = match.group(1).strip() if match else text
+    native_keys = re.findall(r'(?m)^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){6}$', text)
+    if len(native_keys) > 1:
+        raise ExportRejected('INVALID_RECOVERY_KIT')
+    password = match.group(1).strip() if match else (native_keys[0] if native_keys else text)
     if '\n' in password or not 1 <= len(password) <= 4096:
         raise ExportRejected('INVALID_RECOVERY_KIT')
     return password

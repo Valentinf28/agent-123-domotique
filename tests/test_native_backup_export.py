@@ -1,7 +1,7 @@
 import hashlib, io, json, os, tarfile, tempfile, unittest, uuid, fcntl
 from pathlib import Path
 from securetar import SecureTarArchive
-from native_backup_export import NativeBackupExportWorker, ExportRejected, read_private, CHUNK_BYTES, MAX_BYTES
+from native_backup_export import NativeBackupExportWorker, ExportRejected, read_private, CHUNK_BYTES, MAX_BYTES, read_key_input
 NOW=1800000000
 EXP='2030-01-01T00:00:00+00:00'
 ADDON='local_agent_123_domotique'
@@ -195,6 +195,12 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
   await self.w.tick(self.j);later={**self.j,'maxLocalBackups':2}
   self.p.request={'nonce':str(uuid.uuid4()),'expiresAt':EXP}
   self.assertEqual((await self.w.tick(later))['state'],'ready')
+ async def test_native_emergency_kit_localized_multiline(self):
+  key='ABCD-EFGH-JKLM-NPQR-STUV-WXYZ-1234'
+  self.assertEqual(read_key_input(('Emergency kit\r\nEncryption key\r\n'+key+'\r\nKeep safe').encode()),key)
+  for label in ('Encryption key', 'Clé de chiffrement'):
+   self.assertEqual(read_key_input(('Emergency kit\n'+label+'\n'+key+'\nKeep safe').encode()),key)
+  with self.assertRaises(ExportRejected):read_key_input((key+'\n'+key).encode())
  async def test_symlink_private_path_refused(self):
   target=self.root/'outside';target.write_text('{}');(self.root/(self.j['exportId']+'.json')).symlink_to(target)
   with self.assertRaises(OSError):await self.w.tick(self.j)
