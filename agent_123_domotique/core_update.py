@@ -16,6 +16,9 @@ from installation_reset import Reset, _MUTEX, _valid_uuid, digest
 
 ACTIVE={'preparing','backing_up','backup_uncertain','installing','verifying','attention_required','restoring'}
 _WORKERS={}
+# This bridge publishes a cached configuration document after maintenance. It is
+# transient HA REST state, not equipment availability. Legacy journals may include it.
+TRANSIENT_ENTITIES=frozenset({'sensor.home_local_configuration'})
 VERSION=re.compile(r'^202[6-9]\.(?:[1-9]|1[0-2])\.(?:0|[1-9][0-9]{0,2})$')
 
 def version(value):
@@ -50,7 +53,7 @@ class CoreUpdate(Reset):
             if p.is_file():
                 m=json.loads(p.read_text());custom.append({'domain':domain,'version':str(m.get('version','unknown'))[:80],'manifestHash':digest(m)})
         important=('climate.','switch.','sensor.','automation.','number.','select.','water_heater.')
-        available=sorted(s['entity_id'] for s in states if s.get('entity_id','').startswith(important) and s.get('state') not in ('unavailable','unknown'))
+        available=sorted(s['entity_id'] for s in states if s.get('entity_id','').startswith(important) and s.get('state') not in ('unavailable','unknown') and s['entity_id'] not in TRANSIENT_ENTITIES)
         automations={s['entity_id']:s['state'] for s in states if s.get('entity_id','').startswith('automation.') and s.get('state') in ('on','off')}
         return {'entries':sorted(entries,key=lambda e:e['id']),'domains':domains,'custom':custom,'available':available,'automations':automations,'existingFailures':[e for e in entries if e['state']!='loaded']}
 
@@ -138,7 +141,7 @@ class CoreUpdate(Reset):
         try:
             info=self.supervisor('/core/info');config=self.call('/config');s['observedVersion']=config.get('version')
             current=self.snapshot();before=s['inventory']
-            missing=sorted(set(before['available'])-set(current['available']))
+            missing=sorted((set(before['available'])-TRANSIENT_ENTITIES)-set(current['available']))
             checks={'version':info.get('version')==s['targetVersion']==config.get('version'),'running':config.get('state')=='RUNNING' and config.get('safe_mode') is not True,'integrations':{(e['id'],e['domain']) for e in before['entries'] if e['state']=='loaded'}<={(e['id'],e['domain']) for e in current['entries'] if e['state']=='loaded'},'automations':all(current['automations'].get(k)==v for k,v in before['automations'].items()),'entities':not missing}
             s['checks']=checks
             if all(checks.values()):s.update(state='completed',completedAt=int(self.clock()));s.pop('error',None)

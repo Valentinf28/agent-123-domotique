@@ -1,3 +1,7 @@
+## 0.6.47
+
+- Ne pas confondre le document technique transitoire de configuration avec un équipement manquant après une mise à jour du système. Les contrôles des vrais capteurs et automatismes restent obligatoires.
+
 # 0.6.46
 
 - Distingue les intégrations déjà indisponibles des régressions après mise à jour, pour permettre leur revue et leur acceptation explicite dans le portail.
