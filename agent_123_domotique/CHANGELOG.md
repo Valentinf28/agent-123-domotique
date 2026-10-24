@@ -1,3 +1,10 @@
+# 0.6.43
+
+- Connexion native guidée depuis le portail pour les intégrations du catalogue, y compris Midea / SmartHome et HomeKit Device.
+- Reprend les formulaires, menus, autorisations et consignes françaises de Home Assistant ; les secrets ne sont pas conservés dans le portail ou le journal de connexion.
+- Vérifie la maison propriétaire, la session et le résultat réel avant d’annoncer la connexion.
+- Préserve les parcours existants de découverte, Matter et Zigbee. Aucun appareil n’est actionné pendant l’ajout.
+
 # 0.6.34
 
 - Accepte et valide les réglages énergétiques et le nom de maison dans la copie locale.
