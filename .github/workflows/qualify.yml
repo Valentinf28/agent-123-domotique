@@ -60,4 +60,4 @@ jobs:
       - name: Build independent recovery app
         run: docker buildx build --platform linux/${{ matrix.arch }} --load -t labox-recovery:qualification ./recovery_123_domotique
       - name: Verify isolated imports, without network or writable root
-        run: docker run --platform linux/${{ matrix.arch }} --rm --network none --read-only --tmpfs /tmp -e PYTHONDONTWRITEBYTECODE=1 --entrypoint python3 labox-recovery:qualification -c "import sys; sys.path.insert(0, '/opt/recovery'); import recovery, archive_verify; assert recovery.VERSION == '0.1.0'; assert 'agent' not in sys.modules; assert 'websocket' not in sys.modules"
+        run: docker run --platform linux/${{ matrix.arch }} --rm --network none --read-only --tmpfs /tmp -e PYTHONDONTWRITEBYTECODE=1 --entrypoint python3 labox-recovery:qualification -c "import sys; sys.path.insert(0, '/opt/recovery'); import recovery, archive_verify; assert recovery.VERSION == '0.1.1'; assert 'agent' not in sys.modules; assert 'websocket' not in sys.modules"
