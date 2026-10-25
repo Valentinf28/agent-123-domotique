@@ -187,11 +187,20 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
                 if not flow['flowId']:raise RuntimeError('La session de l’intégration n’est pas vérifiable.')
                 state.update(flowId=flow['flowId'],step=flow['step'],phase='ready');save()
             return view(flow)
+        def finished_flow():
+            # A missing flow can mean successful creation, not failed login.
+            # Read actual entries/devices before releasing this owner's lease.
+            result=view({'flowId':'','step':'','kind':'cancelled','fields':[],'choices':[],'retry':False,'reason':'flow_finished'})
+            result['notice']='La session de connexion est terminée. Vérifiez les appareils reçus ci-dessous avant de recommencer.'
+            journal.pop(domain,None);save();return result
         def owned_flow():
             if not state or state.get('ownerScope')!=owner or state.get('session')!=session:raise RuntimeError('Reprenez la connexion dans la session qui l’a ouverte.')
             fid=state.get('flowId')
             if not isinstance(fid,str)or not ID.fullmatch(fid):raise RuntimeError('Le démarrage reste à vérifier. Aucune seconde connexion n’a été lancée.')
-            flow=call('/config/config_entries/flow/'+fid)
+            try:flow=call('/config/config_entries/flow/'+fid)
+            except urllib.error.HTTPError as error:
+                if error.code==404:return None
+                raise
             if not isinstance(flow,dict)or flow.get('handler')!=domain or flow.get('flow_id')!=fid:raise RuntimeError('La session de connexion a changé.')
             return flow
         if operation=='flow_reclaim':
@@ -200,7 +209,7 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
             if payload.get('confirmed') is not True or not state or state.get('ownerScope')!=owner:
                 raise RuntimeError('La reprise de cette connexion doit être confirmée par son propriétaire.')
             phase=state.get('phase')
-            if phase not in('ready','credentials'):
+            if phase not in('ready','credentials','submitted'):
                 raise RuntimeError('Un envoi reste à vérifier. Aucun identifiant ne sera renvoyé automatiquement.')
             if phase=='credentials':
                 state.update(session=session,expiresAt=clock()+TTL);save();return view(credentials_form())
@@ -209,10 +218,12 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
             try:flow=call('/config/config_entries/flow/'+fid)
             except urllib.error.HTTPError as error:
                 if error.code==404:
-                    journal.pop(domain,None);save();return view({'flowId':'','step':'','kind':'cancelled','fields':[],'choices':[],'retry':False})
+                    return finished_flow()
                 raise
             if not isinstance(flow,dict)or flow.get('handler')!=domain or flow.get('flow_id')!=fid:
                 raise RuntimeError('La session de connexion a changé.')
+            if phase=='submitted'and flow.get('step_id')==state.get('step'):
+                raise RuntimeError('Un envoi reste à vérifier. Aucun identifiant ne sera renvoyé automatiquement.')
             state.update(session=session,expiresAt=clock()+TTL);save();return observe(flow)
         if operation=='flow_start':
             if domain=='midea':
@@ -224,6 +235,7 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
                     if clock()>=state['expiresAt']:raise RuntimeError('La connexion a expiré. Annulez avant de recommencer.')
                     return view(credentials_form())
                 flow=owned_flow()
+                if flow is None:return finished_flow()
                 if clock()>=state['expiresAt']:raise RuntimeError('La connexion a expiré. Annulez-la avant de recommencer.')
                 if state.get('phase')=='submitted'and flow.get('step_id')==state.get('step'):raise RuntimeError('Un envoi reste à vérifier. Annulez avant de recommencer ; les identifiants ne seront pas renvoyés.')
                 return observe(flow)
@@ -257,6 +269,7 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
             journal.pop(domain,None);save()
             return view({'flowId':'','step':'','kind':'cancelled','fields':[],'choices':[],'retry':False})
         flow=owned_flow()
+        if flow is None:return finished_flow()
         if operation=='flow_authorize':
             # Forward only the current native OAuth state to HA's own signature
             # verifier. Never decode/sign a provider state or accept a target URL.
@@ -278,7 +291,10 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
             return observe(flow)
         if state.get('phase')!='ready'or payload['flowId']!=state['flowId']or payload['step']!=flow.get('step_id'):raise RuntimeError('Le formulaire a changé. Actualisez cette connexion.')
         values=validate_values(flow,payload['values']);state.update(phase='submitted',step=flow.get('step_id'));save()
-        try:reply=call('/config/config_entries/flow/'+state['flowId'],method='POST',payload=values)
+        try:reply=call('/config/config_entries/flow/'+state['flowId'],method='POST',payload=values,timeout=45)
+        except urllib.error.HTTPError as error:
+            if error.code==404:return finished_flow()
+            raise RuntimeError('L’envoi reste à vérifier. Actualisez sans renvoyer vos identifiants.')from None
         except Exception:raise RuntimeError('L’envoi reste à vérifier. Actualisez sans renvoyer vos identifiants.')from None
         return observe(reply)
 
