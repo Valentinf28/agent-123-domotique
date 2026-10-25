@@ -5,12 +5,13 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import urllib.error
 import uuid
 from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'recovery_123_domotique'))
-from recovery import Engine, Transport, Refused, REPOS
+from recovery import Engine, Transport, Refused, NativeRefused, REPOS
 
 class Fake:
     credential='a'*64
@@ -82,7 +83,7 @@ class RecoveryTests(unittest.TestCase):
     def test_only_official_repo_target_is_allowed(self):
         self.f.repo='deadbeef';self.engine.execute(self.cmd());self.assertFalse(self.f.posts)
     def test_update_reads_archive_and_confirms_actual_version_not_ack(self):
-        self.engine.execute(self.update());self.assertEqual(self.engine.load()['state'],'submitted')
+        self.engine.execute(self.update());self.assertEqual(self.engine.load()['state'],'submitted');self.assertEqual(self.f.posts[0][1],{'background':True,'backup':False})
         self.assertEqual(self.engine.load()['proof']['backupVerified'],True)
         self.f.agent['version']='0.6.49';self.engine.tick();self.assertEqual(self.engine.load()['state'],'completed')
     def test_update_failure_or_wrong_backup_blocks_install(self):
@@ -98,6 +99,27 @@ class RecoveryTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as d:
                 previous=self.f.agent[key];self.f.agent[key]=value
                 Engine(self.f,data=Path(d),clock=lambda:self.now).execute(self.update());self.assertFalse(self.f.posts);self.f.agent[key]=previous
+    def test_definitive_native_rejection_does_not_leave_an_uncertain_install(self):
+        original=self.f.native
+        def native(path,method='GET',body=None):
+            if method=='POST':raise NativeRefused('NATIVE_REFUSED')
+            return original(path,method,body)
+        self.f.native=native;self.engine.execute(self.update())
+        self.assertEqual(self.engine.load()['state'],'refused')
+        self.assertEqual(self.engine.load()['proof']['failureCode'],'native_refused')
+    def test_http_4xx_is_a_definitive_refusal_but_timeout_stays_uncertain(self):
+        class Opener:
+            def open(self,*args,**kwargs):raise urllib.error.HTTPError('http://supervisor',400,'Bad request',{},None)
+        t=Transport('a'*64,'internal');t.opener=Opener()
+        with self.assertRaises(NativeRefused):t.native('/addons/'+self.f.agent['slug']+'/update','POST',{'background':True,'backup':False})
+    def test_new_owner_rekeys_without_inheriting_prior_owner_device_id(self):
+        sys.path.insert(0,str(ROOT/'agent_123_domotique'))
+        from recovery_setup import provision
+        seen=[]
+        def register(body):seen.append(body);return {'registered':False,'rotate':True}
+        with patch('installation_reset.blocks_mutations',return_value=False):provision('primary'*10,lambda *a,**kw:self.fail('No native write before rekey'),data=self.data,register=register)
+        saved=json.loads((self.data/'recovery-enrollment.json').read_text())
+        self.assertNotEqual(saved['deviceId'],seen[0]['deviceId']);self.assertNotEqual(saved['credential'],seen[0]['credential'])
     def test_state_durable_and_private_before_submission(self):
         def submit(path,method='GET',body=None):
             if method=='POST':self.assertEqual(json.loads(self.engine.path.read_text())['state'],'submitted');raise TimeoutError()
@@ -120,7 +142,7 @@ class RecoveryTests(unittest.TestCase):
         calls=[];repo=sorted(REPOS)[0]
         def native(path,**kw):
             if path=='/addons/self/info':return {'slug':repo+'_agent_123_domotique','repository':repo}
-            if path.endswith('/info'):return {'slug':repo+'_recovery_123_domotique','repository':repo,'version_latest':'0.1.0','state':'unknown'}
+            if path.endswith('/info'):return {'slug':repo+'_recovery_123_domotique','repository':repo,'version_latest':'0.1.1','state':'unknown'}
             calls.append(path);raise TimeoutError()
         seen=[]
         def register(body):seen.append(body);return {'registered':True}

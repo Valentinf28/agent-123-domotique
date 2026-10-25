@@ -12,10 +12,11 @@ import signal
 import threading
 import time
 import urllib.request
+import urllib.error
 import uuid
 from archive_verify import verify_supervisor_archive
 
-VERSION = '0.1.0'
+VERSION = '0.1.1'
 ORIGIN = 'https://home.123panneaux-solaires.fr'
 REPOS = {hashlib.sha1(s.lower().encode()).hexdigest()[:8] for s in (
     'https://github.com/Valentinf28/agent-123-domotique',
@@ -24,6 +25,7 @@ UUID = re.compile(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}')
 SEMVER = re.compile(r'(0|[1-9]\d{0,4})\.(0|[1-9]\d{0,4})\.(0|[1-9]\d{0,4})')
 
 class Refused(RuntimeError): pass
+class NativeRefused(Refused): pass
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args): raise Refused('REDIRECT_REFUSED')
 
@@ -67,7 +69,11 @@ class Transport:
         request = urllib.request.Request(origin+path, method=method,
             data=json.dumps(body or {}).encode() if method == 'POST' else None,
             headers={'Authorization': 'Bearer '+token, 'Content-Type': 'application/json'})
-        with self.opener.open(request, timeout=25) as response:
+        try: response = self.opener.open(request, timeout=25)
+        except urllib.error.HTTPError as error:
+            if supervisor and 400 <= error.code < 500: raise NativeRefused('NATIVE_REFUSED') from None
+            raise
+        with response:
             raw = response.read(262145)
             if len(raw)>262144: raise Refused('RESPONSE_TOO_LARGE')
             result = json.loads(raw)
@@ -208,10 +214,15 @@ class Engine:
             self.permit(command)
             state.update(state='submitted', submittedAt=self.clock(), beforeVersion=agent.get('version'))
             self.save(state)
-            response = self.http.native('/addons/'+slug+'/'+endpoint, 'POST', {'background': True, **({'version': command['payload']['version']} if endpoint == 'update' else {})})
+            response = self.http.native('/addons/'+slug+'/'+endpoint, 'POST', {'background': True, **({'backup': False} if endpoint == 'update' else {})})
             state.update(accepted=True, jobId=response.get('job_id'))
             self.save(state)
             self.report(self.reconcile(state))
+        except NativeRefused:
+            # A native 4xx is a definitive refusal, unlike a lost/5xx response.
+            state['state']='refused';state.setdefault('proof',{})['failureCode']='native_refused';self.save(state)
+            try:self.report(state)
+            except Exception:pass
         except Exception:
             # The client never receives raw exception/response text (may contain secrets).
             if state['state'] != 'submitted': state['state'] = 'refused'

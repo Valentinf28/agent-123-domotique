@@ -1,4 +1,4 @@
-# La Box · Récupération 0.1.0 (qualification pilote)
+# La Box · Récupération 0.1.1 (qualification pilote)
 
 Cette application séparée démarre avant l’agent principal et ne dépend ni de
 Home Assistant Core, ni de son interface, ni du relais principal. Elle n’ouvre
@@ -57,3 +57,5 @@ pour ces opérations. Vérifier expiration, révocation, transfert et interrupti
 Les tests simulés et les images ARM/x86 ne remplacent pas cette recette matérielle.
 Une panne d’alimentation, du stockage, du Supervisor ou de connectivité empêche aussi
 ce service : son état doit rester « hors ligne », jamais « réparation réussie ».
+
+Le correctif 0.1.1 utilise les seuls champs acceptés par l’API native de mise à jour (background, backup). Une réponse 4xx explicite est enregistrée comme refus, distinct d’une réponse perdue. Une nouvelle version du secours exige un nouvel essai de redémarrage avant une maintenance Core.

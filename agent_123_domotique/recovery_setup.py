@@ -13,6 +13,7 @@ import secrets
 import threading
 import time
 import urllib.request
+import urllib.error
 import uuid
 
 ORIGIN='https://home.123panneaux-solaires.fr'
@@ -34,23 +35,29 @@ def provision(primary, native, *, data=Path('/data'), register=None):
     if register is None:
         def register(body):
             req=urllib.request.Request(ORIGIN+'/api/agent/recovery',method='POST',data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+primary,'Content-Type':'application/json'})
-            with urllib.request.build_opener(NoRedirect()).open(req,timeout=15) as r:
+            try:r=urllib.request.build_opener(NoRedirect()).open(req,timeout=15)
+            except urllib.error.HTTPError as error:
+                if error.code!=409:raise
+                r=error
+            with r:
                 value=r.read(8193)
                 if len(value)>8192:raise RuntimeError('Recovery registration too large')
                 return json.loads(value)
     reply=register({'deviceId':saved['deviceId'],'credential':saved['credential']})
+    if reply.get('rotate') is True:
+        saved={'binding':binding,'credential':secrets.token_hex(32),'deviceId':str(uuid.uuid4())};write(path,saved);return
     if reply.get('registered') is not True:raise RuntimeError('Registration refused')
     own=native('/addons/self/info');repo=own.get('repository')
     if repo not in REPOS or own.get('slug')!=repo+'_agent_123_domotique':raise RuntimeError('Source refused')
     slug=repo+'_recovery_123_domotique'
     info=native('/addons/'+slug+'/info')
-    if info.get('slug')!=slug or info.get('repository')!=repo or info.get('version_latest')!='0.1.0':raise RuntimeError('Recovery catalog not qualified')
+    if info.get('slug')!=slug or info.get('repository')!=repo or info.get('version_latest')!='0.1.1':raise RuntimeError('Recovery catalog not qualified')
     if info.get('state')=='unknown':
         if saved.get('installSubmitted'):return  # Operator must inspect an uncertain native install.
         saved['installSubmitted']=True;write(path,saved)
         native('/addons/'+slug+'/install',method='POST',payload={'background':True},timeout=30)
         return
-    if info.get('version')!='0.1.0' or info.get('boot')!='auto' or info.get('auto_update') is not False:raise RuntimeError('Recovery installation not qualified')
+    if info.get('version')!='0.1.1' or info.get('boot')!='auto' or info.get('auto_update') is not False:raise RuntimeError('Recovery installation not qualified')
     options={'credential':saved['credential'],'device_id':saved['deviceId']}
     if info.get('options')!=options:
         native('/addons/'+slug+'/options',method='POST',payload={'options':options})

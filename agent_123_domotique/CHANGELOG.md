@@ -1,3 +1,7 @@
+## 0.6.50
+
+- Qualify recovery 0.1.1 native update contract and automatic credential rekey after ownership changes.
+
 ## 0.6.49
 
 - Optional provisioning of a separate recovery application, with its own credential,

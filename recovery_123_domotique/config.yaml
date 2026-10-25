@@ -1,5 +1,5 @@
 name: La Box · Récupération
-version: "0.1.0"
+version: "0.1.1"
 slug: recovery_123_domotique
 description: Service de récupération indépendant pour les interventions SAV autorisées
 url: https://github.com/Valentinf28/agent-123-domotique
