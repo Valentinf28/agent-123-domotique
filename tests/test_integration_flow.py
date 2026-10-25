@@ -128,6 +128,35 @@ class NativeFlowTests(unittest.TestCase):
    result=f.run(root,'flow_advance',flowId='application_credentials',step='application_credentials',cloudConsent=True,values={'client_id':'id','client_secret':'PRIVATE-SECRET'})
    self.assertEqual(result['flow']['step'],'pick_implementation');self.assertEqual(sum(x['type']=='application_credentials/create'for x in calls),1)
    self.assertNotIn('PRIVATE-SECRET',json.dumps(result));self.assertNotIn('PRIVATE-SECRET',(root/'native-integration-flows.json').read_text())
+ def test_explicit_same_owner_reclaim_reads_form_without_replaying_a_submission(self):
+  with tempfile.TemporaryDirectory()as directory:
+   root=Path(directory);f=Fixture('midea',[{'name':'password','required':True}]);f.start(root);old=f.session;f.session=str(uuid.uuid4());before=len(f.calls)
+   self.assertRaises(RuntimeError,f.start,root)
+   self.assertRaises(RuntimeError,f.run,root,'flow_reclaim',cloudConsent=True,confirmed=False)
+   self.assertRaises(RuntimeError,f.run,root,'flow_reclaim',cloudConsent=True,confirmed=True,ownerScope='b'*64)
+   view=f.run(root,'flow_reclaim',cloudConsent=True,confirmed=True)
+   self.assertEqual(view['flow']['step'],'user');self.assertFalse(any(k.get('method')in('POST','DELETE')for p,k in f.calls[before:]))
+   f.session=old;self.assertRaises(RuntimeError,f.run,root,'flow_resume')
+ def test_reclaim_never_replays_uncertain_credentials_or_missing_native_flow(self):
+  with tempfile.TemporaryDirectory()as directory:
+   root=Path(directory);f=Fixture('midea',[{'name':'password','required':True}]);f.start(root);f.reply=TimeoutError();self.assertRaises(RuntimeError,f.advance,root,{'password':'PRIVATE'});f.session=str(uuid.uuid4());before=len(f.calls)
+   self.assertRaises(RuntimeError,f.run,root,'flow_reclaim',cloudConsent=True,confirmed=True);self.assertEqual(len(f.calls),before)
+  with tempfile.TemporaryDirectory()as directory:
+   import urllib.error
+   root=Path(directory);f=Fixture('midea');f.start(root);f.session=str(uuid.uuid4());original=f.call
+   def missing(path,**kw):
+    if path.endswith('/flow_fixture'):raise urllib.error.HTTPError(path,404,'Not Found',{},None)
+    return original(path,**kw)
+   f.call=missing;view=f.run(root,'flow_reclaim',cloudConsent=True,confirmed=True);self.assertEqual(view['flow']['kind'],'cancelled');self.assertEqual(json.loads((root/'native-integration-flows.json').read_text()),{})
+ def test_expired_ready_lease_can_be_reclaimed_only_with_cloud_consent(self):
+  with tempfile.TemporaryDirectory()as directory:
+   root=Path(directory);f=Fixture('midea');f.start(root);path=root/'native-integration-flows.json';journal=json.loads(path.read_text());journal['midea']['expiresAt']=0;path.write_text(json.dumps(journal));f.session=str(uuid.uuid4())
+   self.assertRaises(ValueError,f.run,root,'flow_reclaim',cloudConsent=False,confirmed=True)
+   self.assertEqual(f.run(root,'flow_reclaim',cloudConsent=True,confirmed=True)['flow']['kind'],'form')
+ def test_public_failures_are_fixed_codes_never_vendor_text_or_credentials(self):
+  from integration_flow import public_failure
+  self.assertEqual(public_failure(RuntimeError('Reprenez la connexion dans la session qui l’a ouverte.')),'native_connection_resume_required')
+  self.assertNotIn('PRIVATE',public_failure(RuntimeError('PRIVATE vendor password rejected')))
  def test_only_external_https_authorization_urls_are_exposed(self):
   for url in ('http://vendor.example','javascript:alert(1)','https://127.0.0.1','https://user:password@vendor.example','https://supervisor.local'):self.assertIsNone(authorization_url(url))
   self.assertEqual(authorization_url('https://auth.vendor.example/authorize?state=opaque'),'https://auth.vendor.example/authorize?state=opaque')

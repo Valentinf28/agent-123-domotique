@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.50"
+AGENT_VERSION = "0.6.51"
 BACKUP_RUNTIME = None
 BACKUP_GUARD = None
 BACKUP_SYSTEM_ACTION = None
@@ -2077,8 +2077,11 @@ def relay_command(
                 return response.get("result") if "result" in response else response
             try:
                 result = configure_equipment(payload, call_equipment, registry=equipment_registry)
-            except Exception:
-                raise RuntimeError("La connexion n’a pas abouti. Actualisez avant de reprendre.") from None
+            except Exception as error:
+                # Only fixed local messages cross the client boundary. Vendor
+                # exceptions can contain credentials and must remain hidden.
+                from integration_flow import public_failure
+                raise RuntimeError(public_failure(error)) from None
         elif action == "commissioning.wifi":
             from wifi_setup import command as wifi_command
             def supervisor_wifi(path, **kwargs):

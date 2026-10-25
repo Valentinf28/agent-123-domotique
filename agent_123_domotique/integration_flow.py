@@ -137,10 +137,10 @@ def validate_values(flow,values):
 def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
     from equipment_setup import DOMAINS,active_entries,device_list
     operation=payload.get('operation');domain=payload.get('connector');owner=payload.get('ownerScope');session=payload.get('session')
-    fields={'flow_start':{'session','cloudConsent'},'flow_resume':{'session'},'flow_advance':{'session','flowId','step','values','cloudConsent'},'flow_cancel':{'session'},'flow_authorize':{'session','flowId','state','code'}}
+    fields={'flow_start':{'session','cloudConsent'},'flow_resume':{'session'},'flow_reclaim':{'session','cloudConsent','confirmed'},'flow_advance':{'session','flowId','step','values','cloudConsent'},'flow_cancel':{'session'},'flow_authorize':{'session','flowId','state','code'}}
     if operation not in fields or set(payload)!={'operation','connector','ownerScope'}|fields[operation]or domain not in DOMAINS or not isinstance(owner,str)or not OWNER.fullmatch(owner)or not isinstance(session,str)or not UUID.fullmatch(session):raise ValueError('Parcours de connexion invalide.')
     cloud=domain in('netatmo','tado','home_connect','melcloud','panasonic_cc','smartthings','ring','overkiz','midea','tuya','wallbox','melcloud_home','growatt_server','solaredge')
-    if operation in('flow_start','flow_advance')and(type(payload.get('cloudConsent'))is not bool or cloud and payload['cloudConsent']is not True):raise ValueError('Autorisez la connexion initiale au compte du fabricant.')
+    if operation in('flow_start','flow_advance','flow_reclaim')and(type(payload.get('cloudConsent'))is not bool or cloud and payload['cloudConsent']is not True):raise ValueError('Autorisez la connexion initiale au compte du fabricant.')
     data=Path(data);data.mkdir(exist_ok=True);path=data/'native-integration-flows.json'
     fd=os.open(data/'native-integration-flows.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
     with os.fdopen(fd,'w')as lock:
@@ -194,6 +194,26 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
             flow=call('/config/config_entries/flow/'+fid)
             if not isinstance(flow,dict)or flow.get('handler')!=domain or flow.get('flow_id')!=fid:raise RuntimeError('La session de connexion a changé.')
             return flow
+        if operation=='flow_reclaim':
+            # Explicit same-owner handoff between browsers. Read the live form;
+            # never replay credentials, OAuth codes or an uncertain submission.
+            if payload.get('confirmed') is not True or not state or state.get('ownerScope')!=owner:
+                raise RuntimeError('La reprise de cette connexion doit être confirmée par son propriétaire.')
+            phase=state.get('phase')
+            if phase not in('ready','credentials'):
+                raise RuntimeError('Un envoi reste à vérifier. Aucun identifiant ne sera renvoyé automatiquement.')
+            if phase=='credentials':
+                state.update(session=session,expiresAt=clock()+TTL);save();return view(credentials_form())
+            fid=state.get('flowId')
+            if not isinstance(fid,str)or not ID.fullmatch(fid):raise RuntimeError('Session native invalide.')
+            try:flow=call('/config/config_entries/flow/'+fid)
+            except urllib.error.HTTPError as error:
+                if error.code==404:
+                    journal.pop(domain,None);save();return view({'flowId':'','step':'','kind':'cancelled','fields':[],'choices':[],'retry':False})
+                raise
+            if not isinstance(flow,dict)or flow.get('handler')!=domain or flow.get('flow_id')!=fid:
+                raise RuntimeError('La session de connexion a changé.')
+            state.update(session=session,expiresAt=clock()+TTL);save();return observe(flow)
         if operation=='flow_start':
             if domain=='midea':
                 config=call('/config');version=str(config.get('version',''))if isinstance(config,dict)else''
@@ -261,3 +281,19 @@ def configure(payload,call,*,registry,data=Path('/data'),clock=time.time):
         try:reply=call('/config/config_entries/flow/'+state['flowId'],method='POST',payload=values)
         except Exception:raise RuntimeError('L’envoi reste à vérifier. Actualisez sans renvoyer vos identifiants.')from None
         return observe(reply)
+
+
+def public_failure(error):
+    message=str(error)
+    if message in ('Reprenez la connexion dans la session qui l’a ouverte.',
+                   'La connexion a expiré. Annulez-la avant de recommencer.',
+                   'La connexion a expiré. Annulez avant de recommencer.'):
+        return 'native_connection_resume_required'
+    if message in ('Un envoi reste à vérifier. Les informations ne seront pas renvoyées automatiquement.',
+                   'Un envoi reste à vérifier. Annulez avant de recommencer ; les identifiants ne seront pas renvoyés.',
+                   'Un envoi reste à vérifier. Aucun identifiant ne sera renvoyé automatiquement.',
+                   'Le démarrage reste à vérifier. Aucune seconde connexion n’a été lancée.'):
+        return 'native_connection_pending'
+    if isinstance(error,urllib.error.HTTPError):
+        return 'native_connection_http_'+str(error.code) if error.code in(400,401,403,404,500,502,503,504) else 'native_connection_unavailable'
+    return 'La connexion n’a pas abouti. Actualisez avant de reprendre.'
