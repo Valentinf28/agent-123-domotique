@@ -1,9 +1,9 @@
 {
   "files": {
-    "agent.py": "beee2dd146a74aeab87d2ae99e97ee28694c82e5bc0f6a755e6e938a7aea8f06",
+    "agent.py": "94ce0ff5efef6a33ee80e31359da9381650c0fbbef2b5db45687ec2fd1434733",
     "automation_edit.py": "82e5999b55b295aa141a50697f7715a6263b5750175f34eeb82d4bff946eab97",
     "backup_setup.py": "7cb1a57529737b9be5647001f06b0a94a1e69053d5e349f85e8da68ca4ea43d4",
-    "config.yaml": "3ff3ddf8e2227ad0ebbe774676aa367ef3b839644a7814d0d3bac7735a337ef6",
+    "config.yaml": "d249c01c164d81469ec9c19b29c955a12cd30e71a562f2a63280740824a9fa16",
     "connector_install.py": "4818eff3fd688b243eefab146290e3d0cc3e336333e558ad34c1e05caee6f482",
     "core_update.py": "593c0e5b008f53298cb7196dc1e6da3a6091cabc21062f56f919295bb9cd096e",
     "ddzy422_activation.py": "dba8499cd56b2a75897f7a4d215989532e10c7651def4c3916ca35b941bbb9f6",
@@ -33,6 +33,7 @@
     "local_mobile.py": "87504997ce76b519350b18da83534f07a69cb11977402c4dc11e4e5efba167d1",
     "local_solar_measurements.py": "19407144631a57d37e23fcde2e703e6b26eb5a375d15fa52fe0185ec0741af20",
     "micro_setup.py": "353576d272ce52cfca0c6e3802124442ee45bfcd57288ee7a5e520f33c65bc5f",
+    "midea_faults.py": "ceddc522e1acd59440a85b0aa706212c0f11ac61af80a46d5fb4dad4e0f1f3e1",
     "native_backup_export.py": "a857e6ce29747615d79cede33ec46586236d9218ab6f86d696a8ce80f8aa3510",
     "native_backup_guard.py": "2d804dea60770b069c5e0ee9786dfd595cf0bcdaf10f1340f8f33ae3a6985d22",
     "native_backup_runtime.py": "6ec4682a785f3cea99aee66b9c5505fb83c1f64096a949a0e104afbbada13a8b",
@@ -66,5 +67,5 @@
     "vendor/solarman-25.08.16.zip": "04fd37da1ba1cd3a590146a48602162ad5c7e0c319c80ca326369cd5a26da977",
     "wifi_setup.py": "da3ae91a1622391e0b326ff6ef74e9272572cfb05792a1599aa28e66f0beb4d0"
   },
-  "version": "0.6.52"
+  "version": "0.6.53"
 }

@@ -9,6 +9,7 @@ COPY factory_stage.py /opt/agent/factory_stage.py
 COPY agent.py /opt/agent/agent.py
 COPY automation_edit.py /opt/agent/automation_edit.py
 COPY live_energy_states.py /opt/agent/live_energy_states.py
+COPY midea_faults.py /opt/agent/midea_faults.py
 COPY wifi_setup.py /opt/agent/wifi_setup.py
 COPY requirements.lock /opt/agent/requirements.lock
 RUN virtualenv /opt/tuya-sdk && /opt/tuya-sdk/bin/pip install --no-cache-dir -r /opt/agent/requirements.lock && /opt/tuya-sdk/bin/pip check

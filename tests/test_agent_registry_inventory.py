@@ -80,6 +80,29 @@ class RegistryInventoryTests(unittest.TestCase):
         self.assertNotIn("platform", fast["inventory"][0]["attributes"])
         registry.assert_called_once_with("token")
 
+    def test_midea_fault_snapshot_is_carried_by_full_and_fast_inventory(self):
+        from unittest.mock import Mock
+        monitor = Mock()
+        monitor.snapshot.return_value = {"pac_fault_status": "reported", "pac_fault_code_raw": 7}
+        entity = "climate.pac_zone_1"
+        metadata = {entity: {"platform": "midea"}}
+        states = [{"entity_id": entity, "state": "heat", "attributes": {"temperature": 39}}]
+        def fake_request(url, **kwargs):
+            return {"version": "fixture", "time_zone": "Europe/Paris"} if url.endswith("/config") else states
+        with patch.object(agent, "request_json", side_effect=fake_request), patch.object(agent, "maintain_daily_pv_peak"), \
+                patch.object(agent, "home_assistant_registry_metadata", return_value=metadata), \
+                patch.object(agent, "REGISTRY_METADATA_CACHE", metadata), patch.object(agent, "MIDEA_FAULT_MONITOR", monitor), \
+                patch.object(agent, "shelly_daily_energy_inventory", return_value=[]), \
+                patch.object(agent, "device_daily_energy_inventory", return_value=[]), \
+                patch.object(agent, "period_energy_inventory", return_value=[]), patch.object(agent, "solar_forecast_inventory", return_value=[]):
+            for full in (True, False):
+                result = agent.home_assistant_summary("token", full_inventory=full)
+                row = next(row for row in result['inventory'] if row['entityId'] == entity)
+                self.assertEqual(row['attributes']['pac_fault_code_raw'], 7)
+                self.assertEqual(row['attributes']['pac_fault_status'], 'reported')
+                self.assertEqual(row['attributes']['temperature'], 39)
+        self.assertEqual(monitor.request_refresh.call_count, 2)
+
     def test_fast_inventory_keeps_automation_trigger_for_remote_notifications(self):
         config = {"version": "2026.8.0", "time_zone": "Europe/Paris"}
         states = [{
