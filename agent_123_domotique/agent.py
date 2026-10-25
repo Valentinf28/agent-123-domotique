@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.48"
+AGENT_VERSION = "0.6.49"
 BACKUP_RUNTIME = None
 BACKUP_GUARD = None
 BACKUP_SYSTEM_ACTION = None
@@ -3317,6 +3317,14 @@ def main() -> None:
         except Exception:
             BACKUP_RUNTIME = None
             log("Copie locale indisponible ; autres fonctions conservées")
+    if options.get("recovery_enabled") is True:
+        from recovery_setup import start as start_recovery_setup
+        def recovery_supervisor(path, **kwargs):
+            response = request_json("http://supervisor"+path, token=supervisor_token, **kwargs)
+            if not isinstance(response, dict) or response.get("result") != "ok" or not isinstance(response.get("data"), dict):
+                raise RuntimeError("Service de récupération indisponible")
+            return response["data"]
+        start_recovery_setup(lambda: str(read_json(STATE_PATH, {}).get("token", "")), recovery_supervisor)
     factory_ready = factory_configured(options) if not state.get("token") else False
     if not factory_ready and not enrollment_code and not state.get("token") and not (relay_url and relay_house_id and relay_token):
         raise SystemExit("Configuration incomplète : code d'installation ou liaison VPS requis")

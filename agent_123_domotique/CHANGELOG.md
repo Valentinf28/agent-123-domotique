@@ -1,3 +1,9 @@
+## 0.6.49
+
+- Optional provisioning of a separate recovery application, with its own credential,
+  outbound HTTPS connection and durable operation journal. No Tailscale dependency.
+- Recovery remains disabled by default until a real installation is qualified.
+
 ## 0.6.48
 
 - Poursuivre les contrôles en lecture seule après un résultat à vérifier : le retour réel des équipements peut terminer la maintenance sans relancer l’installation ni une sauvegarde. La diffusion reste suspendue pour examen opérateur.
