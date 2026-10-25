@@ -140,7 +140,7 @@ class NativeFlowTests(unittest.TestCase):
  def test_reclaim_never_replays_uncertain_credentials_or_missing_native_flow(self):
   with tempfile.TemporaryDirectory()as directory:
    root=Path(directory);f=Fixture('midea',[{'name':'password','required':True}]);f.start(root);f.reply=TimeoutError();self.assertRaises(RuntimeError,f.advance,root,{'password':'PRIVATE'});f.session=str(uuid.uuid4());before=len(f.calls)
-   self.assertRaises(RuntimeError,f.run,root,'flow_reclaim',cloudConsent=True,confirmed=True);self.assertEqual(len(f.calls),before)
+   self.assertRaises(RuntimeError,f.run,root,'flow_reclaim',cloudConsent=True,confirmed=True);self.assertFalse(any(k.get('method')in('POST','DELETE')for p,k in f.calls[before:]))
   with tempfile.TemporaryDirectory()as directory:
    import urllib.error
    root=Path(directory);f=Fixture('midea');f.start(root);f.session=str(uuid.uuid4());original=f.call
@@ -153,6 +153,38 @@ class NativeFlowTests(unittest.TestCase):
    root=Path(directory);f=Fixture('midea');f.start(root);path=root/'native-integration-flows.json';journal=json.loads(path.read_text());journal['midea']['expiresAt']=0;path.write_text(json.dumps(journal));f.session=str(uuid.uuid4())
    self.assertRaises(ValueError,f.run,root,'flow_reclaim',cloudConsent=False,confirmed=True)
    self.assertEqual(f.run(root,'flow_reclaim',cloudConsent=True,confirmed=True)['flow']['kind'],'form')
+ def test_completed_flow_missing_from_native_api_returns_actual_connected_devices_without_replaying_login(self):
+  import urllib.error
+  for operation in ('flow_start','flow_resume','flow_reclaim','flow_cancel'):
+   with self.subTest(operation=operation),tempfile.TemporaryDirectory()as directory:
+    root=Path(directory);f=Fixture('midea');f.start(root);original=f.call
+    f.native=[{'entry_id':'entry_pac','domain':'midea','state':'loaded'}]
+    def missing(path,**kw):
+     if path.endswith('/flow_fixture'):raise urllib.error.HTTPError(path,404,'Not Found',{},None)
+     return original(path,**kw)
+    f.call=missing;before=len(f.calls);extra={'cloudConsent':True}if operation=='flow_start'else{'cloudConsent':True,'confirmed':True}if operation=='flow_reclaim'else{}
+    result=f.run(root,operation,**extra);self.assertEqual(result['entries'][0]['entryId'],'entry_pac');self.assertTrue(result['pairingReady']);self.assertEqual(result['flow']['reason'],'flow_finished');self.assertEqual(json.loads((root/'native-integration-flows.json').read_text()),{})
+    self.assertFalse(any(k.get('method')in('POST','DELETE')for p,k in f.calls[before:]))
+ def test_missing_flow_after_unknown_login_releases_lease_only_after_reading_actual_entries(self):
+  import urllib.error
+  with tempfile.TemporaryDirectory()as directory:
+   root=Path(directory);f=Fixture('midea',[{'name':'password','required':True}]);f.start(root);f.reply=TimeoutError();self.assertRaises(RuntimeError,f.advance,root,{'password':'PRIVATE'});original=f.call;f.session=str(uuid.uuid4())
+   def missing(path,**kw):
+    if path.endswith('/flow_fixture'):raise urllib.error.HTTPError(path,404,'Not Found',{},None)
+    return original(path,**kw)
+   f.call=missing;result=f.run(root,'flow_reclaim',cloudConsent=True,confirmed=True);self.assertEqual(result['devices'],[]);self.assertFalse(result['pairingReady']);self.assertEqual(result['flow']['kind'],'cancelled');self.assertNotIn('PRIVATE',json.dumps(result))
+ def test_missing_flow_does_not_clear_lease_if_actual_entries_are_unavailable(self):
+  import urllib.error
+  with tempfile.TemporaryDirectory()as directory:
+   root=Path(directory);f=Fixture('midea');f.start(root);original=f.call
+   def unavailable(path,**kw):
+    if path.endswith('/flow_fixture'):raise urllib.error.HTTPError(path,404,'Not Found',{},None)
+    if path=='/config/config_entries/entry':raise ConnectionError()
+    return original(path,**kw)
+   f.call=unavailable;self.assertRaises(ConnectionError,f.run,root,'flow_resume');self.assertIn('midea',json.loads((root/'native-integration-flows.json').read_text()))
+ def test_cloud_submission_has_time_to_finish_but_is_never_replayed(self):
+  with tempfile.TemporaryDirectory()as directory:
+   root=Path(directory);f=Fixture('midea',[{'name':'password','required':True}]);f.start(root);f.reply=TimeoutError();self.assertRaises(RuntimeError,f.advance,root,{'password':'PRIVATE'});posts=[k for p,k in f.calls if p.endswith('/flow_fixture')and k.get('method')=='POST'];self.assertEqual(len(posts),1);self.assertEqual(posts[0]['timeout'],45)
  def test_public_failures_are_fixed_codes_never_vendor_text_or_credentials(self):
   from integration_flow import public_failure
   self.assertEqual(public_failure(RuntimeError('Reprenez la connexion dans la session qui l’a ouverte.')),'native_connection_resume_required')
