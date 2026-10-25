@@ -24,7 +24,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.52"
+AGENT_VERSION = "0.6.53"
+MIDEA_FAULT_MONITOR = None
 BACKUP_RUNTIME = None
 BACKUP_GUARD = None
 BACKUP_SYSTEM_ACTION = None
@@ -1178,6 +1179,20 @@ def home_assistant_summary(
         if isinstance(state, dict) and state.get("state") not in {"unavailable", "unknown"}
     )
     registry_metadata = home_assistant_registry_metadata(supervisor_token) if full_inventory else {}
+    global MIDEA_FAULT_MONITOR
+    if MIDEA_FAULT_MONITOR is None:
+        from midea_faults import MideaFaultMonitor
+        MIDEA_FAULT_MONITOR = MideaFaultMonitor()
+    fault_metadata = registry_metadata if full_inventory else REGISTRY_METADATA_CACHE
+    midea_climates = {state.get("entity_id") for state in states if isinstance(state, dict)
+                      and str(state.get("entity_id", "")).startswith("climate.")
+                      and fault_metadata.get(state.get("entity_id"), {}).get("platform") == "midea"}
+    MIDEA_FAULT_MONITOR.request_refresh(
+        midea_climates,
+        lambda entity_id: home_assistant_ws_command(supervisor_token,
+            {"type": "config/entity_registry/get", "entity_id": entity_id}, timeout=2),
+        lambda entry_id: request_json(f"{SUPERVISOR_API}/diagnostics/config_entry/{entry_id}",
+            token=supervisor_token, timeout=2))
     inventory = []
     for state in states[:1000]:
         if not isinstance(state, dict):
@@ -1199,6 +1214,8 @@ def home_assistant_summary(
         if entity_id == "sensor.1_2_3_home_local_identity":
             safe_attributes.update({key: attributes[key] for key in ("public_key", "protocol", "urls") if key in attributes})
         safe_attributes.update(registry_metadata.get(entity_id, {}))
+        if entity_id in midea_climates:
+            safe_attributes.update(MIDEA_FAULT_MONITOR.snapshot(entity_id))
         inventory.append({
             "entityId": entity_id,
             "name": str(attributes.get("friendly_name", entity_id)),
