@@ -91,14 +91,28 @@ def replacement(config, payload):
     result.update(alias="1.2.3 Home · " + name, trigger=[trigger], condition=[{"condition": "time", "weekday": [d for d in DAYS if d in days]}] if days else [], action=[{"service": domain + "." + service, "target": {"entity_id": entity}}])
     return result
 
+def native_config(ws, entity):
+    """Accept the real adapter's unwrapped result, or a raw WS envelope."""
+    response = ws({"type": "automation/config", "entity_id": entity})
+    if not isinstance(response, dict): raise ValueError("Lecture native refusée.")
+    if "success" in response:
+        if response["success"] is not True or not isinstance(response.get("result"), dict):
+            raise ValueError("Lecture native refusée.")
+        result = response["result"]
+    else:
+        if set(response) != {"config"}: raise ValueError("Lecture native refusée.")
+        result = response
+    config = result.get("config")
+    if not isinstance(config, dict): raise ValueError("Lecture native refusée.")
+    return config
+
+
 def read(payload, call, ws):
     if set(payload) != {"entityId"} or not isinstance(payload.get("entityId"), str) or not re.fullmatch(r"automation\.[a-z0-9_]+", payload["entityId"]): raise ValueError("Automatisation invalide.")
     entity = payload["entityId"]
     state = call("/states/" + entity)
     if state.get("entity_id") != entity or state.get("state") not in ("on", "off"): raise ValueError("Automatisation indisponible.")
-    response = ws({"type": "automation/config", "entity_id": entity})
-    if response.get("success") is not True: raise ValueError("Lecture native refusée.")
-    config = response.get("result", {}).get("config")
+    config = native_config(ws, entity)
     identifier = validate_existing(config)
     if digest(call("/config/automation/config/" + identifier)) != digest(config): raise RuntimeError("La configuration a changé ; rechargez la règle.")
     trigger = items(config, "trigger")[0]; conditions = items(config, "condition")
@@ -141,9 +155,7 @@ def update(payload, call, ws, *, operation_id, data=Path("/data")):
             raise RuntimeError("La modification précédente doit être vérifiée ; aucun nouvel envoi automatique.")
         state = call("/states/" + entity)
         if state.get("entity_id") != entity or state.get("state") not in ("on", "off"): raise ValueError("Automatisation indisponible.")
-        native = ws({"type": "automation/config", "entity_id": entity})
-        if native.get("success") is not True: raise ValueError("Lecture native refusée.")
-        original = native.get("result", {}).get("config")
+        original = native_config(ws, entity)
         identifier = validate_existing(original)
         if payload.get("expectedDigest") != digest(original): raise RuntimeError("La règle a changé depuis sa lecture. Rechargez-la avant de confirmer.")
         endpoint = "/config/automation/config/" + identifier
@@ -191,9 +203,7 @@ def delete(payload, call, ws, *, operation_id, data=Path('/data')):
         raise RuntimeError('La suppression précédente doit être vérifiée ; aucun nouvel envoi.')
     snapshot = read({'entityId': payload['entityId']}, call, ws)
     if snapshot['configDigest'] != payload['expectedDigest']: raise RuntimeError('La règle a changé depuis sa lecture.')
-    entity = payload['entityId']; response = ws({'type': 'automation/config', 'entity_id': entity})
-    if response.get('success') is not True: raise ValueError('Lecture native refusée.')
-    original = response.get('result', {}).get('config'); identifier = validate_existing(original)
+    entity = payload['entityId']; original = native_config(ws, entity); identifier = validate_existing(original)
     if digest(original) != payload['expectedDigest']: raise RuntimeError('La règle a changé depuis sa lecture.')
     if not isinstance(operation_id, str) or not operation_id: raise ValueError('Identité de commande absente.')
     folder = data/'automation-edits'; folder.mkdir(mode=0o700, exist_ok=True)

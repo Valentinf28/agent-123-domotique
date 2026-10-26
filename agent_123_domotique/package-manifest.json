@@ -1,9 +1,9 @@
 {
   "files": {
-    "agent.py": "94ce0ff5efef6a33ee80e31359da9381650c0fbbef2b5db45687ec2fd1434733",
-    "automation_edit.py": "82e5999b55b295aa141a50697f7715a6263b5750175f34eeb82d4bff946eab97",
+    "agent.py": "96c69cbd1fb491c46b3aab111a10c414d6cff0e2e57beed163c6c60921194243",
+    "automation_edit.py": "19cf9e5c0021c957ca542cf71b496727f38bd11087a5a05a2cc8aa0158ac36e1",
     "backup_setup.py": "7cb1a57529737b9be5647001f06b0a94a1e69053d5e349f85e8da68ca4ea43d4",
-    "config.yaml": "d249c01c164d81469ec9c19b29c955a12cd30e71a562f2a63280740824a9fa16",
+    "config.yaml": "df7355b8d10922f84937163a2dba6c3aff5403fc443283f0ff53b041fdee1570",
     "connector_install.py": "4818eff3fd688b243eefab146290e3d0cc3e336333e558ad34c1e05caee6f482",
     "core_update.py": "593c0e5b008f53298cb7196dc1e6da3a6091cabc21062f56f919295bb9cd096e",
     "ddzy422_activation.py": "dba8499cd56b2a75897f7a4d215989532e10c7651def4c3916ca35b941bbb9f6",
@@ -67,5 +67,5 @@
     "vendor/solarman-25.08.16.zip": "04fd37da1ba1cd3a590146a48602162ad5c7e0c319c80ca326369cd5a26da977",
     "wifi_setup.py": "da3ae91a1622391e0b326ff6ef74e9272572cfb05792a1599aa28e66f0beb4d0"
   },
-  "version": "0.6.53"
+  "version": "0.6.54"
 }
