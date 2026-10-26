@@ -109,4 +109,19 @@ class AutomationDeleteTests(unittest.TestCase):
   with self.assertRaisesRegex(RuntimeError,'Configuration précédente conservée'):self.execute_delete()
   self.assertEqual(self.config,self.initial);self.assertEqual(self.active,'off')
 
+class ActualNativeAdapterTests(AutomationEditTests):
+ def ws(self,payload):return super().ws(payload)['result']
+ def test_real_adapter_read_and_edit(self):
+  self.assertEqual(read({'entityId':self.entity},self.call,self.ws)['configDigest'],digest(self.initial))
+  self.assertTrue(self.execute()['updated'])
+ def test_failed_or_ambiguous_envelope_cannot_enable_mutation(self):
+  from automation_edit import native_config
+  for value in [None, [], {}, {'success':False,'result':{'config':self.initial}}, {'config':self.initial,'error':'denied'}, {'result':{'config':self.initial}}, {'success':True,'result':None}, {'config':None}]:
+   with self.subTest(value=value):
+    with self.assertRaises(ValueError):native_config(lambda _:value,self.entity)
+  self.assertEqual(self.writes,[])
+
+class ActualNativeDeleteTests(AutomationDeleteTests):
+ def ws(self,payload):return AutomationEditTests.ws(self,payload)['result']
+
 if __name__=='__main__':unittest.main()

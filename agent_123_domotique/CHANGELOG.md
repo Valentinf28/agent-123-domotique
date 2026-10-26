@@ -1,3 +1,7 @@
+## 0.6.54
+
+- Corrige la lecture du format natif des automatismes pour permettre leur modification et leur suppression après confirmation, en conservant les contrôles de provenance et de concurrence.
+
 ## 0.6.50
 
 - Qualify recovery 0.1.1 native update contract and automatic credential rekey after ownership changes.
