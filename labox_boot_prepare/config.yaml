@@ -1,0 +1,34 @@
+name: "La Box · Préparation HDMI temporaire"
+description: "Atelier uniquement : sauvegarde et masquage du texte HAOS, puis désinstallation."
+version: "0.2.0"
+slug: labox_boot_prepare
+arch: [aarch64, amd64]
+init: false
+stage: experimental
+startup: once
+boot: manual_only
+host_network: false
+host_pid: false
+hassio_api: false
+homeassistant_api: false
+full_access: true
+privileged: [SYS_ADMIN]
+map:
+  - type: share
+    read_only: false
+options:
+  operation: plan
+  device: ""
+  partuuid: ""
+  machine: odroid-m1s
+  haos: "18.3"
+  expected_sha256: ""
+  backup: ""
+schema:
+  operation: list(plan|apply|restore)
+  device: str
+  partuuid: str
+  machine: list(odroid-m1s|odroid-m1|odroid-n2)
+  haos: str
+  expected_sha256: str
+  backup: str

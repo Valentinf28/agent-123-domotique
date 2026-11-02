@@ -30,3 +30,12 @@ Tests automatisés du stockage, de l’isolation des maisons/propriétaires, de 
 - Planifier les sauvegardes locales, vérifier la destination distante si activée, conserver le kit de secours hors de la box.
 - Vérifier la capacité du stockage distant avant toute nouvelle activation. Une réserve disque insuffisante doit bloquer les nouveaux envois.
 - Conserver la fiche de recette de l’unité et les versions/empreintes des images installées.
+
+
+## Sortie HDMI et maintenance technique
+
+La préparation HDMI est une étape atelier distincte, documentée dans `labox_boot_prepare/README.md`. Sur les box sans écran, aucun tableau de bord HAOS n’est présenté en HDMI. Sur une console, l’application reste le point d’entrée visuel.
+
+Avant d’appliquer le profil de démarrage, préparer le module local `labox_maintenance` et son kit technique propre à cette unité. Tester l’authentification par clavier USB, l’expiration de la session et le retour à l’app ; archiver sauvegarde de démarrage, empreintes et kit privé hors des images réutilisables. Ces deux modules sont expérimentaux jusqu’à la recette physique sur chaque type de matériel livré.
+
+Le raccourci et le code de maintenance restent dans la documentation équipe. Après une mise à jour HAOS, auditer et requalifier l’affichage et l’accès local ; aucune modification silencieuse du démarrage n’est effectuée par l’agent.
