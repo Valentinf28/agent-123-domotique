@@ -10,7 +10,7 @@ from ddzy422_diagnostics import diagnose
 
 NOW = datetime(2026, 11, 5, 22, 0, tzinfo=timezone.utc)
 ADAPTERS = [{'enabled': True, 'ipv4': [{'address': '192.168.1.10', 'network_prefix': 24}]}]
-SETTINGS = {'host': '192.168.1.183', 'logger_serial': 2615526483, 'mac': 'E8FDF8ED41DE'}
+SETTINGS = {'host': '192.168.1.123', 'logger_serial': 1234567890, 'mac': '020000000001'}
 
 
 class MeterDiagnosticTests(unittest.TestCase):
