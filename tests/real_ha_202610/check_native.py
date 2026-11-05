@@ -40,7 +40,7 @@ async def recipe():
                 'unit_system':'metric','time_zone':'UTC','country':'FR'},'sensor':{},'network':{}},hass)
             assert result is hass,'Core bootstrap failed'
             integration=await loader.async_get_integration(hass,DOMAIN)
-            assert integration.domain==DOMAIN and integration.manifest['version']=='0.1.1'
+            assert integration.domain==DOMAIN and integration.manifest['version']=='0.1.2'
             component=await integration.async_get_component()
             sensor=await integration.async_get_platform('sensor')
             coordinator_module=importlib.import_module(f'custom_components.{DOMAIN}.coordinator')
@@ -48,13 +48,13 @@ async def recipe():
             transport=importlib.import_module(f'custom_components.{DOMAIN}.transport')
             checks.append('real_manifest_component_configflow_sensor_coordinator_import')
             settings={'host':'192.168.6.194','logger_serial':2616442643,'mac':'D42787012CD2'}
-            adapters=[{'enabled':True,'ipv4':[{'address':'192.168.6.180','network_prefix':24}]}]
+            adapters=[{'name':'end0','enabled':False,'auto':True,'default':True,'ipv4':[{'address':'192.168.6.180','network_prefix':24}]}]
             def sample():
                 return {'readAtUtc':datetime.now(timezone.utc).isoformat(),'values':{
                     'gridPowerW':-459,'importTotalKwh':3083.61,'exportTotalKwh':5667.90,
                     'voltageV':238.3,'currentA':-3.231,'frequencyHz':49.97,'powerFactor':-.596}}
             async def read(*args):return sample()
-            with (patch.object(network,'async_get_adapters',AsyncMock(return_value=adapters)),
+            with (patch.object(coordinator_module,'async_load_adapters',AsyncMock(return_value=adapters)),
                   patch.object(component,'async_read',side_effect=read),
                   patch.object(flow_module,'async_read',side_effect=read),
                   patch.object(transport,'read_sample',side_effect=AssertionError('HARDWARE IO FORBIDDEN')),

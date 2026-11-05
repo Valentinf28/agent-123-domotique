@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.55"
+AGENT_VERSION = "0.6.56"
 MIDEA_FAULT_MONITOR = None
 BACKUP_RUNTIME = None
 BACKUP_GUARD = None
@@ -1211,6 +1211,8 @@ def home_assistant_summary(
             for key in SAFE_ATTRIBUTE_KEYS
             if key in attributes
         }
+        if attributes.get("state_class") in ("measurement", "total", "total_increasing"):
+            safe_attributes["state_class"] = attributes["state_class"]
         if entity_id == "sensor.1_2_3_home_local_identity":
             safe_attributes.update({key: attributes[key] for key in ("public_key", "protocol", "urls") if key in attributes})
         safe_attributes.update(registry_metadata.get(entity_id, {}))

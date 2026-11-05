@@ -3,7 +3,7 @@ try:
 except ImportError:  # HA versions before the core schema-library migration.
     import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.components import network
+from .coordinator import current_adapters
 from homeassistant.const import CONF_HOST
 from .const import DOMAIN
 from .transport import validate_settings, validate_local_host
@@ -17,7 +17,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 settings = validate_settings(user_input[CONF_HOST], user_input['logger_serial'], user_input['mac'])
-                validate_local_host(settings[CONF_HOST], await network.async_get_adapters(self.hass))
+                validate_local_host(settings[CONF_HOST], await current_adapters(self.hass))
                 await self.async_set_unique_id(str(settings['logger_serial']))
                 existing = next((e for e in self._async_current_entries() if e.unique_id == self.unique_id), None)
                 if existing:
