@@ -1,14 +1,14 @@
 {
   "files": {
-    "agent.py": "18790eed1715866635dab638bd6d5410f0fae5f54538da10310999ca1c37adf5",
+    "agent.py": "e8b56cb61426025f0ee897ff9697e0dbf13ea8c18792e7d83b30d0346f826610",
     "automation_edit.py": "19cf9e5c0021c957ca542cf71b496727f38bd11087a5a05a2cc8aa0158ac36e1",
     "backup_setup.py": "7cb1a57529737b9be5647001f06b0a94a1e69053d5e349f85e8da68ca4ea43d4",
-    "config.yaml": "01fd95212f3791b45c47f8e1d259fce41c0e8594c28c1deab19be77ccfaf7b18",
+    "config.yaml": "87cf557b9a5cb2ee512a12a8afab9b6b30f9101f260bfe87feace7adcd9634d3",
     "connector_install.py": "4818eff3fd688b243eefab146290e3d0cc3e336333e558ad34c1e05caee6f482",
     "core_update.py": "593c0e5b008f53298cb7196dc1e6da3a6091cabc21062f56f919295bb9cd096e",
     "ddzy422_activation.py": "dba8499cd56b2a75897f7a4d215989532e10c7651def4c3916ca35b941bbb9f6",
     "ddzy422_diagnostics.py": "553d99c4bebcac97980ce2e33ef177554c0ac6e19e40a66c1ecc86ef6848ff83",
-    "ddzy422_setup.py": "47fc20754089881c0b804f4865873b3809852ef24fcefef67b0874b309cada47",
+    "ddzy422_setup.py": "4894ffc8d04a279646ed30ce0797c5eac3c19cffa30db604264fc9deb41c4c31",
     "deye_topology.py": "a1e93ad6613cc195d2fb1840c848af3535fd2f8e6a1c05943b79ee1f8e2f3768",
     "equipment_setup.py": "606c871378ea5fea0231f777388ba9051671d1cbf6dbc3cf8ee8693d2c350c0c",
     "ev_discovery.py": "73b8ea13810ef60e3c6ffd0d9665711e93c68f2be9729bda5500c767158ba476",
@@ -17,14 +17,15 @@
     "installation_reset.py": "aeeca6e3e9b0c898925e8802e171d05d120e9815e1343a64ee51a119ec08568c",
     "installation_update.py": "b32e2d18e9f345254896835a311f4f5a0243f3d180bff860dd9a1dde258621fe",
     "integration_flow.py": "17f09977306aa84ed4a9b2e0c0cd47cec158bf5a9b1afdb86aa04c969a2ee451",
-    "integrations/ddzy422-bundle.json": "df4d7820c57a1fc10dd4dff4ec8edc170432822dd0bb419aaa727a6ebb18d05d",
+    "integrations/ddzy422-bundle.json": "3c2a36e4e24a2a923fdf1f9edc1ebb07bcf6a4513ad630f0d48b68d901aed025",
     "integrations/ddzy422-legacy-010.json": "034e0d3d2120dcd2b1be83a895da6678598ea9859e2e3bcbf99ea04185f394bd",
+    "integrations/ddzy422-legacy-011.json": "df4d7820c57a1fc10dd4dff4ec8edc170432822dd0bb419aaa727a6ebb18d05d",
     "integrations/labox_ddzy422/PROTOCOL.md": "ee5d382782f8302f15f9b66767de8ae23547ac07168a6788e97e15cc6ba1761b",
     "integrations/labox_ddzy422/__init__.py": "0a02fd683f48a00f9601711b68dd204f67278227b6f60bb49f78e6f9b67c5f88",
-    "integrations/labox_ddzy422/config_flow.py": "96dbd9efad61d6e3adb0866c33a5c55b82129ffdac81e1fc48c8406728550374",
+    "integrations/labox_ddzy422/config_flow.py": "05c00487aac12ed63c3952b40f772261c20a41979c1e4581fa57831e06d37d08",
     "integrations/labox_ddzy422/const.py": "13f69726550dd78118c478fcb78911831c8d1a191effc4f34f75ecacbbdd64a1",
-    "integrations/labox_ddzy422/coordinator.py": "87923acbf77da27819b20479aee3caf1cf67f13893f3fabc684eee9767efd93d",
-    "integrations/labox_ddzy422/manifest.json": "43f1606f08a5c05b8af604fb52e6d28cd43012ae6c000a2fc4010873fc610820",
+    "integrations/labox_ddzy422/coordinator.py": "064830bc561d58bbfcdbd5e2760788b737c7d7dd7905ba537e07ac3bd738907d",
+    "integrations/labox_ddzy422/manifest.json": "43ffe3541585ecb0118929f9c0c59f316c5bb701c9cab4b6a5d3e345ccff2e78",
     "integrations/labox_ddzy422/sensor.py": "68f2e1cfac7d5c46416cdd6f2c184521fa75ce1192a0d58abfdf68b65a5214a0",
     "integrations/labox_ddzy422/strings.json": "43310d1639fa1e86744d4bb5a39fbff8818cc1200c2dfb1801eb32a74fde5e9e",
     "integrations/labox_ddzy422/transport.py": "69591a40a57c9d3a88fe1708af96472e63742edf749c6bdfcf3baa2efac9104b",
@@ -68,5 +69,5 @@
     "vendor/solarman-25.08.16.zip": "04fd37da1ba1cd3a590146a48602162ad5c7e0c319c80ca326369cd5a26da977",
     "wifi_setup.py": "da3ae91a1622391e0b326ff6ef74e9272572cfb05792a1599aa28e66f0beb4d0"
   },
-  "version": "0.6.55"
+  "version": "0.6.56"
 }

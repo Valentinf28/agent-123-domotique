@@ -24,6 +24,16 @@ def module(name,**values):
 module('homeassistant');module('homeassistant.helpers');module('homeassistant.components')
 module('homeassistant.const',Platform=types.SimpleNamespace(SENSOR='sensor'),CONF_HOST='host')
 network=module('homeassistant.components.network',async_get_adapters=AsyncMock(return_value=[{'enabled':True,'ipv4':[{'address':'192.168.6.10','network_prefix':24}]}]))
+def adapters_at(address):
+ return [{'name':'end0','enabled':False,'auto':True,'ipv4':[{'address':address,'network_prefix':24}]}]
+def enable(adapters, names):
+ for row in adapters:row['enabled']=row['name'] in names
+ return any(row['enabled'] for row in adapters)
+def automatic(adapters):
+ for row in adapters:row['enabled']=row['auto']
+network_model=module('homeassistant.components.network.network',async_get_network=AsyncMock(return_value=types.SimpleNamespace(configured_adapters=[])))
+network_util=module('homeassistant.components.network.util',async_load_adapters=AsyncMock(side_effect=lambda:adapters_at('192.168.6.10')),enable_adapters=enable,enable_auto_detected_adapters=automatic)
+
 class Store:
  values={}
  def __init__(self,hass,version,key,**kw):self.key=key
@@ -113,6 +123,27 @@ class NativeEntityTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(reloaded.guard.previous['exportTotalKwh'],5667.90)
   package.async_read=AsyncMock(return_value={'readAtUtc':datetime.now(timezone.utc).isoformat(),'values':self.sample['values']|{'importTotalKwh':0}})
   with self.assertRaises(UpdateFailed):await reloaded._async_update_data()
+ async def test_late_dhcp_recovers_next_poll_without_using_cached_addresses(self):
+  checkpoint=dict(self.coordinator.guard.previous or {})
+  with patch.object(coordinator_module,'async_load_adapters',AsyncMock(side_effect=[[],adapters_at('192.168.6.10')])):
+   with self.assertRaises(UpdateFailed):await self.coordinator._async_update_data()
+   package.async_read.assert_not_awaited();self.assertEqual(self.coordinator.guard.previous or {},checkpoint)
+   self.assertEqual(await self.coordinator._async_update_data(),self.sample)
+  package.async_read.assert_awaited_once();network.async_get_adapters.assert_not_awaited()
+ async def test_changed_subnet_or_enumeration_failure_never_reads_or_changes_indexes(self):
+  self.coordinator.data=await self.coordinator._async_update_data()
+  checkpoint=dict(self.coordinator.guard.previous);stored=dict(Store.values)
+  for outcome in (adapters_at('192.168.9.10'),OSError('enumeration failed')):
+   package.async_read.reset_mock()
+   with patch.object(coordinator_module,'async_load_adapters',AsyncMock(side_effect=outcome if isinstance(outcome,Exception) else None,return_value=outcome)):
+    with self.assertRaises(UpdateFailed):await self.coordinator._async_update_data()
+   package.async_read.assert_not_awaited();self.assertEqual(self.coordinator.guard.previous,checkpoint);self.assertEqual(Store.values,stored)
+ async def test_configured_interface_policy_is_preserved_without_global_mutation(self):
+  fresh=adapters_at('192.168.6.10')+[dict(adapters_at('192.168.9.10')[0],name='wifi')]
+  settings=types.SimpleNamespace(configured_adapters=['wifi'])
+  with patch.object(coordinator_module,'async_get_network',AsyncMock(return_value=settings)),patch.object(coordinator_module,'async_load_adapters',AsyncMock(return_value=fresh)):
+   with self.assertRaises(UpdateFailed):await self.coordinator._async_update_data()
+  package.async_read.assert_not_awaited();self.assertEqual(settings.configured_adapters,['wifi'])
  async def test_poll_failure_is_unavailable_not_zero(self):
   package.async_read=AsyncMock(side_effect=TimeoutError('no packet'))
   with self.assertRaises(UpdateFailed):await self.coordinator._async_update_data()
