@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.54"
+AGENT_VERSION = "0.6.55"
 MIDEA_FAULT_MONITOR = None
 BACKUP_RUNTIME = None
 BACKUP_GUARD = None
@@ -2167,6 +2167,10 @@ def relay_command(
             elif payload.get("operation") == "verify":
                 registry = home_assistant_ws_command(supervisor_token, {"type":"config/entity_registry/list"})
                 result = inspect(payload.get("entryId"), payload.get("model"), call_verify_local_solar, registry.get("result"))
+            elif payload.get("operation") == "diagnose_ddzy422":
+                from ddzy422_diagnostics import diagnose
+                network = home_assistant_ws_command(supervisor_token, {"type":"network"})
+                result = diagnose(payload.get("entryId"), network.get("adapters", []), call_verify_local_solar)
             else:
                 raise ValueError("Cette vérification solaire est invalide.")
         elif action == "commissioning.activate_ddzy422":
