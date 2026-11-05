@@ -13,9 +13,11 @@ from network_discovery import local_interfaces
 DOMAIN = 'labox_ddzy422'
 BUNDLE = Path(__file__).parent / 'integrations' / DOMAIN
 BUNDLE_INDEX = Path(__file__).parent / 'integrations' / 'ddzy422-bundle.json'
-BUNDLE_SHA256 = 'df4d7820c57a1fc10dd4dff4ec8edc170432822dd0bb419aaa727a6ebb18d05d'
+BUNDLE_SHA256 = '3c2a36e4e24a2a923fdf1f9edc1ebb07bcf6a4513ad630f0d48b68d901aed025'
 LEGACY_INDEX = Path(__file__).parent / 'integrations' / 'ddzy422-legacy-010.json'
 LEGACY_INDEX_SHA256 = '034e0d3d2120dcd2b1be83a895da6678598ea9859e2e3bcbf99ea04185f394bd'
+LEGACY_011_INDEX = Path(__file__).parent / 'integrations' / 'ddzy422-legacy-011.json'
+LEGACY_011_INDEX_SHA256 = 'df4d7820c57a1fc10dd4dff4ec8edc170432822dd0bb419aaa727a6ebb18d05d'
 FILES = frozenset(('__init__.py','config_flow.py','const.py','coordinator.py','manifest.json','sensor.py','strings.json','transport.py','PROTOCOL.md'))
 
 def verify_bundle(bundle=BUNDLE, index=BUNDLE_INDEX):
@@ -68,10 +70,15 @@ def install(config=Path('/homeassistant_config'), bundle=BUNDLE, index=BUNDLE_IN
                 misplaced.rename(saved)
             if matches(manifest['files']):
                 return {'connector':DOMAIN,'status':'existing_preserved','restartRequired':True,'configured':False}
-            if LEGACY_INDEX.is_symlink() or hashlib.sha256(LEGACY_INDEX.read_bytes()).hexdigest()!=LEGACY_INDEX_SHA256:
-                raise RuntimeError('L’inventaire précédent du connecteur est altéré.')
-            legacy=json.loads(LEGACY_INDEX.read_text())
-            if set(legacy['files'])!=FILES or not matches(legacy['files']) or any(p.name not in FILES|{'__pycache__'} for p in target.iterdir()):
+            previous_version = None
+            for legacy_index, checksum in ((LEGACY_INDEX, LEGACY_INDEX_SHA256),
+                                           (LEGACY_011_INDEX, LEGACY_011_INDEX_SHA256)):
+                if legacy_index.is_symlink() or hashlib.sha256(legacy_index.read_bytes()).hexdigest()!=checksum:
+                    raise RuntimeError('L’inventaire précédent du connecteur est altéré.')
+                legacy=json.loads(legacy_index.read_text())
+                if set(legacy['files'])==FILES and matches(legacy['files']):
+                    previous_version=legacy['version']
+            if previous_version is None or any(p.name not in FILES|{'__pycache__'} for p in target.iterdir()):
                 raise RuntimeError('Une installation différente du connecteur est conservée.')
             upgrading = True
         staging=Path(tempfile.mkdtemp(prefix='.123home-ddzy422-',dir=components))
@@ -83,8 +90,8 @@ def install(config=Path('/homeassistant_config'), bundle=BUNDLE, index=BUNDLE_IN
                 archive=config/'.123home-managed-backups'
                 if archive.is_symlink():raise RuntimeError('Le dossier de sauvegarde doit être vérifié.')
                 archive.mkdir(exist_ok=True,mode=0o700)
-                previous=archive/'labox_ddzy422-0.1.0'
-                if previous.exists():
+                previous=archive/f'labox_ddzy422-{previous_version}'
+                if previous.exists() or previous.is_symlink():
                     raise RuntimeError('La précédente migration du compteur doit être vérifiée.')
                 target.rename(previous)
                 try:staging.rename(target)

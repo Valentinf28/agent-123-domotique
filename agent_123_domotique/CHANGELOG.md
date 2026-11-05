@@ -1,3 +1,9 @@
+## 0.6.56
+
+- Recover local DDZY422 readings automatically when Ethernet acquires its address after startup; keep configured-interface restrictions and physical index continuity.
+- Preserve validated energy state classes in full and fast inventory so verified cumulative indexes reach the portal.
+- Upgrade only fingerprinted managed DDZY422 readers to 0.1.2, retaining the previous bundle and all configuration/checkpoints.
+
 ## 0.6.55
 
 - Diagnostic SAV ciblé du compteur DDZY422 : distinction entre communication locale et continuité des index, sans modifier les paramètres ni les index.
