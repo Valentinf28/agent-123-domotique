@@ -48,6 +48,7 @@ COPY ddzy422_setup.py /opt/agent/ddzy422_setup.py
 COPY ddzy422_activation.py /opt/agent/ddzy422_activation.py
 COPY micro_setup.py /opt/agent/micro_setup.py
 COPY local_solar_measurements.py /opt/agent/local_solar_measurements.py
+COPY ddzy422_diagnostics.py /opt/agent/ddzy422_diagnostics.py
 COPY integrations /opt/agent/integrations
 COPY deye_topology.py /opt/agent/deye_topology.py
 COPY solar_identity.py /opt/agent/solar_identity.py

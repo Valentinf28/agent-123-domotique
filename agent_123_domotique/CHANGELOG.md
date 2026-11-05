@@ -1,3 +1,7 @@
+## 0.6.55
+
+- Diagnostic SAV ciblé du compteur DDZY422 : distinction entre communication locale et continuité des index, sans modifier les paramètres ni les index.
+
 ## 0.6.54
 
 - Corrige la lecture du format natif des automatismes pour permettre leur modification et leur suppression après confirmation, en conservant les contrôles de provenance et de concurrence.
