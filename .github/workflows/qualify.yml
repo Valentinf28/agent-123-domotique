@@ -18,6 +18,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install -r agent_123_domotique/requirements.lock
+      - run: python -m pip install --require-hashes -r labox_maintenance/requirements.lock
+      - run: python scripts/package_factory_tools.py --check
       - run: python scripts/package_manifest.py --check
       - run: python tests/run_isolated.py
   package:

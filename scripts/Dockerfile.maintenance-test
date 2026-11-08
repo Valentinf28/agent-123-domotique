@@ -1,0 +1,5 @@
+ARG MAINTENANCE_IMAGE=labox_maintenance:qualification
+FROM ${MAINTENANCE_IMAGE}
+RUN apk add --no-cache dbus
+COPY tests/runtime_maintenance_dbus.py /runtime_maintenance_dbus.py
+ENTRYPOINT ["/opt/maintenance/venv/bin/python", "/runtime_maintenance_dbus.py"]

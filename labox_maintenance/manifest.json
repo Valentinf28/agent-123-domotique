@@ -1,0 +1,18 @@
+{
+  "files": {
+    ".dockerignore": "e55a4a9c8906445f936b73ce8e1d410663f8a45b0c9be7175df61adfff3b5298",
+    "Dockerfile": "66dab5c95937b76bfa22efd857849fbd2b941f829adc860030a6bdc42abdf177",
+    "README.md": "186cf5208a356139e6607506e01ddff4548f49fe8a0a243c39d178394ddc813b",
+    "apparmor.txt": "cf5c654f2dcc90778188d297eaf360e3932deaacfa2ac05e68ee230c90b0f207",
+    "config.yaml": "bcf858444aaea067819fddb687edae55b181f3392c8aa5c5cc2b654319b04253",
+    "host.py": "adca7ddce95830729d64923abff771ca828e3591b40b44e49c47e38639ac8b22",
+    "preflight.py": "6cd14194b9dc5f840b7f599100edefa9e9615f0f0bf65a3f6057e3839531341c",
+    "requirements.lock": "822f04cbdc29be75217f61c6f2fa5ec53027528bb71b2d690ede2f5d8d41f25d",
+    "run.sh": "0f6ee0b3556cb6c4bc978f9c10ee94c7a02d712ddae1be1ec94af6b5b649c273",
+    "security.py": "58d5714bf5b741cbf3c7dd6f74f3bdb43ca51cc578298a577e15713d5b9d29d7",
+    "service.py": "44f141c3840c5bc58b6eee775f38194e5627f783d86c5843dd297d5a43c71143",
+    "session.py": "7ee69bf75b6749887e288b6544f15a1245f5f2515a404e5d1686d4acc2c656d2",
+    "terminal.py": "3a852abace39ba0906c4f28db52b18135df315428ffb6360d1ec35ea49d5754d",
+    "workshop.py": "93aaab53569148392a9ba75bdb6b784e141d5881130d40ca05e44fbe1e2f6e9e"
+  }
+}
