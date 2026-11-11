@@ -1,3 +1,9 @@
+## 0.6.57
+
+- Calcule le bilan énergétique dans La Box et publie un résultat versionné pour les interfaces locales et distantes.
+- Conserve temporairement un bilan cohérent et horodaté lorsque les micro-onduleurs présentent des mesures décalées.
+- Valide les sources, les unités, leur fraîcheur et l’association de la maison à chaque calcul.
+
 ## 0.6.56
 
 - Recover local DDZY422 readings automatically when Ethernet acquires its address after startup; keep configured-interface restrictions and physical index continuity.
