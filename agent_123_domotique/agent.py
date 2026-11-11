@@ -24,8 +24,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import websocket
 
-AGENT_VERSION = "0.6.56"
+AGENT_VERSION = "0.6.57"
 MIDEA_FAULT_MONITOR = None
+ENERGY_ENGINE = None
 BACKUP_RUNTIME = None
 BACKUP_GUARD = None
 BACKUP_SYSTEM_ACTION = None
@@ -1160,6 +1161,25 @@ def enroll(portal_url: str, code: str) -> dict[str, Any]:
     return state
 
 
+
+def publish_energy_balance(supervisor_token, states, metadata):
+    global ENERGY_ENGINE
+    from energy_engine import EnergyEngine, ENTITY_ID
+    document = read_json(LOCAL_CONFIGURATION_PATH, {})
+    identity = read_json(STATE_PATH, {})
+    if not identity.get("agent_id") or document.get("agentId") != identity["agent_id"]:
+        return None
+    document = {**document, "authority": read_json(Path("/data/local-mobile-grants.json"), {}).get("scope")}
+    if ENERGY_ENGINE is None:
+        ENERGY_ENGINE = EnergyEngine(validate_local_energy)
+    enriched = [{**row, "attributes": {**row.get("attributes", {}), **metadata.get(row.get("entity_id"), {})}}
+                for row in states if isinstance(row, dict)]
+    payload = ENERGY_ENGINE.calculate(document, enriched, datetime.now(timezone.utc).timestamp())
+    return request_json(f"{SUPERVISOR_API}/states/{ENTITY_ID}", method="POST", token=supervisor_token,
+                        payload={"state": payload["status"], "attributes": {
+                            "friendly_name": "Bilan énergétique La Box", "energy_balance": payload}})
+
+
 def home_assistant_summary(
     supervisor_token: str,
     *,
@@ -1179,6 +1199,12 @@ def home_assistant_summary(
         if isinstance(state, dict) and state.get("state") not in {"unavailable", "unknown"}
     )
     registry_metadata = home_assistant_registry_metadata(supervisor_token) if full_inventory else {}
+    try:
+        balance_state = publish_energy_balance(supervisor_token, states, registry_metadata or REGISTRY_METADATA_CACHE)
+        if isinstance(balance_state, dict) and balance_state.get("entity_id") == "sensor.home_energy_balance":
+            states = [row for row in states if row.get("entity_id") != "sensor.home_energy_balance"] + [balance_state]
+    except Exception:
+        log("Bilan énergétique local en attente d’actualisation")
     global MIDEA_FAULT_MONITOR
     if MIDEA_FAULT_MONITOR is None:
         from midea_faults import MideaFaultMonitor
@@ -1204,7 +1230,7 @@ def home_assistant_summary(
         electrical_measurement = entity_id.startswith("sensor.") and attributes.get("device_class") in {
             "power", "energy", "current", "voltage", "frequency", "power_factor"
         }
-        if not full_inventory and entity_id != "sensor.home_local_configuration" and not entity_id.startswith(FAST_ENTITY_PREFIXES) and not electrical_measurement:
+        if not full_inventory and entity_id not in ("sensor.home_local_configuration", "sensor.home_energy_balance") and not entity_id.startswith(FAST_ENTITY_PREFIXES) and not electrical_measurement:
             continue
         safe_attributes = {
             key: attributes[key]
@@ -1213,6 +1239,8 @@ def home_assistant_summary(
         }
         if attributes.get("state_class") in ("measurement", "total", "total_increasing"):
             safe_attributes["state_class"] = attributes["state_class"]
+        if entity_id == "sensor.home_energy_balance" and isinstance(attributes.get("energy_balance"), dict):
+            safe_attributes["energy_balance"] = attributes["energy_balance"]
         if entity_id == "sensor.1_2_3_home_local_identity":
             safe_attributes.update({key: attributes[key] for key in ("public_key", "protocol", "urls") if key in attributes})
         safe_attributes.update(registry_metadata.get(entity_id, {}))
@@ -3450,7 +3478,7 @@ def main() -> None:
                 supervisor_token,
                 full_inventory=full_inventory,
             )
-            summary["capabilities"] = ["installation.core_update_v1", "installation.core_update", "native_config_flow_v1","installation.update.recovery_v1", "automation_update_v1", "automation_schedule_v1", "commissioning.discover_solar.mac", "commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
+            summary["capabilities"] = ["energy.balance_v1", "installation.core_update_v1", "installation.core_update", "native_config_flow_v1","installation.update.recovery_v1", "automation_update_v1", "automation_schedule_v1", "commissioning.discover_solar.mac", "commissioning.wifi", "commissioning.overkiz", "heartbeat.wake", "local.mobile.encrypted", "commissioning.ev_discover", "commissioning.lektrico", "commissioning.equipment", "commissioning.shelly", "commissioning.tuya", "commissioning.verify_local_solar", "commissioning.activate_ddzy422", "commissioning.install_ddzy422", "commissioning.configure_ddzy422", "commissioning.configure_deye_micro", "installation.update", "installation.update.catalog", "installation.reset", "commissioning.configure_location", "commissioning.discover_solar", "commissioning.install_solarman", "commissioning.configure_deye", "commissioning.configure_deye_lp1", "commissioning.activate_solarman", "commissioning.verify_deye"]
             if BACKUP_RUNTIME:
                 summary["capabilities"].append("backup_export_v1")
             from installation_update import Update, heartbeat_status
